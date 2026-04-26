@@ -31,6 +31,9 @@ import re
 
 from hypothesis import HealthCheck, assume, given, settings, strategies as st
 
+from parser_lineage_analyzer._analysis_condition_facts import (
+    conditions_are_compatible,
+)
 from parser_lineage_analyzer._regex_algebra import (
     Trilean,
     language_subset,
@@ -228,4 +231,76 @@ def test_property_tests_have_non_vacuous_inputs() -> None:
                 no_found = True
     assert yes_found and no_found, (
         "property test inputs never trigger both YES and NO from the algebra; the cross-check assertions are vacuous"
+    )
+
+
+# -- !~ (negative regex match) properties ----------------------------
+#
+# After F1 wires `!~` through the condition-fact pipeline, the contradiction
+# engine reasons across all four operator pairs (`=~`/`=~`, `=~`/`!~`,
+# `!~`/`=~`, `!~`/`!~`). The soundness oracle for `!~ /A/` is "the value does
+# NOT match body A under search semantics", i.e. ``not _matches_via_re(A, s)``.
+#
+# Property contract: when ``conditions_are_compatible`` returns False, NO
+# string in the bounded enumeration can satisfy both operand semantics
+# simultaneously. False positives (declaring a contradiction that doesn't
+# hold) silently drop reachable branches and corrupt lineage.
+
+
+def _condition_satisfied(body: str, is_match: bool, value: str) -> bool:
+    """Soundness oracle: does ``value`` satisfy ``[t] =~/!~ /body/``?"""
+    matched = _matches_via_re(body, value)
+    return matched if is_match else not matched
+
+
+@given(_maybe_alternation(), _maybe_alternation(), st.booleans(), st.booleans())
+@_HYP_SETTINGS
+def test_compatible_false_means_no_witness(body_a: str, body_b: str, op_a_is_match: bool, op_b_is_match: bool) -> None:
+    """If the algebra calls a pair contradicted, no enumerated value
+    satisfies both halves. This is the load-bearing soundness check."""
+    op_a = "=~" if op_a_is_match else "!~"
+    op_b = "=~" if op_b_is_match else "!~"
+    cond_a = f"[t] {op_a} /{body_a}/"
+    cond_b = f"[t] {op_b} /{body_b}/"
+    if not conditions_are_compatible([cond_a, cond_b]):
+        # contradicted: every enumerated string must fail at least one half
+        for s in _ALL_STRINGS:
+            sat_a = _condition_satisfied(body_a, op_a_is_match, s)
+            sat_b = _condition_satisfied(body_b, op_b_is_match, s)
+            assert not (sat_a and sat_b), (
+                f"unsound: algebra contradicted {cond_a!r} and {cond_b!r} but {s!r} satisfies both"
+            )
+
+
+@given(_maybe_alternation(), st.booleans())
+@_HYP_SETTINGS
+def test_same_field_same_op_same_body_is_compatible(body: str, is_match: bool) -> None:
+    """A condition is compatible with itself. Reflexivity check across
+    both operators — the trivial regression for any extractor breakage."""
+    op = "=~" if is_match else "!~"
+    cond = f"[t] {op} /{body}/"
+    assert conditions_are_compatible([cond, cond])
+
+
+@given(_maybe_alternation())
+@_HYP_SETTINGS
+def test_pos_and_neg_same_body_contradict(body: str) -> None:
+    """``[t] =~ /A/`` ∧ ``[t] !~ /A/`` must be PROVABLY contradicted
+    whenever the algebra can reason about ``A`` at all.
+
+    Gating criterion: ``language_subset(A, A)`` returning YES proves the
+    algebra can reach a definitive answer for ``A``-vs-``A`` queries.
+    Whenever it can, ``conditions_are_compatible([=~A, !~A])`` MUST
+    return False — that is the precision claim of the pos/neg dispatch
+    arm. UNKNOWN here would silently regress that arm without tripping
+    the soundness oracle in ``test_compatible_false_means_no_witness``."""
+    if language_subset(body, "", body, "") != Trilean.YES:
+        # Algebra can't analyze this body; UNKNOWN-as-compatible is sound
+        # but uninformative for this precision check.
+        assume(False)
+    pos = f"[t] =~ /{body}/"
+    neg = f"[t] !~ /{body}/"
+    assert not conditions_are_compatible([pos, neg]), (
+        f"precision regression: algebra proves L({body!r}) ⊆ L({body!r}) but "
+        f"failed to contradict [=~ /{body}/, !~ /{body}/]"
     )

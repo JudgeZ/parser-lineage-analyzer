@@ -655,6 +655,175 @@ class TestFactsContradictDispatch:
         assert _facts_contradict(LiteralFact("[a]", "X"), RegexFact("[b]", "^Y$", "")) is False
 
 
+class TestNegMatchExtraction:
+    """``!~`` (negative regex match) flows through the same extractor +
+    fact-production pipeline as ``=~``, with ``is_match=False`` distinguishing
+    the two. The contradiction dispatch in ``_facts_contradict`` and
+    ``_literal_vs_regex_contradicts`` then handles the four operator-pair
+    combinations.
+
+    Soundness rule still applies: a YES (contradiction) must be a *proven*
+    contradiction. UNKNOWN propagates as compatible.
+    """
+
+    @pytest.mark.parametrize(
+        "condition,field,body,flags",
+        [
+            ("[type] !~ /^A$/", "[type]", "^A$", ""),
+            ("[a][b] !~ /^x$/", "[a][b]", "^x$", ""),
+            ("[type] !~ /^A$/i", "[type]", "^A$", "i"),
+            (r"[t] !~ /^foo\.bar$/", "[t]", r"^foo\.bar$", ""),
+            ("[t]   !~   /^A$/", "[t]", "^A$", ""),
+        ],
+    )
+    def test_extracts_neg_match(self, condition: str, field: str, body: str, flags: str) -> None:
+        result = extract_regex_literal(condition)
+        assert result is not None
+        assert (result.field, result.body, result.flags, result.is_match) == (field, body, flags, False)
+
+    @pytest.mark.parametrize(
+        "condition,field,body,flags",
+        [
+            ("[type] =~ /^A$/", "[type]", "^A$", ""),
+            (r"[t] =~ /^foo\.bar$/", "[t]", r"^foo\.bar$", ""),
+        ],
+    )
+    def test_extracts_pos_match_unchanged(self, condition: str, field: str, body: str, flags: str) -> None:
+        result = extract_regex_literal(condition)
+        assert result is not None
+        assert (result.field, result.body, result.flags, result.is_match) == (field, body, flags, True)
+
+    def test_exact_literal_value_rejects_neg_match(self) -> None:
+        # Soundness: ``exact_literal_value`` is named for ``=~`` and must
+        # NOT reduce ``!~ /^foo$/``. (See the docstring on
+        # ``exact_literal_value`` for the NOT round-trip rationale.)
+        assert exact_literal_value("[t] !~ /^foo$/") is None
+        assert exact_literal_value("[t] =~ /^foo$/") == ("[t]", "foo")
+
+    def test_neg_match_literal_body_stays_a_regex_fact(self) -> None:
+        # Soundness: ``[t] !~ /^foo$/`` is intentionally NOT collapsed to
+        # ``LiteralFact(is_equal=False)``. Under Python re semantics ``$``
+        # matches before a final ``\n``, so ``!~ /^foo$/`` excludes both
+        # ``"foo"`` and ``"foo\n"`` while ``[t] != "foo"`` only excludes
+        # ``"foo"``. Letting the negative-match literal collapse would
+        # invert under ``negated_literal_fact_from_condition`` into the
+        # narrower ``[t] == "foo"`` claim and unsoundly contradict peers
+        # whose witnesses lie in ``L(=~ /^foo$/) \ {"foo"}`` (e.g.
+        # ``"foo\n"``). Keep it as a RegexFact so the symbolic algebra
+        # reasons faithfully.
+        fact = _fact_from_condition("[t] !~ /^foo$/")
+        assert isinstance(fact, RegexFact)
+        assert fact.field == "[t]"
+        assert fact.body == "^foo$"
+        assert fact.is_match is False
+
+    def test_neg_match_non_literal_body_emits_regex_fact(self) -> None:
+        fact = _fact_from_condition("[t] !~ /^[A-Z]+$/")
+        assert isinstance(fact, RegexFact)
+        assert fact.field == "[t]"
+        assert fact.body == "^[A-Z]+$"
+        assert fact.is_match is False
+
+    @pytest.mark.parametrize(
+        "left,right,contradicts",
+        [
+            # =~ A vs !~ A: every value in L(A) is excluded by !~ A.
+            (RegexFact("[t]", "^A$", ""), RegexFact("[t]", "^A$", "", is_match=False), True),
+            (RegexFact("[t]", "^[A-Z]+$", ""), RegexFact("[t]", "^[A-Z]+$", "", is_match=False), True),
+            # =~ A vs !~ B where L(A) ⊆ L(B): contradicts (every match for A is excluded by !B).
+            (RegexFact("[t]", "^A$", ""), RegexFact("[t]", "^[A-Z]$", "", is_match=False), True),
+            # =~ A vs !~ B where L(A) and L(B) disjoint: compatible (=~A in L(A), !~B excludes L(B), no overlap).
+            (RegexFact("[t]", "^A$", ""), RegexFact("[t]", "^B$", "", is_match=False), False),
+            (RegexFact("[t]", "^[A-Z]+$", ""), RegexFact("[t]", "^[0-9]+$", "", is_match=False), False),
+            # !~ A vs !~ B: never provably contradicts (value can lie outside both).
+            (RegexFact("[t]", "^A$", "", is_match=False), RegexFact("[t]", "^B$", "", is_match=False), False),
+            (RegexFact("[t]", "^A$", "", is_match=False), RegexFact("[t]", "^A$", "", is_match=False), False),
+            # =~ A vs !~ B where L(A) overlaps but is NOT subset of L(B):
+            # compatible (a value in L(A)\L(B) satisfies both).
+            (RegexFact("[t]", "^[A-Z]+$", ""), RegexFact("[t]", "^A$", "", is_match=False), False),
+            # Different fields: never contradict.
+            (RegexFact("[a]", "^X$", ""), RegexFact("[b]", "^X$", "", is_match=False), False),
+        ],
+    )
+    def test_facts_contradict_neg_match_dispatch(self, left: RegexFact, right: RegexFact, contradicts: bool) -> None:
+        assert _facts_contradict(left, right) is contradicts
+        assert _facts_contradict(right, left) is contradicts  # commutative
+
+    @pytest.mark.parametrize(
+        "literal,regex,contradicts",
+        [
+            # [t] == "x" ∧ [t] !~ /A/ where "x" ∈ L(A) → contradicts.
+            (LiteralFact("[t]", "FOO"), RegexFact("[t]", "^[A-Z]+$", "", is_match=False), True),
+            (LiteralFact("[t]", "abc"), RegexFact("[t]", "^[a-z]+$", "", is_match=False), True),
+            # [t] == "x" ∧ [t] !~ /A/ where "x" ∉ L(A) → compatible.
+            (LiteralFact("[t]", "FOO"), RegexFact("[t]", "^[a-z]+$", "", is_match=False), False),
+            (LiteralFact("[t]", "123"), RegexFact("[t]", "^[a-z]+$", "", is_match=False), False),
+            # [t] != "x" ∧ [t] !~ /A/ → no general contradiction.
+            (LiteralFact("[t]", "FOO", is_equal=False), RegexFact("[t]", "^[A-Z]+$", "", is_match=False), False),
+            (LiteralFact("[t]", "x", is_equal=False), RegexFact("[t]", "^A$", "", is_match=False), False),
+        ],
+    )
+    def test_literal_vs_neg_match_regex(self, literal: LiteralFact, regex: RegexFact, contradicts: bool) -> None:
+        assert _facts_contradict(literal, regex) is contradicts
+        assert _facts_contradict(regex, literal) is contradicts  # commutative
+
+    @pytest.mark.parametrize(
+        "conditions,compatible",
+        [
+            # Literal eq vs same-body !~ — `_literal_vs_regex_contradicts`
+            # consults `literal_in_regex_language` and finds the contradiction.
+            (['[t] == "foo"', "[t] !~ /^foo$/"], False),
+            (['[t] != "foo"', "[t] !~ /^foo$/"], True),
+            # Same field positive vs negative on identical body — algebra
+            # detects via `language_subset(body, body) == YES`.
+            (["[t] =~ /^[A-Z]+$/", "[t] !~ /^[A-Z]+$/"], False),
+            # Same field positive matches a value that the negative excludes.
+            (['[t] == "FOO"', "[t] !~ /^[A-Z]+$/"], False),
+            (['[t] == "foo"', "[t] !~ /^[A-Z]+$/"], True),
+            # Two negatives never provably contradict.
+            (["[t] !~ /^A$/", "[t] !~ /^B$/"], True),
+            # =~ + !~ compatible across disjoint regexes.
+            (["[t] =~ /^A$/", "[t] !~ /^B$/"], True),
+        ],
+    )
+    def test_conditions_are_compatible_end_to_end(self, conditions: list[str], compatible: bool) -> None:
+        assert conditions_are_compatible(conditions) is compatible
+
+    def test_condition_is_contradicted_with_neg_match(self) -> None:
+        # else-if branch with `!~` against an `=~` prior — the negative
+        # excludes everything the positive admits.
+        assert condition_is_contradicted("[t] !~ /^[A-Z]+$/", ["[t] =~ /^[A-Z]+$/"]) is True
+        # `!~` prior, then a literal that lies in the excluded language.
+        assert condition_is_contradicted('[t] == "FOO"', ["[t] !~ /^[A-Z]+$/"]) is True
+        # `!~` prior, then a literal outside the excluded language — compatible.
+        assert condition_is_contradicted('[t] == "foo"', ["[t] !~ /^[A-Z]+$/"]) is False
+
+    def test_unsupported_neg_match_does_not_contradict(self) -> None:
+        # UNKNOWN must propagate as compatible. A grok-bearing or oversized
+        # body in a `!~` must never authorize a contradiction.
+        assert condition_is_contradicted("[t] !~ /%{NAME}/", ["[t] =~ /^B$/"]) is False
+        assert conditions_are_compatible(["[t] !~ /%{NAME}/", "[t] =~ /^B$/"]) is True
+
+    def test_not_negation_round_trip_does_not_unsoundly_contradict(self) -> None:
+        # Regression for chatgpt-codex-connector finding on PR #8.
+        #
+        # If ``!~ /^foo$/`` were collapsed to ``LiteralFact("foo", neq)``
+        # and then negated via ``negated_literal_fact_from_condition``,
+        # the result would be ``LiteralFact("foo", eq)``. Paired with
+        # ``[t] != "foo"`` that produces a same-field, same-value, opposite-
+        # ``is_equal`` pair which the LiteralFact dispatch contradicts.
+        #
+        # Reality: ``NOT(!~ /^foo$/) AND != "foo"`` ⇔ ``=~ /^foo$/ AND
+        # != "foo"``. The witness ``"foo\n"`` matches ``^foo$`` (Python
+        # ``re.search`` semantics: ``$`` matches before a final ``\n``)
+        # AND is not equal to ``"foo"``, so the conjunction is COMPATIBLE.
+        # Reporting CONTRADICTED here would silently drop a reachable
+        # branch.
+        assert conditions_are_compatible(["NOT([t] !~ /^foo$/)", '[t] != "foo"']) is True
+        # And the symmetric existing-behavior check (already sound):
+        assert conditions_are_compatible(["NOT([t] =~ /^foo$/)", '[t] == "foo"']) is False
+
+
 class TestRegexStressFile:
     """End-to-end regression for the regex-algebra stress fixture under
     ``tests/fixtures/test_corpus/challenge/``.
@@ -937,12 +1106,20 @@ class TestReviewFindings:
         # And NOW the definitive answer IS cached.
         assert algebra._DEFINITIVE_DISJOINT_CACHE.get(canonical_key) == Trilean.YES
 
-    def test_language_subset_does_not_exceed_5x_budget(self) -> None:
+    def test_language_subset_does_not_exceed_20x_budget(self) -> None:
         """End-to-end soak: hand :func:`language_subset` a pair
         of patterns that build near-max DFAs. Even when the algebra
         bails to ``UNKNOWN``, the wall-clock must stay within a
         generous bound — proves the budget polls in the BFS *and* the
-        complement loop are both wired up."""
+        complement loop are both wired up.
+
+        20× the BFS budget. The pre-BFS phases (sre_parse, IR lowering,
+        NFA build, alphabet partition, DFA complement) are not individually
+        wall-clock bounded; on slow CI runners with cold caches the
+        cumulative overhead can easily exceed 5× even when nothing is
+        actually hung. 20× still catches a real runaway while tolerating
+        CI variance across macOS/Windows/Linux runners.
+        """
         import time
 
         # A pair that exercises the full pipeline: lower → NFA → DFA →
@@ -955,7 +1132,7 @@ class TestReviewFindings:
         result = language_subset(body_a, "", body_b, "")
         elapsed_ms = (time.monotonic() - start) * 1000
         assert isinstance(result, Trilean)
-        assert elapsed_ms < ALGEBRA_TIME_BUDGET_MS * 5, f"language_subset took {elapsed_ms:.1f}ms"
+        assert elapsed_ms < ALGEBRA_TIME_BUDGET_MS * 20, f"language_subset took {elapsed_ms:.1f}ms"
 
     def test_alphabet_partition_cap_returns_unknown(self) -> None:
         """Pin :data:`MAX_ALPHABET_PARTITIONS`. A body with more

@@ -47,15 +47,14 @@ class LiteralFact:
 
 @dataclass(frozen=True)
 class RegexFact:
-    """A ``[field] =~ /body/flags`` constraint that is not (or not yet)
-    reducible to a LiteralFact. Contradiction checks consult the
-    symbolic regex algebra."""
+    """A ``[field] =~ /body/flags`` or ``[field] !~ /body/flags`` constraint
+    that is not (or not yet) reducible to a LiteralFact. Contradiction
+    checks consult the symbolic regex algebra."""
 
     field: str
     body: str
     flags: str
-    # ``True`` for ``=~``; ``False`` for ``!~`` (reserved — not yet
-    # produced by ``_regex_fact_from_normalized_condition``).
+    # ``True`` for ``=~`` (positive match); ``False`` for ``!~`` (negative).
     is_match: bool = True
 
 
@@ -111,6 +110,20 @@ def _literal_fact_from_normalized_condition(condition: str) -> LiteralFact | Non
     if regex_literal is not None:
         field, value = regex_literal
         return LiteralFact(field, value)
+    # Intentional gap: ``[t] !~ /^literal$/`` is NOT reduced to
+    # ``LiteralFact(literal, is_equal=False)`` here, even though the body
+    # matches the EXACT_LITERAL shape. Reason: the analyzer's reality
+    # model uses Python ``re.search`` semantics, where ``$`` matches
+    # before a final ``\n``. So ``!~ /^foo$/`` excludes both ``"foo"``
+    # *and* ``"foo\n"``, while ``LiteralFact("foo", neq)`` would only
+    # exclude ``"foo"``. Sound on its own, but ``negated_literal_fact_from_condition``
+    # would flip the LiteralFact's ``is_equal`` and produce the false
+    # claim that ``NOT(!~ /^foo$/)`` means ``[t] == "foo"`` — a
+    # *narrower* match-set than the true ``=~ /^foo$/`` semantics. That
+    # narrower set unsoundly contradicts a peer fact like ``[t] != "foo"``
+    # whose witness ``"foo\n"`` lies *outside* the narrowed set but
+    # *inside* the true regex language. Letting ``!~`` stay as a
+    # :class:`RegexFact` keeps the algebra reasoning faithful.
     return None
 
 
@@ -125,15 +138,16 @@ def negated_literal_fact_from_condition(condition: str) -> LiteralFact | None:
 
 
 def _regex_fact_from_normalized_condition(condition: str) -> RegexFact | None:
-    """Produce a :class:`RegexFact` for ``[t] =~ /body/flags`` when the
-    body does *not* reduce to a literal (Phase 0 already handled those).
-    Returns ``None`` for non-``=~`` conditions or oversized bodies; the
-    Phase 1 algebra returns :attr:`Trilean.UNKNOWN` for unsupported
-    bodies (which propagates as "compatible" — sound)."""
+    """Produce a :class:`RegexFact` for ``[t] =~ /body/flags`` or
+    ``[t] !~ /body/flags`` when the body does *not* reduce to a literal
+    (Phase 0 already handled those). Returns ``None`` for non-match
+    conditions or oversized bodies; the Phase 1 algebra returns
+    :attr:`Trilean.UNKNOWN` for unsupported bodies (which propagates as
+    "compatible" — sound)."""
     extracted = extract_regex_literal(condition)
     if extracted is None:
         return None
-    return RegexFact(extracted.field, extracted.body, extracted.flags, is_match=True)
+    return RegexFact(extracted.field, extracted.body, extracted.flags, is_match=extracted.is_match)
 
 
 @lru_cache(maxsize=8192)
@@ -144,7 +158,7 @@ def _fact_from_condition(condition: str) -> Fact | None:
     )
     if literal is not None:
         return literal
-    # Phase 1: a ``=~`` whose body wasn't reducible to a LiteralFact
+    # Phase 1: a ``=~``/``!~`` whose body wasn't reducible to a LiteralFact
     # becomes a RegexFact for the symbolic algebra to reason about.
     return _regex_fact_from_normalized_condition(condition)
 
@@ -324,35 +338,20 @@ def _facts_contradict(left: Fact, right: Fact) -> bool:
         )
     if left.is_match and right.is_match:
         return regex_languages_disjoint(left.body, left.flags, right.body, right.flags) == Trilean.YES
-    # The arms below cover ``!~`` semantics. They are *currently
-    # unreachable* — ``_regex_fact_from_normalized_condition`` extracts
-    # only ``=~`` conditions, so ``is_match`` is always True for any
-    # RegexFact in flight today. The dispatch is kept so a future PR
-    # adding ``!~`` extraction has a clean place to plug in.
-    #
-    # TODO(!~ extraction): when ``_regex_fact_from_normalized_condition``
-    # learns to emit ``RegexFact(is_match=False)`` for ``[t] !~ /A/``,
-    # both pragma-marked arms below need parametrized tests covering:
-    #   * positive vs negative same-language => contradicts
-    #   * positive vs negative disjoint-language => compatible
-    #   * both negative => always compatible
-    # Drop the ``no cover`` markers in the same change.
-    if left.is_match != right.is_match:  # pragma: no cover - TODO(!~ extraction)
+    if left.is_match != right.is_match:
         # Positive vs negative: contradicted iff L(positive) ⊆ L(negative).
+        # Every value satisfying ``=~ /A/`` is in L(A); the ``!~ /B/`` peer
+        # excludes everything in L(B); the conjunction is unsatisfiable
+        # exactly when L(A) ⊆ L(B).
         positive, negative = (left, right) if left.is_match else (right, left)
         return language_subset(positive.body, positive.flags, negative.body, negative.flags) == Trilean.YES
-    # Both negative: never provably contradicts (something can satisfy
-    # neither pattern simultaneously by lying outside both languages).
-    return False  # pragma: no cover - TODO(!~ extraction)
+    # Both negative: never provably contradicts. A value can lie outside
+    # both languages, satisfying ``!~ /A/`` and ``!~ /B/`` simultaneously.
+    return False
 
 
 def _literal_vs_regex_contradicts(literal: LiteralFact, regex: RegexFact) -> bool:
-    # ``regex.is_match`` is True for every RegexFact emitted today —
-    # ``_regex_fact_from_normalized_condition`` only extracts ``=~``. The
-    # ``!~`` dispatch below is kept so a future PR adding ``!~`` extraction
-    # has a clean place to plug in. See the parallel dispatch in
-    # ``_facts_contradict`` (TODO(!~ extraction) marker there).
-    if not regex.is_match:  # pragma: no cover - TODO(!~ extraction)
+    if not regex.is_match:
         # ``[t] == "x"`` and ``[t] !~ /A/`` contradict iff ``"x"`` *is*
         # in L(A) (which would force a !~ violation). Symmetrically for
         # ``!=``.
