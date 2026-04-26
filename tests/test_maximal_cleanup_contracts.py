@@ -128,7 +128,11 @@ def test_render_helpers_do_not_own_final_newline_and_verbose_shows_all_source_fi
     text = render_text(result, verbose=True)
     assert not text.endswith("\n")
     assert "expression: x" in text
-    assert "details: {'k': 'v'}" in text
+    # Detail dict values render as JSON (double-quoted) rather than Python
+    # repr to keep the text output free of single-quote/None punctuation
+    # that would otherwise leak into log/CI surfaces.
+    assert 'details: {"k": "v"}' in text
+    assert "{'k': 'v'}" not in text
     assert not render_json(result).endswith("\n")
 
 

@@ -21,6 +21,11 @@ UDM field: target.ip
 Status: exact_capture
 
 Output anchors: event
+Candidate parser fields checked:
+  - target.ip
+  - event.target.ip
+  - event.idm.read_only_udm.target.ip
+
 Mappings:
   [1] status=exact_capture
       expression: dstAddr
@@ -31,6 +36,10 @@ Mappings:
           pattern: %{IP:dstAddr}
 ```
 
+(Parser-level warnings, when present, follow the mappings under a `Warnings:`
+heading; pass `--verbose` for parser locations, notes, taints, and
+structured-warning detail.)
+
 A conditional parser returns every reachable mapping with its predicates:
 
 ```bash
@@ -39,14 +48,25 @@ parser-lineage-analyzer examples/conditional_parser.cbn security_result.action
 
 ```text
 Mappings:
-  [1] status=conditional  expression: ALLOW
+  [1] status=conditional
+      expression: ALLOW
+      sources:
+        - constant:'ALLOW'
       conditions:
         - [action] == "allow"
-  [2] status=conditional  expression: BLOCK
+
+  [2] status=conditional
+      expression: BLOCK
+      sources:
+        - constant:'BLOCK'
       conditions:
         - NOT([action] == "allow")
         - [action] == "deny" or [action] == "drop"
-  [3] status=conditional  expression: UNKNOWN_ACTION
+
+  [3] status=conditional
+      expression: UNKNOWN_ACTION
+      sources:
+        - constant:'UNKNOWN_ACTION'
       conditions:
         - NOT([action] == "allow")
         - NOT([action] == "deny" or [action] == "drop")

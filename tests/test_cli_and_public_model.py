@@ -611,13 +611,17 @@ def test_cli_verbose_with_noop_modes_emits_stderr_warning(tmp_path, capsys):
     assert main([str(parser_file), "--compact-summary", "--verbose"]) == 0
     assert "verbose is ignored" in capsys.readouterr().err
 
-    # --json query + --verbose
-    assert main([str(parser_file), "target.ip", "--json", "--verbose"]) == 0
-    assert "verbose is ignored" in capsys.readouterr().err
 
-    # --compact-json query + --verbose
+def test_cli_verbose_with_json_modes_does_not_warn(tmp_path, capsys):
+    """--verbose + --json/--compact-json is a no-op rather than misleading.
+    JSON output already includes the parser_locations / notes / structured
+    warning detail that ``--verbose`` would surface in text mode, so
+    combining them is supported (no stderr warning)."""
+    parser_file = _write_parser(tmp_path)
+    assert main([str(parser_file), "target.ip", "--json", "--verbose"]) == 0
+    assert "verbose is ignored" not in capsys.readouterr().err
     assert main([str(parser_file), "target.ip", "--compact-json", "--verbose"]) == 0
-    assert "verbose is ignored" in capsys.readouterr().err
+    assert "verbose is ignored" not in capsys.readouterr().err
 
 
 def test_cli_verbose_with_text_query_does_not_warn(tmp_path, capsys):
@@ -769,3 +773,64 @@ def test_max_parser_bytes_constant_is_shared_with_analyzer():
     from parser_lineage_analyzer import analyzer as analyzer_module, cli as cli_module
 
     assert cli_module.MAX_PARSER_BYTES == analyzer_module.MAX_PARSER_BYTES
+
+
+def test_cli_emits_parse_recovery_warning_to_stderr_on_garbage_input(monkeypatch, capsys):
+    """A parser that fails to parse cleanly recovers via per-statement
+    fallback. Without a stderr signal the only indication is buried in the
+    body output, and downstream pipelines mistake "garbage in" for "valid
+    parser, no match" — both exit 0. Surface a stderr line so the failure
+    is at least visible; ``--strict`` is still required to convert it to a
+    non-zero exit."""
+    monkeypatch.setattr(sys, "stdin", io.StringIO("invalid syntax garbage\n"))
+    assert main(["-", "target.ip"]) == 0
+    err = capsys.readouterr().err
+    assert "parser recovered from" in err
+    assert "unparsed statement" in err
+
+
+def test_cli_does_not_warn_about_parse_recovery_for_clean_parser(tmp_path, capsys):
+    parser_file = _write_parser(tmp_path)
+    assert main([str(parser_file), "target.ip"]) == 0
+    err = capsys.readouterr().err
+    assert "parser recovered from" not in err
+
+
+def test_cli_summary_emits_parse_recovery_warning_to_stderr(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "stdin", io.StringIO("invalid syntax garbage\n"))
+    assert main(["-", "--summary"]) == 0
+    err = capsys.readouterr().err
+    assert "parser recovered from" in err
+
+
+def test_cli_text_output_scrubs_terminal_control_chars_in_warnings(tmp_path, capsys):
+    """Hostile parser content must not be able to spoof adjacent log lines
+    via \\r line-clobbering or recolor terminals via ANSI escapes when its
+    text is echoed back through warnings/unsupported messages. JSON output
+    is already safe because ``json.dumps`` escapes control characters."""
+    code = 'filter {\n  unknown_plugin_\x1b[31m_evil { setting => "\\rEVIL" }\n}\n'
+    parser_file = tmp_path / "evil.cbn"
+    parser_file.write_text(code, encoding="utf-8")
+    assert main([str(parser_file), "--summary"]) == 0
+    out = capsys.readouterr().out
+    assert "\x1b" not in out
+    assert "\r" not in out
+
+
+def test_io_anchor_is_publicly_exported():
+    """``IOAnchor`` is part of the documented public surface — analyzer
+    state exposes ``io_anchors`` on real parsers and SDK consumers need to
+    pattern-match the type without reaching into ``parser_lineage_analyzer.model``."""
+    from parser_lineage_analyzer import IOAnchor
+
+    assert "IOAnchor" in parser_lineage_analyzer.__all__
+    assert IOAnchor.__name__ == "IOAnchor"
+
+
+def test_legacy_status_alias_is_not_exported():
+    """``Status`` was a backward-compatible alias for ``LineageStatus`` from
+    a pre-public release. Initial v0.1.0 should not lock that alias into the
+    public surface."""
+    assert "Status" not in parser_lineage_analyzer.__all__
+    with pytest.raises(AttributeError):
+        parser_lineage_analyzer.Status  # noqa: B018  # attribute access asserts removal

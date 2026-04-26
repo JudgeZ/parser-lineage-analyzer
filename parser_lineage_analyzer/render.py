@@ -13,6 +13,31 @@ from .model import Lineage, QueryResult, TaintReason
 COMPACT_JSON_SAMPLE_LIMIT = 50
 _T = TypeVar("_T")
 
+# C0 control characters (0x00-0x1F) and DEL (0x7F) in echoed parser content
+# can spoof terminal output (\r line-clobbering, ANSI escapes recoloring or
+# embedding hyperlinks). Tab and newline are preserved; everything else in
+# the C0 range and DEL collapse to a single space so log/CI consumers see a
+# benign placeholder rather than the original byte. JSON output is unaffected
+# because ``json.dumps`` already escapes control characters.
+_CONTROL_CHAR_TRANSLATE: dict[int, str] = {i: " " for i in range(0, 32) if i not in (0x09, 0x0A)}
+_CONTROL_CHAR_TRANSLATE[0x7F] = " "
+
+
+def sanitize_for_terminal(text: str) -> str:
+    """Replace C0 control characters (except tab/newline) and DEL with a space."""
+    return text.translate(_CONTROL_CHAR_TRANSLATE)
+
+
+def _format_detail_value(value: object) -> str:
+    """Render a SourceRef detail value without leaking Python repr punctuation."""
+    if isinstance(value, str):
+        return sanitize_for_terminal(value)
+    if isinstance(value, bool) or value is None:
+        return json.dumps(value)
+    if isinstance(value, (int, float)):
+        return json.dumps(value)
+    return sanitize_for_terminal(json.dumps(value, sort_keys=True))
+
 
 def _clamp_limit(limit: int | None, *, max_limit: int | None = None) -> int | None:
     if limit is None:
@@ -122,8 +147,12 @@ def render_text(result: QueryResult, *, verbose: bool = False, limit: int | None
                     if verbose:
                         detail_keys = tuple(k for k in details if k != "kind")
                     for key in detail_keys:
-                        if key in details:
-                            lines.append(f"          {key}: {details[key]}")
+                        if key not in details:
+                            continue
+                        value = details[key]
+                        if value is None or value == "" or value == [] or value == {}:
+                            continue
+                        lines.append(f"          {key}: {_format_detail_value(value)}")
                 _append_omitted(lines, "        ", len(mapping.sources) - len(sources), "source", limit=render_limit)
             if mapping.conditions:
                 lines.append("      conditions:")
@@ -228,7 +257,7 @@ def render_text(result: QueryResult, *, verbose: bool = False, limit: int | None
                 detail += f" source={diagnostic.source_token}"
             lines.append(f"  - {detail}")
         _append_omitted(lines, "  ", len(diagnostics) - len(diagnostics_to_render), "diagnostic", limit=render_limit)
-    return "\n".join(lines)
+    return sanitize_for_terminal("\n".join(lines))
 
 
 def render_json(result: QueryResult) -> str:
@@ -263,6 +292,13 @@ def render_compact_json(result: QueryResult, *, limit: int = COMPACT_JSON_SAMPLE
     compact_limit = _clamp_limit(limit, max_limit=COMPACT_JSON_SAMPLE_LIMIT)
     if compact_limit is None:
         compact_limit = COMPACT_JSON_SAMPLE_LIMIT
+    # Compute the aggregate once and reuse it for status/is_conditional/has_*
+    # plus the diagnostics derivation. Going through the public properties
+    # (result.status, result.is_conditional, ...) would re-derive the same
+    # aggregate six times per render — measurable on high-cardinality output.
+    # ``_aggregate`` and ``_effective_diagnostics`` are intentionally kept
+    # package-internal: callers outside this package should use the public
+    # properties (``status``, ``is_conditional``, ``effective_diagnostics``).
     aggregate = result._aggregate()
     diagnostics = result._effective_diagnostics(aggregate)
     data = {

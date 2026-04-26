@@ -1,2 +1,5 @@
 include parser_lineage_analyzer/_native/*.pyx
 include parser_lineage_analyzer/_native/*.c
+include CHANGELOG.md SECURITY.md
+recursive-include tests *.py *.cbn *.expected.json *.md *.txt
+recursive-include tests/fixtures *

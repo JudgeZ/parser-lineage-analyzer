@@ -59,9 +59,6 @@ QueryStatus = Literal[
     "unresolved",
 ]
 
-# Backward-compatible alias for callers that imported the old name. Same
-# value set as ``LineageStatus``; documented above.
-Status = LineageStatus
 LINEAGE_STATUS_ORDER: tuple[LineageStatus, ...] = (
     "exact",
     "exact_capture",
