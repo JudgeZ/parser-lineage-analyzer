@@ -208,6 +208,13 @@ jobs:
     needs: [build_wheels, build_sdist, abi3_wheel_tests, pure_python_tests, lint_and_typecheck, security_audit]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-22.04
+    # Bound to a GitHub Environment so PyPI's Trusted Publisher contract can
+    # gate token issuance with environment protection rules (required
+    # reviewers, restrict-to-tags, wait timers). The PyPI publisher entry
+    # MUST mirror this environment name (`pypi`) or token issuance will fail.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/parser-lineage-analyzer
     permissions:
       id-token: write
       contents: read

@@ -395,8 +395,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.list:
         fields = rp.list_udm_fields()
-        list_summary = rp.analysis_summary()
-        _warn_if_parse_recovery(_summary_sequence(list_summary, "structured_warnings"))
+        # ``analyze()`` is memoized on the parser, so reading
+        # ``state.structured_warnings`` directly costs nothing here, while
+        # ``analysis_summary()`` does substantial dedup/aggregation work that
+        # is only needed for the strict gate. Defer the expensive build.
+        state = rp.analyze()
+        _warn_if_parse_recovery(state.structured_warnings)
         if args.json:
             print(json.dumps({"udm_fields": fields, "udm_fields_total": len(fields)}, indent=2))
         elif not fields:
@@ -404,10 +408,12 @@ def main(argv: list[str] | None = None) -> int:
         else:
             for f in fields:
                 print(sanitize_for_terminal(f))
-        if args.strict and _summary_has_strict_findings(list_summary):
-            sys.stdout.flush()
-            _print_strict_summary_failure(list_summary)
-            return 3
+        if args.strict:
+            list_summary = rp.analysis_summary()
+            if _summary_has_strict_findings(list_summary):
+                sys.stdout.flush()
+                _print_strict_summary_failure(list_summary)
+                return 3
         return 0
     if not args.udm_field:
         print(

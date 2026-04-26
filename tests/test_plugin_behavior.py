@@ -567,3 +567,27 @@ def test_mutate_canonical_order_excludes_unimplemented_ops_and_keeps_drift_check
     assert "mutate_ordering_drift" in drift_codes, (
         f"expected mutate_ordering_drift for replace-before-rename of supported ops, got {drift_codes}"
     )
+
+    # The original C6 bug: an unimplemented op inside the same mutate{} block
+    # as a supported ordering violation suppressed the drift check entirely
+    # (because the canonical-order tuple still mentioned `coerce`/`strip`,
+    # the per-block filter pulled them in alongside the supported ops, and
+    # the drift comparison no longer matched the supported-only handler set).
+    # After the fix, both diagnostics must surface from a single block.
+    mixed_text = r"""filter {
+      mutate {
+        coerce => { "host" => "default" }
+        replace => { "event.idm.read_only_udm.target.ip" => "1.1.1.1" }
+        rename => { "event.idm.read_only_udm.target.ip" => "event.idm.read_only_udm.target.host" }
+      }
+      mutate { merge => { "@output" => "event" } }
+    }"""
+    mixed_summary = ReverseParser(mixed_text).analysis_summary()
+    mixed_codes = {warning["code"] for warning in mixed_summary["structured_warnings"]}
+    assert "unsupported_mutate_operation" in mixed_codes, (
+        f"mixed-op block: expected unsupported_mutate_operation for `coerce`, got {mixed_codes}"
+    )
+    assert "mutate_ordering_drift" in mixed_codes, (
+        "mixed-op block: an unimplemented `coerce` must NOT suppress the drift check on supported ops "
+        f"(replace-before-rename); got {mixed_codes}"
+    )
