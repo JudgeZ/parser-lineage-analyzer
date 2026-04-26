@@ -1,0 +1,74 @@
+// EXPECTED EVALUATION:
+// This file is a severe regex and lexer stress test designed to break naive parsers.
+// It actively targets boundaries in the Lark scanner and Cython `_scanner_ext` heuristics:
+// 1. Ambiguous `//` sequences: Line comments vs unquoted XPath mapping keys vs regex literal content.
+// 2. Ambiguous `/` sequences: Bareword paths (`=> /var_{/`) vs regex literals.
+// 3. String escaping torture: `gsub` arrays containing escaped quotes `\"`, escaped slashes `\\`, 
+//    bracket characters `[`, `]`, and reference lookalikes `%{...}` inside regex strings.
+// 4. Bracket tracking: Unbalanced `{`, `}`, `[`, `]` inside regex literals and strings to ensure
+//    the scanner does not incorrectly adjust its block depth.
+// 5. Unquoted values: URLs containing `#` and `//` which should not be parsed as comments.
+
+filter {
+  // Test 1: Ambiguous `//` sequences and barewords
+  mutate {
+    replace => {
+      // Unquoted slash mapping keys (e.g. XPath) vs strings vs bare paths
+      //node//child/@id => "val1"
+      //another//node// => "val2"
+      "bare_url" => https://user:pass@example.com:8443/api/v1/auth#fragment // trailing comment
+      "bare_path" => /var/log/syslog_{date}/ // bare path with brace, not a regex!
+    }
+  }
+
+  // Test 2: Nasty Grok pattern with multiline string, escaped quotes, and nested groups
+  grok {
+    match => {
+      "message" => "(?x) # verbose regex mode
+        (?<unbalanced_brace_capture>^\[[0-9]+\]\s+
+        (?:\"[^\"]*\")?\s+ # match quotes
+        \{[^}]+\}\s+      # match braces
+        %{GREEDYDATA:rest}
+        )$"
+    }
+  }
+
+  // Test 3: The regex literal gauntlet in conditionals
+  // This regex literal contains: escaped slashes, unbalanced brackets, lookalike references
+  if [unbalanced_brace_capture] =~ /^([a-zA-Z]+):\/\/(?:\[[a-f0-9:]+\]|%{not_a_reference})(?:\/|\/\/|\/.\/)$/ {
+    mutate { replace => { "event.idm.read_only_udm.metadata.description" => "Path A" } }
+  } else if [bare_url] !~ /=>\s*\[\s*\]\s*\{\s*\}\s*#\s*\/\// /* block comment inside expression */ {
+    mutate { replace => { "event.idm.read_only_udm.metadata.description" => "Path B" } }
+  } else if [bare_path] =~ /[{}]/ {
+    mutate { replace => { "event.idm.read_only_udm.metadata.description" => "Path C" } }
+  } else {
+    mutate { replace => { "event.idm.read_only_udm.metadata.description" => "Path D" } }
+  }
+
+  // Test 4: Array parsing and string literal torture in gsub
+  // The scanner must maintain correct depth despite brackets inside strings
+  mutate {
+    gsub => [
+      // target, regex string, replacement string
+      "event.idm.read_only_udm.metadata.description", "\[(?<foo>[^\]]+)\](?:,\s*\"[^\"]*\")?", "\1",
+      "event.idm.read_only_udm.metadata.description", "\\\"\\\\\"\\\'", "escaped_madness",
+      "event.idm.read_only_udm.metadata.description", "(?i)branch\s+[A-Z]", "Resolved Branch",
+      "event.idm.read_only_udm.metadata.description", "([{}])|([\[\]])", "brackets"
+    ]
+  }
+
+  // Test 5: KV splitting with tricky characters
+  kv {
+    source => "message"
+    field_split => "\,"
+    value_split => "\="
+    trim_key => "\<\"\{\["
+    trim_value => "\>\"\}\]"
+  }
+
+  mutate {
+    merge => {
+      "@output" => "event"
+    }
+  }
+}
