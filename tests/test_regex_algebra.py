@@ -781,3 +781,58 @@ class TestReviewFindings:
         # Just confirm no raise + bounded time. Sound result either way.
         result = regex_languages_disjoint(body, "", "^A$", "")
         assert isinstance(result, Trilean)
+
+    def test_complement_dfa_respects_budget(self) -> None:
+        """The DFA-completion fill loop is ``O(num_states × num_classes)``,
+        up to ~1M iterations. It must poll the budget on the same
+        cadence as the BFS loops; with an already-expired deadline the
+        function returns ``None`` (which surfaces as ``UNKNOWN`` from
+        :func:`language_subset`) rather than running to completion.
+        """
+        from parser_lineage_analyzer._regex_algebra import (
+            _DFA,
+            _Budget,
+            _CharSet,
+            _complete_and_complement_dfa,
+        )
+
+        # Build a small synthetic DFA so the test is fast when the
+        # budget *isn't* expired.
+        partition = (_CharSet(frozenset({ord("a")}), False),)
+        dfa = _DFA(
+            num_states=2,
+            start=0,
+            accepts=frozenset({1}),
+            transitions={(0, 0): 1},
+            partition=partition,
+        )
+        # Fresh budget: the function should complete normally and
+        # return a complement DFA.
+        result = _complete_and_complement_dfa(dfa, _Budget.fresh())
+        assert result is not None
+        assert result.num_states == 3  # original 2 + sink
+        # Expired budget: the function must bail. ``_Budget(deadline=0.0)``
+        # is in the past, so ``budget.exceeded()`` is True from the
+        # first poll inside the loop.
+        expired = _Budget(deadline=0.0)
+        assert _complete_and_complement_dfa(dfa, expired) is None
+
+    def test_language_subset_does_not_exceed_5x_budget(self) -> None:
+        """End-to-end soak: hand :func:`language_subset` a pair
+        of patterns that build near-max DFAs. Even when the algebra
+        bails to ``UNKNOWN``, the wall-clock must stay within a
+        generous bound — proves the budget polls in the BFS *and* the
+        complement loop are both wired up."""
+        import time
+
+        # A pair that exercises the full pipeline: lower → NFA → DFA →
+        # complement → product BFS. Both bodies are real but moderately
+        # large; the algebra should either prove a result or hit a cap
+        # quickly.
+        body_a = r"^([a-z]|[A-Z]|[0-9]){1,32}$"
+        body_b = r"^[A-Za-z0-9]+$"
+        start = time.monotonic()
+        result = language_subset(body_a, "", body_b, "")
+        elapsed_ms = (time.monotonic() - start) * 1000
+        assert isinstance(result, Trilean)
+        assert elapsed_ms < ALGEBRA_TIME_BUDGET_MS * 5, f"language_subset took {elapsed_ms:.1f}ms"

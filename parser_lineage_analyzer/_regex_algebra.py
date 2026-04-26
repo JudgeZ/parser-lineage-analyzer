@@ -80,7 +80,17 @@ MAX_REPEAT_BOUND = 64  # `{n,m}` with m above this => UNKNOWN
 # Latin-1, single Unicode block) but rejects pathological wide ranges.
 MAX_CHARSET_SIZE = 1024
 ALGEBRA_TIME_BUDGET_MS = 25
-_TIME_CHECK_INTERVAL = 256
+# Iterations between ``time.monotonic`` polls inside the BFS / fill
+# loops. Must be a power of 2 (the bounded loops use bitwise ``&`` to
+# mask the iteration counter). Lowered from 256 → 32 after review:
+# each BFS step iterates the alphabet partition (up to 256 classes)
+# and an epsilon-closure pass per class, so 256 outer iterations could
+# do millions of inner ops between clock polls — enough to blow past
+# the 25ms budget by an order of magnitude before the first check
+# fired. 32 keeps the polling overhead negligible (one clock call per
+# ~32 popleft, ~200ns per call) while tightening the worst-case
+# overshoot to ~12% of the prior bound.
+_TIME_CHECK_INTERVAL = 32
 
 
 # -- Shape classification --------------------------------------------
@@ -1188,19 +1198,30 @@ def _nfa_to_dfa(nfa: _NFA, partition: tuple[_CharSet, ...], budget: _Budget) -> 
     )
 
 
-def _complete_and_complement_dfa(dfa: _DFA) -> _DFA | None:
+def _complete_and_complement_dfa(dfa: _DFA, budget: _Budget) -> _DFA | None:
     """Return a complete DFA whose accepting states are the original's
     *non*-accepting states. Adds a single sink state for missing
     transitions; the sink is always non-accepting in the original (so
-    accepting in the complement)."""
+    accepting in the complement).
+
+    The transition-fill loop is ``O(num_states × num_classes)`` —
+    up to ``MAX_DFA_STATES × MAX_ALPHABET_PARTITIONS`` ≈ 1M iterations
+    in the worst case. Polls the wall-clock budget on the same
+    ``_TIME_CHECK_INTERVAL`` cadence as the BFS loops; returns ``None``
+    when the budget is exceeded so callers propagate ``UNKNOWN``.
+    """
     if dfa.num_states + 1 > MAX_DFA_STATES:
         return None
     sink = dfa.num_states
     new_num_states = dfa.num_states + 1
     new_transitions = dict(dfa.transitions)
     num_classes = len(dfa.partition)
+    iterations = 0
     for s in range(new_num_states):
         for i in range(num_classes):
+            if iterations & (_TIME_CHECK_INTERVAL - 1) == 0 and budget.exceeded():
+                return None
+            iterations += 1
             new_transitions.setdefault((s, i), sink)
     new_accepts = frozenset(s for s in range(new_num_states) if s not in dfa.accepts)
     return _DFA(
@@ -1325,7 +1346,7 @@ def _subset_cached(body_a: str, flags_a: str, body_b: str, flags_b: str) -> Tril
     dfa_b = _nfa_to_dfa(nfa_b, partition, budget)
     if dfa_b is None:
         return Trilean.UNKNOWN
-    complement_b = _complete_and_complement_dfa(dfa_b)
+    complement_b = _complete_and_complement_dfa(dfa_b, budget)
     if complement_b is None:
         return Trilean.UNKNOWN
     return _intersect_empty_dfa(dfa_a, complement_b, budget)
