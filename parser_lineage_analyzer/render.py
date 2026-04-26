@@ -41,6 +41,14 @@ def _format_detail_value(value: object) -> str:
 
     Sanitization is intentionally NOT applied here — the caller
     (``render_text``) sanitizes the joined output once at the boundary.
+
+    ``SourceRef.details`` is statically typed as ``FrozenJSONDict``, but
+    the renderer is the wrong place to enforce that contract — a malformed
+    payload (a ``set``, a custom class, a circular reference) should
+    degrade gracefully rather than abort the whole render. Use
+    ``default=str`` to coerce stray non-JSON-serializable values, and a
+    try/except for the residual ``ValueError``/``TypeError`` paths
+    (circular references, ``str()`` itself raising).
     """
     if isinstance(value, str):
         return value
@@ -48,7 +56,14 @@ def _format_detail_value(value: object) -> str:
         return json.dumps(value)
     if isinstance(value, (int, float)):
         return json.dumps(value)
-    return json.dumps(value, sort_keys=True)
+    try:
+        return json.dumps(value, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        # Final fallback. Anything that can't even round-trip via
+        # json.dumps + default=str (circular containers, ``str()``
+        # itself raising) is rendered with ``repr`` so the value is
+        # still visible without aborting the surrounding render.
+        return repr(value)
 
 
 def _clamp_limit(limit: int | None, *, max_limit: int | None = None) -> int | None:

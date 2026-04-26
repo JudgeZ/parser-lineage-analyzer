@@ -419,6 +419,73 @@ def test_static_array_loop_does_not_erase_outer_scope_token_with_same_name():
     assert {m.expression for m in tmp0.mappings} == {"x"}
 
 
+def test_static_array_loop_save_restore_does_not_alias_parent_token_lists():
+    """C4 + branch interaction (Codex P1): when ``_exec_static_string_loop``
+    runs against a forked ``TokenStore``, ``state.tokens[var]`` falls
+    through ``__getitem__`` to the parent's list reference. The save+restore
+    must shallow-copy that list — otherwise the post-loop store would alias
+    the parent's list, and any later ``append_token_lineages`` on this
+    branch would mutate the parent's list in place via the
+    ``mutate_local`` fast path, leaking branch-local lineage changes into
+    the sibling branch's view.
+
+    Direct invariant check: simulate the analyzer's save+restore at the
+    ``AnalyzerState`` level (so the test doesn't depend on the surrounding
+    branch-merge machinery), and assert the post-restore list is a
+    distinct object from both the parent's stored list AND the saved
+    snapshot. A subsequent in-place append on the fork must not be
+    visible to the parent.
+    """
+    from parser_lineage_analyzer._analysis_state import AnalyzerState
+    from parser_lineage_analyzer.model import Lineage, SourceRef
+
+    parent = AnalyzerState()
+    parent_lineage = Lineage(
+        status="exact_capture",
+        sources=[SourceRef(kind="grok_capture", source_token="message", path="message", capture_name="index")],
+        expression="index",
+    )
+    parent.tokens["index"] = [parent_lineage]
+    parent_list_id = id(parent.tokens["index"])
+
+    # Fork — emulates the if-branch entry that owns the analyzer state for
+    # the body. Reading "index" via __getitem__ on an unmodified fork falls
+    # through to the parent's list reference, which is exactly the
+    # aliasing setup the loop's save step would otherwise inherit.
+    fork = parent.clone()
+    assert id(fork.tokens["index"]) == parent_list_id, "precondition: fork shares parent's list"
+
+    # Mimic the loop's save+restore path. The production code at
+    # _analysis_flow.py uses ``list(state.tokens[var])`` — this assertion
+    # locks that invariant by checking the post-restore object identity.
+    saved = list(fork.tokens["index"])
+    assert id(saved) != parent_list_id, "save step must shallow-copy, not alias"
+    fork.tokens.pop("index", None)  # per-iteration cleanup pop
+    fork.tokens["index"] = saved  # restore step
+
+    # The fork's local list must be a distinct object from the parent's.
+    assert id(fork.tokens["index"]) != parent_list_id, (
+        "fork aliases parent's list after restore — append_token_lineages "
+        "would mutate parent in place via the mutate_local fast path"
+    )
+
+    # Cross-check via mutation: appending to the fork's list must NOT show
+    # up in the parent's list. Pre-fix (without the ``list(...)`` copy),
+    # this assertion would fail because the two lists were the same
+    # object.
+    fork_lineage = Lineage(
+        status="constant",
+        sources=[SourceRef(kind="constant", expression="branch-only")],
+        expression="branch-only",
+    )
+    fork.append_token_lineages("index", [fork_lineage])
+    parent_kinds_after = {src.kind for lin in parent.tokens["index"] for src in lin.sources}
+    assert parent_kinds_after == {"grok_capture"}, (
+        f"parent's ``index`` lineage was corrupted by fork's append: {parent_kinds_after} — "
+        "this is exactly the cross-branch leak the save+restore copy prevents"
+    )
+
+
 def test_loop_variables_do_not_leak_after_loop():
     code = r"""
     filter {

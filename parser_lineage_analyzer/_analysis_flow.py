@@ -1273,14 +1273,24 @@ class FlowExecutorMixin:
         # loop and restore them after. Iteration-scoped tokens that the body
         # creates (e.g. ``index.subfield``) stay correctly cleaned up
         # because the restore only writes names that existed beforehand.
+        #
+        # Critical: the saved values must be SHALLOW COPIES of the lineage
+        # lists, not the lists themselves. ``state.tokens[var]`` on a forked
+        # ``TokenStore`` falls through ``__getitem__`` to ``self._base[key]``,
+        # returning the PARENT'S list reference verbatim. If we restored that
+        # reference into the fork's ``_data``, any later
+        # ``append_token_lineages`` on this fork would hit the
+        # ``mutate_local`` fast path and append to the parent's list in
+        # place, leaking branch-local writes across branches. ``list(...)``
+        # gives the fork its own owned list to mutate.
         saved_outer: dict[str, list[Lineage]] = {}
         for var in bound_vars:
             if var == "_":
                 continue
             if var in state.tokens:
-                saved_outer[var] = state.tokens[var]
+                saved_outer[var] = list(state.tokens[var])
             for token_name in state.descendant_tokens(var):
-                saved_outer[token_name] = state.tokens[token_name]
+                saved_outer[token_name] = list(state.tokens[token_name])
 
         for index, value in enumerate(values):
             if is_indexed:
