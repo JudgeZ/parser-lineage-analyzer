@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=82.0.1"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -21,14 +21,14 @@ dependencies = ["lark>=1.1,<2", "pydantic>=2,<3"]
 
 [project.optional-dependencies]
 dev = [
-  "pytest>=7",
-  "pytest-timeout>=2.3",
-  "ruff>=0.4",
-  "mypy>=1.8",
-  "Cython>=3,<4",
-  "cibuildwheel>=2.16",
-  "bandit[toml]>=1.7",
-  "hypothesis>=6.100",
+  "pytest>=9.0.3",
+  "pytest-timeout>=2.4.0",
+  "ruff>=0.15.12",
+  "mypy>=1.20.2",
+  "Cython>=3.2.4,<4",
+  "cibuildwheel>=2.23.4",
+  "bandit[toml]>=1.9.4",
+  "hypothesis>=6.152.2",
 ]
 
 [project.scripts]
@@ -104,7 +104,7 @@ disallow_untyped_defs = false
 [tool.cibuildwheel]
 build = "cp310-*"
 skip = "*-musllinux_*"
-test-requires = ["pytest>=7", "pytest-timeout>=2.3"]
+test-requires = ["pytest>=9.0.3", "pytest-timeout>=2.4.0"]
 test-command = "python -c \"import parser_lineage_analyzer._native._scanner_ext; import parser_lineage_analyzer._native._config_fast_ext; import parser_lineage_analyzer._native._dedupe_ext; import parser_lineage_analyzer._native._template_ext; import parser_lineage_analyzer._native._branch_merge_ext\" && python -m pytest {project}/tests/test_parser_frontend.py {project}/tests/test_native_acceleration.py {project}/tests/test_native_differential_fuzz.py && parser-lineage-analyzer --help"
 
 [tool.cibuildwheel.linux]
