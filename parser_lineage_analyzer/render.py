@@ -24,19 +24,31 @@ _CONTROL_CHAR_TRANSLATE[0x7F] = " "
 
 
 def sanitize_for_terminal(text: str) -> str:
-    """Replace C0 control characters (except tab/newline) and DEL with a space."""
+    """Replace C0 control characters (except tab/newline) and DEL with a space.
+
+    Applied at the outermost text-output boundary (``render_text`` returns
+    ``sanitize_for_terminal("\\n".join(lines))``) so every echoed parser
+    fragment gets scrubbed in a single pass. Helpers that produce
+    intermediate strings (e.g. ``_format_detail_value``) deliberately do NOT
+    re-sanitize — keeping the boundary single-shot makes audits easier and
+    avoids double-translation work on every render.
+    """
     return text.translate(_CONTROL_CHAR_TRANSLATE)
 
 
 def _format_detail_value(value: object) -> str:
-    """Render a SourceRef detail value without leaking Python repr punctuation."""
+    """Render a SourceRef detail value as JSON instead of Python repr.
+
+    Sanitization is intentionally NOT applied here — the caller
+    (``render_text``) sanitizes the joined output once at the boundary.
+    """
     if isinstance(value, str):
-        return sanitize_for_terminal(value)
+        return value
     if isinstance(value, bool) or value is None:
         return json.dumps(value)
     if isinstance(value, (int, float)):
         return json.dumps(value)
-    return sanitize_for_terminal(json.dumps(value, sort_keys=True))
+    return json.dumps(value, sort_keys=True)
 
 
 def _clamp_limit(limit: int | None, *, max_limit: int | None = None) -> int | None:
@@ -293,14 +305,13 @@ def render_compact_json(result: QueryResult, *, limit: int = COMPACT_JSON_SAMPLE
     if compact_limit is None:
         compact_limit = COMPACT_JSON_SAMPLE_LIMIT
     # Compute the aggregate once and reuse it for status/is_conditional/has_*
-    # plus the diagnostics derivation. Going through the public properties
-    # (result.status, result.is_conditional, ...) would re-derive the same
-    # aggregate six times per render — measurable on high-cardinality output.
-    # ``_aggregate`` and ``_effective_diagnostics`` are intentionally kept
-    # package-internal: callers outside this package should use the public
-    # properties (``status``, ``is_conditional``, ``effective_diagnostics``).
-    aggregate = result._aggregate()
-    diagnostics = result._effective_diagnostics(aggregate)
+    # plus the diagnostics derivation. Going through the per-property
+    # accessors (result.status, result.is_conditional, ...) would re-derive
+    # the same aggregate six times per render — measurable on high-cardinality
+    # output. ``aggregate()`` and ``compute_effective_diagnostics(aggregate)``
+    # are public for exactly this pattern.
+    aggregate = result.aggregate()
+    diagnostics = result.compute_effective_diagnostics(aggregate)
     data = {
         "udm_field": result.udm_field,
         "status": aggregate.status,

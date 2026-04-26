@@ -361,7 +361,7 @@ def test_compact_json_bounds_nested_mapping_metadata_but_full_json_preserves_it(
 
 def test_compact_json_uses_single_query_result_aggregate(monkeypatch):
     calls = 0
-    original_aggregate = QueryResult._aggregate
+    original_aggregate = QueryResult.aggregate
     result = QueryResult(
         "f",
         ["f"],
@@ -376,7 +376,7 @@ def test_compact_json_uses_single_query_result_aggregate(monkeypatch):
         calls += 1
         return original_aggregate(self)
 
-    monkeypatch.setattr(QueryResult, "_aggregate", counting_aggregate)
+    monkeypatch.setattr(QueryResult, "aggregate", counting_aggregate)
 
     payload = json.loads(render_compact_json(result))
 

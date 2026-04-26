@@ -257,10 +257,15 @@ class ResolutionMixin:
         token = _strip_ref(str(token))
         generation_key = state.inference_generation_key()
         if token in state.tokens:
-            inferred_generation = state._inferred_token_generations.get(token)
+            # Read both inferred-cache dicts via the ``_data`` backing store to
+            # skip the COW shallow-copy in the property getter — this is a pure
+            # read, no mutation. The neighboring mutation site at line 301 still
+            # goes through the public property so the COW fires before the
+            # wholesale set replacement.
+            inferred_generation = state._inferred_token_generations_data.get(token)
             if inferred_generation is None or inferred_generation == generation_key:
                 return state.tokens[token]
-            stale_inferred_keys = state._inferred_token_lineage_keys.get(token, set())
+            stale_inferred_keys = state._inferred_token_lineage_keys_data.get(token, set())
             existing_lineages = state.tokens[token]
             if stale_inferred_keys:
                 preserved_lineages = [

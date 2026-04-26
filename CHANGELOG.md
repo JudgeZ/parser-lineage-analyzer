@@ -13,16 +13,35 @@ Initial public release.
 - `parser-lineage-analyzer` CLI for tracing UDM fields back to the raw-log
   fields, captures, or expressions that populate them in Google SecOps /
   Chronicle parser code.
-- Public Python API (`ReverseParser`, `QueryResult`, `Lineage`, status and
-  diagnostic models) under `parser_lineage_analyzer`.
+- Public Python API under `parser_lineage_analyzer`:
+  - `ReverseParser`, `QueryResult`, `Lineage`, `SourceRef` — analyzer
+    entry point and result types.
+  - `LineageStatus`, `QueryStatus` — status enums (`exact`,
+    `exact_capture`, `conditional`, `derived`, `constant`, `repeated`,
+    `dynamic`, `removed`, `unresolved`, plus aggregate `partial`).
+  - `OutputAnchor`, `IOAnchor` — `@output` event anchors and top-level
+    Logstash-style input/output plugin instances.
+  - `QueryResultAggregate` plus `QueryResult.aggregate()` /
+    `QueryResult.compute_effective_diagnostics(aggregate)` — single-pass
+    snapshot of every cross-mapping derived field, for renderers that
+    need more than one of `status`/`is_conditional`/`has_dynamic`/etc.
+  - `TaintReason`, `WarningReason`, `DiagnosticRecord`,
+    `SyntaxDiagnostic` — structured diagnostic types.
+  - `analysis_summary()` returns a `TypedDict`
+    (`AnalysisSummaryDict | CompactAnalysisSummaryDict`) so static
+    consumers don't need `isinstance` guards on every key read.
 - Native acceleration extensions (scanner, config, dedupe, template, branch
   merge) built as abi3 wheels for CPython 3.10+ on Linux, macOS, and Windows.
 - Branch-aware lineage with per-path predicates, taint tracking, and
   structured diagnostics.
 - Hypothesis property tests, differential fuzzing against the pure-Python
-  fallbacks, and Atheris fuzz harnesses.
+  fallbacks, and Atheris fuzz harnesses (pure-Python and native-extension
+  enabled jobs).
 - CodeQL, Bandit, pip-audit, and ruff (with B/SIM/UP/I rules) wired into CI.
-- Architecture notes in `docs/ARCHITECTURE.md` and security policy in
-  `SECURITY.md`.
+- PyPI publishing on tag push via OIDC Trusted Publishing (no API tokens
+  in GitHub secrets); first release requires one-time configuration at
+  https://pypi.org/manage/account/publishing/ with the `pypi` environment.
+- Architecture notes in `docs/ARCHITECTURE.md`, security policy in
+  `SECURITY.md`, and contributor guide in `CONTRIBUTING.md`.
 
 [0.1.0]: https://github.com/JudgeZ/parser-lineage-analyzer/releases/tag/v0.1.0

@@ -556,6 +556,65 @@ def test_status_from_aggregate_distinguishes_derived_from_repeated_by_merge_evid
     assert repeated.status == "repeated"
 
 
+def test_status_from_aggregate_merge_evidence_uses_word_boundary():
+    """C1 sharp-edge: the merge/add_tag/add_field evidence match must use
+    word boundaries, not naive substring matches. Hypothetical future
+    parser-location strings like ``remerge``, ``add_field_validator``, or
+    ``premerge_step`` would have falsely tripped ``repeated`` under the
+    original substring form. Today's analyzer doesn't produce any such
+    strings, but future plugins or tests could; this test pins the
+    behavior so a regression to substring matching surfaces here.
+    """
+    from parser_lineage_analyzer import Lineage, QueryResult, SourceRef
+
+    for substring_collision in ("remerge", "merger_step", "premerge", "add_field_validator", "subadd_tag_helper"):
+        result = QueryResult(
+            "f",
+            ["f"],
+            [
+                Lineage(
+                    status="exact",
+                    sources=[SourceRef(kind="raw", path="a")],
+                    expression="a",
+                    parser_locations=[f"line 1: {substring_collision}"],
+                ),
+                Lineage(status="exact", sources=[SourceRef(kind="raw", path="b")], expression="b"),
+            ],
+        )
+        assert result.status == "derived", (
+            f"substring collision {substring_collision!r} falsely triggered repeated — "
+            "regression to substring-match in _status_from_aggregate"
+        )
+
+
+def test_query_result_aggregate_is_publicly_exported_and_returned_by_aggregate():
+    """``aggregate()`` and ``compute_effective_diagnostics(...)`` are the
+    public methods that renderers should use to compute every cross-mapping
+    derived field in a single pass. The companion ``QueryResultAggregate``
+    dataclass must be importable from the package root so static consumers
+    can annotate the return type without reaching into ``...model``.
+    """
+    from parser_lineage_analyzer import Lineage, QueryResult, QueryResultAggregate, SourceRef
+
+    assert "QueryResultAggregate" in parser_lineage_analyzer.__all__
+    result = QueryResult(
+        "f",
+        ["f"],
+        [
+            Lineage(status="dynamic", sources=[SourceRef(kind="raw", path="a")], conditions=["c"]),
+            Lineage(status="exact", sources=[SourceRef(kind="raw", path="b")]),
+        ],
+    )
+    aggregate = result.aggregate()
+    assert isinstance(aggregate, QueryResultAggregate)
+    assert aggregate.status == "dynamic"
+    assert aggregate.is_conditional is True
+    assert aggregate.has_dynamic is True
+    # The diagnostics helper accepts a precomputed aggregate so renderers
+    # don't recompute it.
+    assert isinstance(result.compute_effective_diagnostics(aggregate), list)
+
+
 def test_scanner_has_no_backend_env_contract():
     assert not hasattr(scanner, "scanner_backend")
     assert scanner.strip_comments_keep_offsets("x // comment\n") == "x           \n"

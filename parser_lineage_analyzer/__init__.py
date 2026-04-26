@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 _PUBLIC_EXPORTS = (
     "ReverseParser",
     "QueryResult",
+    "QueryResultAggregate",
     "Lineage",
     "LineageStatus",
     "QueryStatus",
@@ -32,6 +33,7 @@ if TYPE_CHECKING:
         LineageStatus as LineageStatus,
         OutputAnchor as OutputAnchor,
         QueryResult as QueryResult,
+        QueryResultAggregate as QueryResultAggregate,
         QueryStatus as QueryStatus,
         SourceRef as SourceRef,
         SyntaxDiagnostic as SyntaxDiagnostic,
@@ -44,6 +46,7 @@ __version__ = "0.1.0"
 
 _MODEL_EXPORTS = {
     "QueryResult",
+    "QueryResultAggregate",
     "Lineage",
     "LineageStatus",
     "QueryStatus",
