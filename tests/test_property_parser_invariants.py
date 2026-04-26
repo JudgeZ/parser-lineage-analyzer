@@ -12,6 +12,8 @@ deadline doubles as a ReDoS / pathological-backtracking guard.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from hypothesis import given, strategies as st
 
 from parser_lineage_analyzer.config_parser import parse_config_with_diagnostics
@@ -68,17 +70,16 @@ _SAFE_STRING_BODY = st.text(
     max_size=20,
 )
 _PLUGIN_NAMES = st.sampled_from(["json", "grok", "mutate", "kv", "csv", "xml", "date", "drop", "ruby"])
-_CORRUPTIONS = st.sampled_from(
-    [
-        lambda s: s,
-        lambda s: s[:-1] if s else s,  # truncate
-        lambda s: s.replace("}", "", 1),  # drop one closing brace
-        lambda s: s.replace('"', "", 1),  # unbalance a quote
-        lambda s: s + " { dangling",  # append unclosed block
-        lambda s: s.replace("=>", "==", 1),  # corrupt the arrow
-        lambda s: s + "\n" + s,  # duplicate (stress recovery)
-    ]
-)
+_CORRUPTION_FUNCS: list[Callable[[str], str]] = [
+    lambda s: s,
+    lambda s: s[:-1] if s else s,  # truncate
+    lambda s: s.replace("}", "", 1),  # drop one closing brace
+    lambda s: s.replace('"', "", 1),  # unbalance a quote
+    lambda s: s + " { dangling",  # append unclosed block
+    lambda s: s.replace("=>", "==", 1),  # corrupt the arrow
+    lambda s: s + "\n" + s,  # duplicate (stress recovery)
+]
+_CORRUPTIONS = st.sampled_from(_CORRUPTION_FUNCS)
 
 
 @st.composite

@@ -217,14 +217,14 @@ def _split_top_level(condition: str, separator: str) -> list[str]:
             i += 1
             continue
         if paren == 0 and ch == " " and condition.startswith(separator, i):
-            # Word-boundary check: the character after the separator can't be
-            # an identifier char (so we don't split `branding` on " and ").
-            after = i + sep_len
-            if after >= n or not (condition[after].isalnum() or condition[after] == "_"):
-                parts.append("".join(buf).strip())
-                buf = []
-                i = after
-                continue
+            # The separator's leading and trailing spaces (e.g. " and ") are
+            # the word boundaries: " and " cannot match inside ``branding``
+            # because there is no preceding space, and cannot match before
+            # ``andx`` because the trailing-space char would not align.
+            parts.append("".join(buf).strip())
+            buf = []
+            i += sep_len
+            continue
         buf.append(ch)
         i += 1
     parts.append("".join(buf).strip())
@@ -313,8 +313,12 @@ def _facts_contradict(left: Fact, right: Fact) -> bool:
     if isinstance(left, RegexFact) and isinstance(right, LiteralFact):
         return _literal_vs_regex_contradicts(right, left)
 
-    # Both regex: defer to the symbolic algebra.
-    assert isinstance(left, RegexFact) and isinstance(right, RegexFact)
+    # Both regex: defer to the symbolic algebra. The earlier branches
+    # exhaust every other Fact-type pairing, so by elimination both
+    # operands are RegexFact here. The explicit guard documents the
+    # invariant and survives ``python -O`` (which strips ``assert``).
+    if not (isinstance(left, RegexFact) and isinstance(right, RegexFact)):
+        raise TypeError(f"Unhandled fact pair: {type(left).__name__}, {type(right).__name__}")
     if left.is_match and right.is_match:
         return regex_languages_disjoint(left.body, left.flags, right.body, right.flags) == Trilean.YES
     # The arms below cover ``!~`` semantics. They are *currently
@@ -340,7 +344,12 @@ def _facts_contradict(left: Fact, right: Fact) -> bool:
 
 
 def _literal_vs_regex_contradicts(literal: LiteralFact, regex: RegexFact) -> bool:
-    if not regex.is_match:
+    # ``regex.is_match`` is True for every RegexFact emitted today —
+    # ``_regex_fact_from_normalized_condition`` only extracts ``=~``. The
+    # ``!~`` dispatch below is kept so a future PR adding ``!~`` extraction
+    # has a clean place to plug in. See the parallel dispatch in
+    # ``_facts_contradict`` (TODO(!~ extraction) marker there).
+    if not regex.is_match:  # pragma: no cover - TODO(!~ extraction)
         # ``[t] == "x"`` and ``[t] !~ /A/`` contradict iff ``"x"`` *is*
         # in L(A) (which would force a !~ violation). Symmetrically for
         # ``!=``.

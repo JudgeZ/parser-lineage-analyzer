@@ -1310,7 +1310,8 @@ def _intersect_empty_dfa(dfa_a: _DFA, dfa_b: _DFA, budget: _Budget) -> Trilean:
     """Intersection emptiness over two DFAs that share an alphabet
     partition. Used by language-subset (where one side is the complement
     DFA, which only makes sense when fully constructed)."""
-    assert dfa_a.partition == dfa_b.partition
+    if dfa_a.partition != dfa_b.partition:
+        raise ValueError("DFAs must share the same alphabet partition")
     num_classes = len(dfa_a.partition)
     start = (dfa_a.start, dfa_b.start)
     seen: set[tuple[int, int]] = {start}

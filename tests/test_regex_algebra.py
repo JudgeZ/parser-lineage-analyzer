@@ -714,7 +714,7 @@ class TestRegexStressFile:
 
         parser = ReverseParser(stress_file_text)
         result = parser.query("event.idm.read_only_udm.metadata.description")
-        expressions = sorted({m.expression for m in result.mappings})
+        expressions = sorted({m.expression for m in result.mappings if m.expression is not None})
         assert expressions == ["Path A", "Path B", "Path C", "Path D"]
 
     def test_analyzer_completes_in_reasonable_time(self, stress_file_text: str) -> None:

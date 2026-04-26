@@ -14,13 +14,29 @@ try:
 except ImportError:
     pass
 else:
-    _HYPOTHESIS_COMMON = {"deadline": 2000, "suppress_health_check": [HealthCheck.too_slow]}
+    _HYPOTHESIS_DEADLINE_MS = 2000
+    _HYPOTHESIS_SUPPRESS = [HealthCheck.too_slow]
     # CI profile: the default. Cheap, runs on every PR. ~1s per property.
-    settings.register_profile("ci", max_examples=200, **_HYPOTHESIS_COMMON)
+    settings.register_profile(
+        "ci",
+        max_examples=200,
+        deadline=_HYPOTHESIS_DEADLINE_MS,
+        suppress_health_check=_HYPOTHESIS_SUPPRESS,
+    )
     # Deep profile: local exploration. ~20s per property at current generation rate.
-    settings.register_profile("deep", max_examples=20000, **_HYPOTHESIS_COMMON)
+    settings.register_profile(
+        "deep",
+        max_examples=20000,
+        deadline=_HYPOTHESIS_DEADLINE_MS,
+        suppress_health_check=_HYPOTHESIS_SUPPRESS,
+    )
     # Soak profile: overnight / pre-release. ~3-5min per property.
-    settings.register_profile("soak", max_examples=200000, **_HYPOTHESIS_COMMON)
+    settings.register_profile(
+        "soak",
+        max_examples=200000,
+        deadline=_HYPOTHESIS_DEADLINE_MS,
+        suppress_health_check=_HYPOTHESIS_SUPPRESS,
+    )
     settings.load_profile("ci")
 
 

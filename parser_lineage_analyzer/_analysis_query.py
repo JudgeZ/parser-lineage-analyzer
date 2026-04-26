@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from bisect import insort
 from collections import Counter
-from typing import Protocol, TypedDict, cast
+from typing import Protocol, cast
 
 from ._analysis_helpers import (
     _dedupe_diagnostics,
@@ -21,6 +21,8 @@ from ._analysis_helpers import (
 from ._analysis_state import AnalyzerState
 from ._types import JSONDict, JSONValue
 from .model import (
+    AnalysisSummaryDict,
+    CompactAnalysisSummaryDict,
     DiagnosticRecord,
     Lineage,
     OutputAnchor,
@@ -29,73 +31,6 @@ from .model import (
     TaintReason,
     WarningReason,
 )
-
-
-class AnalysisSummaryDict(TypedDict, total=False):
-    """Static shape of :meth:`AnalysisQueryMixin.analysis_summary` (non-compact).
-
-    Every key is optional (``total=False``) because some entries — notably
-    ``value_type_summary`` — are only emitted when the underlying analyzer
-    state has anything to report. The runtime values follow the same
-    JSON-compatible semantics as ``JSONDict`` (see ``_types.JSONValue``); this
-    TypedDict simply pins the per-key types so static consumers don't need to
-    rediscover them via ``isinstance`` guards on every read.
-    """
-
-    udm_fields: list[str]
-    output_anchors: list[JSONDict]
-    unsupported: list[str]
-    warnings: list[str]
-    structured_warnings: list[JSONDict]
-    diagnostics: list[JSONDict]
-    taints: list[JSONDict]
-    token_count: int
-    json_extractions: list[JSONDict]
-    csv_extractions: list[JSONDict]
-    kv_extractions: list[JSONDict]
-    xml_extractions: list[JSONDict]
-    value_type_summary: dict[str, JSONValue]
-
-
-class CompactAnalysisSummaryDict(TypedDict, total=False):
-    """Static shape of :meth:`AnalysisQueryMixin.analysis_summary` (compact).
-
-    Mirrors :class:`AnalysisSummaryDict` and adds the ``*_total`` counters,
-    the ``compact_summary`` envelope, and the per-code count maps emitted only
-    by the bounded summary path. ``total=False`` keeps the contract honest:
-    not every counter is present in every payload (the implementation only
-    emits the keys it actually populates), so callers should still go through
-    ``.get()`` / the CLI ``_summary_*`` helpers.
-    """
-
-    compact_summary: dict[str, JSONValue]
-    udm_fields: list[str]
-    udm_fields_total: int
-    output_anchors: list[JSONDict]
-    unsupported: list[str]
-    warnings: list[str]
-    structured_warnings: list[JSONDict]
-    diagnostics: list[JSONDict]
-    taints: list[JSONDict]
-    token_count: int
-    json_extractions: list[JSONDict]
-    csv_extractions: list[JSONDict]
-    kv_extractions: list[JSONDict]
-    xml_extractions: list[JSONDict]
-    warning_counts: dict[str, int]
-    taint_counts: dict[str, int]
-    diagnostic_counts: dict[str, int]
-    unsupported_total: int
-    warnings_total: int
-    structured_warnings_total: int
-    diagnostics_total: int
-    taints_total: int
-    output_anchors_total: int
-    json_extractions_total: int
-    csv_extractions_total: int
-    kv_extractions_total: int
-    xml_extractions_total: int
-
 
 SUMMARY_SAMPLE_LIMIT = 50
 MAX_ANCHOR_CONDITIONED_COMPACT_MAPPINGS = 50_000

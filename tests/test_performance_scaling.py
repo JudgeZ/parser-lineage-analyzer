@@ -1,10 +1,11 @@
 import os
 import time
 from pathlib import Path
+from typing import cast
 
 import pytest
 
-from parser_lineage_analyzer import ReverseParser
+from parser_lineage_analyzer import CompactAnalysisSummaryDict, ReverseParser
 from parser_lineage_analyzer._analysis_assignment import MAX_LITERAL_COLLECTION_LINEAGES
 from parser_lineage_analyzer._analysis_state import AnalyzerState, ExtractionHint
 from parser_lineage_analyzer._scanner import strip_comments_keep_offsets
@@ -633,7 +634,7 @@ def test_standalone_on_error_blocks_use_delta_reconciliation():
 def test_branch_local_extractors_and_anchors_do_not_force_full_token_merge(count: int, budget: float):
     elapsed, parser = _analysis_seconds(_branch_local_metadata_parser(count))
     assert elapsed < budget
-    summary = parser.analysis_summary(compact=True)
+    summary = cast(CompactAnalysisSummaryDict, parser.analysis_summary(compact=True))
     assert summary["json_extractions_total"] == count
     assert summary["output_anchors_total"] == count
 
@@ -1175,7 +1176,7 @@ def test_secops_routing_else_if_chain_uses_sparse_branch_merge(count: int, budge
         pytest.skip("strict parse+analysis budget requires native scanner/config acceleration")
     elapsed, parser = _parse_and_analysis_seconds(_secops_routing_chain_parser(count))
     assert elapsed < budget
-    summary = parser.analysis_summary(compact=True)
+    summary = cast(CompactAnalysisSummaryDict, parser.analysis_summary(compact=True))
     assert summary["token_count"] == (count * 3) + 18
     assert summary["json_extractions_total"] == 1
     assert summary["xml_extractions_total"] == count // 3 + (1 if count % 3 >= 2 else 0)
