@@ -29,9 +29,10 @@ every limit-hit path is exercised by a test in
 from __future__ import annotations
 
 import re
+import threading
 import time
 import warnings
-from collections import deque
+from collections import OrderedDict, deque
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import lru_cache
@@ -621,10 +622,17 @@ def _ir_concat_many(parts: list[_IR]) -> _IR:
 # Logstash uses Oniguruma named-capture syntax `(?<name>...)`; Python's
 # stdlib regex uses `(?P<name>...)`. They're semantically identical for
 # matching (capture names are immaterial here), so we rewrite before
-# handing the body to ``sre_parse``. Lookbehind ``(?<=`` / ``(?<!`` is
-# *not* rewritten because the regex below requires an identifier char
-# immediately after ``<``.
-_ONIGURUMA_NAMED_CAPTURE_RE = re.compile(r"\(\?<(?=[A-Za-z_])")
+# handing the body to ``sre_parse``. Two negative cases the regex must
+# avoid:
+#   * Lookbehind ``(?<=`` / ``(?<!`` — handled by the lookahead
+#     ``(?=[A-Za-z_])`` requiring an identifier char after ``<``.
+#   * Escaped left-paren ``\(?<...>`` — a literal ``(`` followed by an
+#     unrelated ``?<...``. The fixed-length lookbehind ``(?<!\\)``
+#     skips the rewrite when the ``(`` is preceded by a backslash.
+#     Without it the rewrite produces a body Python's ``re`` rejects
+#     as a syntax error, costing us a precision regression where the
+#     algebra returns UNKNOWN on a body Onigmo would accept.
+_ONIGURUMA_NAMED_CAPTURE_RE = re.compile(r"(?<!\\)\(\?<(?=[A-Za-z_])")
 
 
 def _normalize_oniguruma(body: str) -> str:
@@ -1335,36 +1343,50 @@ def _ir_for_cached(body: str, flags: str) -> _IR | None:
 # subsequent call gets a fresh budget and a fresh chance.
 #
 # Hand-rolled because ``functools.lru_cache`` has no "skip storing
-# this result" hook. Insertion-ordered ``dict`` provides FIFO eviction
-# (close enough to LRU for our access pattern); ``move_to_end`` on
-# hits would give true LRU but adds overhead on the hot path.
+# this result" hook. ``OrderedDict`` + ``move_to_end`` gives true LRU
+# (cheaper than rebuilding the whole cache when a long-running process
+# rotates through more than ``_DEFINITIVE_CACHE_MAX`` distinct keys);
+# the lock makes get/put atomic so concurrent callers can't corrupt
+# the eviction queue. CPython's ``lru_cache`` already gets thread
+# safety from the GIL, but our hand-rolled `if-len; pop; assign`
+# sequence has check-then-act races without an explicit lock.
 
-_DEFINITIVE_DISJOINT_CACHE: dict[tuple[str, str, str, str], Trilean] = {}
-_DEFINITIVE_SUBSET_CACHE: dict[tuple[str, str, str, str], Trilean] = {}
+_DEFINITIVE_DISJOINT_CACHE: OrderedDict[tuple[str, str, str, str], Trilean] = OrderedDict()
+_DEFINITIVE_SUBSET_CACHE: OrderedDict[tuple[str, str, str, str], Trilean] = OrderedDict()
+_DEFINITIVE_CACHE_LOCK = threading.Lock()
 _DEFINITIVE_CACHE_MAX = 4096
 
 
 def _definitive_get(
-    cache: dict[tuple[str, str, str, str], Trilean],
+    cache: OrderedDict[tuple[str, str, str, str], Trilean],
     key: tuple[str, str, str, str],
 ) -> Trilean | None:
-    return cache.get(key)
+    with _DEFINITIVE_CACHE_LOCK:
+        cached = cache.get(key)
+        if cached is not None:
+            # Mark as recently used. Cheap (O(1)) and pays off for the
+            # workload where the same condition pair is checked across
+            # many priors / disjuncts.
+            cache.move_to_end(key)
+        return cached
 
 
 def _definitive_put(
-    cache: dict[tuple[str, str, str, str], Trilean],
+    cache: OrderedDict[tuple[str, str, str, str], Trilean],
     key: tuple[str, str, str, str],
     value: Trilean,
 ) -> None:
     if value == Trilean.UNKNOWN:
         return
-    if key in cache:
-        return
-    if len(cache) >= _DEFINITIVE_CACHE_MAX:
-        # FIFO eviction: drop the oldest entry. ``next(iter(cache))``
-        # returns the first inserted key under Python's dict ordering.
-        cache.pop(next(iter(cache)))
-    cache[key] = value
+    with _DEFINITIVE_CACHE_LOCK:
+        if key in cache:
+            cache.move_to_end(key)
+            return
+        if len(cache) >= _DEFINITIVE_CACHE_MAX:
+            # LRU eviction: drop the least-recently-used entry, which
+            # ``OrderedDict`` keeps at the front.
+            cache.popitem(last=False)
+        cache[key] = value
 
 
 def regex_languages_disjoint(body_a: str, flags_a: str, body_b: str, flags_b: str) -> Trilean:

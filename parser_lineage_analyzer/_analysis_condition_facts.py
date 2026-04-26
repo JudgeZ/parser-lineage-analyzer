@@ -321,15 +321,22 @@ def _facts_contradict(left: Fact, right: Fact) -> bool:
     # unreachable* — ``_regex_fact_from_normalized_condition`` extracts
     # only ``=~`` conditions, so ``is_match`` is always True for any
     # RegexFact in flight today. The dispatch is kept so a future PR
-    # adding ``!~`` extraction has a clean place to plug in; tests for
-    # those paths land alongside that change.
-    if left.is_match != right.is_match:  # pragma: no cover - reserved for !~ support
+    # adding ``!~`` extraction has a clean place to plug in.
+    #
+    # TODO(!~ extraction): when ``_regex_fact_from_normalized_condition``
+    # learns to emit ``RegexFact(is_match=False)`` for ``[t] !~ /A/``,
+    # both pragma-marked arms below need parametrized tests covering:
+    #   * positive vs negative same-language => contradicts
+    #   * positive vs negative disjoint-language => compatible
+    #   * both negative => always compatible
+    # Drop the ``no cover`` markers in the same change.
+    if left.is_match != right.is_match:  # pragma: no cover - TODO(!~ extraction)
         # Positive vs negative: contradicted iff L(positive) ⊆ L(negative).
         positive, negative = (left, right) if left.is_match else (right, left)
         return language_subset(positive.body, positive.flags, negative.body, negative.flags) == Trilean.YES
     # Both negative: never provably contradicts (something can satisfy
     # neither pattern simultaneously by lying outside both languages).
-    return False  # pragma: no cover - reserved for !~ support
+    return False  # pragma: no cover - TODO(!~ extraction)
 
 
 def _literal_vs_regex_contradicts(literal: LiteralFact, regex: RegexFact) -> bool:

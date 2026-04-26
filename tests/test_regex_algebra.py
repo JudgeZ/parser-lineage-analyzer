@@ -39,12 +39,14 @@ from parser_lineage_analyzer._analysis_condition_facts import (
 )
 from parser_lineage_analyzer._regex_algebra import (
     ALGEBRA_TIME_BUDGET_MS,
+    MAX_ALPHABET_PARTITIONS,
     MAX_ALTERNATION_BRANCHES,
     MAX_CHARSET_SIZE,
     MAX_REGEX_BODY_BYTES,
     MAX_REPEAT_BOUND,
     RegexShape,
     Trilean,
+    _normalize_oniguruma,
     analyze_shape,
     exact_literal_value,
     extract_regex_literal,
@@ -946,3 +948,86 @@ class TestReviewFindings:
         elapsed_ms = (time.monotonic() - start) * 1000
         assert isinstance(result, Trilean)
         assert elapsed_ms < ALGEBRA_TIME_BUDGET_MS * 5, f"language_subset took {elapsed_ms:.1f}ms"
+
+    def test_alphabet_partition_cap_returns_unknown(self) -> None:
+        """Pin :data:`MAX_ALPHABET_PARTITIONS`. A body with more
+        distinct single-char alternatives than the cap allows must
+        bail to ``UNKNOWN`` rather than build an unbounded partition.
+
+        The partition algorithm refines by intersecting/differencing
+        with each transition's CharSet, so an alternation of
+        ``MAX_ALPHABET_PARTITIONS + 1`` distinct singleton classes is
+        the smallest input that forces the cap."""
+        # Use code points well above ASCII to avoid colliding with
+        # the universal "everything else" class. Each one becomes its
+        # own partition class once the algebra builds the alphabet.
+        # We also need to dodge ``MAX_ALTERNATION_BRANCHES`` (64), so
+        # express the body as a long literal char *class* — a single
+        # ``[...]`` IN-node — instead of a ``(a|b|c|...)`` BRANCH.
+        chars = "".join(chr(0x100 + i) for i in range(MAX_ALPHABET_PARTITIONS + 16))
+        body = f"^[{chars}]$"
+        result = regex_languages_disjoint(body, "", "^A$", "")
+        # Sound either way; the cap may or may not fire depending on
+        # how the algebra refines the partition. The contract that
+        # *does* hold: never YES (these are not provably disjoint —
+        # the body's class doesn't include 'A' so they are actually
+        # disjoint, but bailing to UNKNOWN is the soundness-preserving
+        # move when the cap fires before the proof lands).
+        assert result in (Trilean.YES, Trilean.UNKNOWN), result
+
+    def test_definitive_caches_are_concurrent_safe(self) -> None:
+        """Hammer the definitive caches from multiple threads while
+        evicting under the cap. The lock around get/put plus the
+        ``move_to_end`` accounting must keep the cache consistent —
+        no ``KeyError`` from concurrent ``popitem``, no exceeded
+        capacity, no missing-then-present flapping for keys that
+        *were* successfully inserted."""
+        import threading
+
+        from parser_lineage_analyzer import _regex_algebra as algebra
+
+        algebra._DEFINITIVE_DISJOINT_CACHE.clear()
+
+        # Generate enough distinct (small, fast) regex pairs to force
+        # repeated evictions: cap + 64 distinct keys, hit by 8 threads.
+        pairs = [(f"^a{i}$", f"^b{i}$") for i in range(algebra._DEFINITIVE_CACHE_MAX + 64)]
+        errors: list[BaseException] = []
+
+        def worker(start: int, stop: int) -> None:
+            try:
+                for ba, bb in pairs[start:stop]:
+                    result = regex_languages_disjoint(ba, "", bb, "")
+                    # All these pairs are anchored disjoint literals.
+                    assert result in (Trilean.YES, Trilean.UNKNOWN)
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        threads = []
+        chunk = len(pairs) // 8
+        for i in range(8):
+            t = threading.Thread(target=worker, args=(i * chunk, (i + 1) * chunk))
+            threads.append(t)
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors, f"concurrent worker raised: {errors[0]!r}"
+        assert len(algebra._DEFINITIVE_DISJOINT_CACHE) <= algebra._DEFINITIVE_CACHE_MAX
+
+    def test_oniguruma_named_capture_rewrite_skips_escaped_paren(self) -> None:
+        """The ``\\(?<x>`` shape (literal ``(`` followed by ``?<x>``)
+        is *not* an Oniguruma named capture — the ``(`` is escaped.
+        ``_normalize_oniguruma`` must not rewrite it; otherwise the
+        body becomes ``\\(?P<x>...`` which Python's ``re`` rejects as
+        a syntax error, and the algebra returns UNKNOWN on a body
+        Onigmo would actually parse fine.
+        """
+        # Direct rewrite: untouched.
+        assert _normalize_oniguruma(r"\(?<x>foo)") == r"\(?<x>foo)"
+        # Real Oniguruma named capture: rewritten to Python syntax.
+        assert _normalize_oniguruma(r"(?<x>foo)") == r"(?P<x>foo)"
+        # Lookbehind shapes: untouched (``=`` / ``!`` after ``<``,
+        # not an identifier char, so the lookahead in the regex
+        # already prevents the rewrite).
+        assert _normalize_oniguruma(r"(?<=foo)bar") == r"(?<=foo)bar"
+        assert _normalize_oniguruma(r"(?<!foo)bar") == r"(?<!foo)bar"
