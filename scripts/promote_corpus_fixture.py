@@ -23,7 +23,9 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import re
-import subprocess
+
+# Dev-only fixture promotion script; only invokes `git mv` with literal args.
+import subprocess  # nosec B404
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -82,7 +84,8 @@ def _git_mv(src: Path, dst: Path, paths: PromotionPaths, dry_run: bool, *, use_g
         print(f"[dry-run] git mv {rel_src} {rel_dst}")
         return
     if use_git:
-        subprocess.run(
+        # Dev-only `git mv` with list-form args; `git` is resolved via PATH by design.
+        subprocess.run(  # nosec B607, B603
             ["git", "mv", str(src), str(dst)],
             cwd=paths.repo_root,
             check=True,

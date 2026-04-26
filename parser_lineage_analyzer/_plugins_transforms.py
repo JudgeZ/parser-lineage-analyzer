@@ -238,12 +238,13 @@ class TransformPluginMixin:
                 "Out-of-range PRI values will produce symbolic lineage instead "
                 "of concrete labels."
             )
+            # "severity_labels" is the syslog plugin config-key name, not a credential.
             state.add_warning(
                 warning,
                 code="syslog_pri_label_count_mismatch",
                 message=warning,
                 parser_location=loc,
-                source_token="severity_labels",
+                source_token="severity_labels",  # nosec B106
             )
         if fac_labels is not None and len(fac_labels) != 24:
             warning = (
@@ -252,12 +253,13 @@ class TransformPluginMixin:
                 "(0-23). Out-of-range PRI values will produce symbolic "
                 "lineage instead of concrete labels."
             )
+            # "facility_labels" is the syslog plugin config-key name, not a credential.
             state.add_warning(
                 warning,
                 code="syslog_pri_label_count_mismatch",
                 message=warning,
                 parser_location=loc,
-                source_token="facility_labels",
+                source_token="facility_labels",  # nosec B106
             )
         # Try to resolve the source to a literal integer for concrete-label
         # output. If the source has at least one constant lineage with an

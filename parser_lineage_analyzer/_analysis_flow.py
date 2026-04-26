@@ -877,8 +877,26 @@ class FlowExecutorMixin:
     ) -> None:
         context = cast(_FlowContext, self)
         loc = _location(stmt.line, "for", stmt.header)
+        # Emit the ``loop_variables`` advisory before any fast-path dispatch so
+        # the diagnostic fires regardless of whether the iterable is a static
+        # literal array (handled by ``_exec_static_string_loop``) or a
+        # runtime-resolved expression.
+        if not stmt.is_map and len(stmt.variables) >= 3:
+            warning = loop_variables_warning(loc, len(stmt.variables))
+            state.add_warning(
+                warning,
+                code="loop_variables",
+                message=f"Loop declares {len(stmt.variables)} variables",
+                parser_location=loc,
+            )
         static_values = self._static_string_array(stmt.iterable)
-        if static_values is not None and not stmt.is_map and len(stmt.variables) == 1:
+        if static_values is not None and not stmt.is_map and len(stmt.variables) >= 1:
+            # C4: multi-variable iteration over a literal array (e.g.
+            # ``for index, item in [...]``) used to fall through to
+            # ``_resolve_token`` and produce ``unresolved`` mappings for
+            # destinations templated on ``index`` or ``item``. The static
+            # fast path now handles both the single-variable and
+            # ``index, item, ...`` shapes.
             self._exec_static_string_loop(stmt, static_values, state, conditions, loc, depth, loop_fanout)
             return
         iter_lineage = context._resolve_token(stmt.iterable, state, loc)
@@ -899,14 +917,8 @@ class FlowExecutorMixin:
                 for lin in iter_lineage
             ]
         loop_cond = f"for {stmt.header}"
-        if not stmt.is_map and len(stmt.variables) >= 3:
-            warning = loop_variables_warning(loc, len(stmt.variables))
-            state.add_warning(
-                warning,
-                code="loop_variables",
-                message=f"Loop declares {len(stmt.variables)} variables",
-                parser_location=loc,
-            )
+        # ``loop_variables`` advisory now fires earlier in ``_exec_for`` so it
+        # also covers static-literal-array iteration handled by the fast path.
 
         next_loop_fanout, fanout_taint = self._next_loop_fanout(
             loop_fanout, len(iter_lineage), loc, stmt.iterable, state
@@ -1241,23 +1253,55 @@ class FlowExecutorMixin:
                 self._clear_loop_variables(stmt, state)
                 return
             next_loop_fanout = capped_fanout
-        item = stmt.variables[0]
-        for value in values:
-            if item != "_":
-                state.tokens[item] = [
-                    Lineage(
-                        status="constant",
-                        sources=[SourceRef(kind="constant", expression=value)],
-                        expression=value,
-                        conditions=list(conditions),
-                        parser_locations=[loc],
-                    )
-                ]
+        # C4: when ``stmt.variables`` has length 1, the variable binds to the
+        # array element directly. With 2+ variables (``for index, item in
+        # [...]``), Logstash binds the first to a 0-based index and the rest
+        # to the same element value (mirroring the runtime behaviour also
+        # implemented in the dynamic fast path further down ``_exec_for``).
+        is_indexed = len(stmt.variables) >= 2
+        bound_vars = [v for v in stmt.variables if v]
+        for index, value in enumerate(values):
+            if is_indexed:
+                index_var = stmt.variables[0]
+                if index_var and index_var != "_":
+                    state.tokens[index_var] = [
+                        Lineage(
+                            status="constant",
+                            sources=[SourceRef(kind="constant", expression=str(index))],
+                            expression=str(index),
+                            conditions=list(conditions),
+                            parser_locations=[loc],
+                        )
+                    ]
+                for item_var in stmt.variables[1:]:
+                    if item_var and item_var != "_":
+                        state.tokens[item_var] = [
+                            Lineage(
+                                status="constant",
+                                sources=[SourceRef(kind="constant", expression=value)],
+                                expression=value,
+                                conditions=list(conditions),
+                                parser_locations=[loc],
+                            )
+                        ]
+            else:
+                item = stmt.variables[0]
+                if item != "_":
+                    state.tokens[item] = [
+                        Lineage(
+                            status="constant",
+                            sources=[SourceRef(kind="constant", expression=value)],
+                            expression=value,
+                            conditions=list(conditions),
+                            parser_locations=[loc],
+                        )
+                    ]
             self._exec_statements(stmt.body, state, conditions, depth, next_loop_fanout)
-            if item and item != "_":
-                state.tokens.pop(item, None)
-                for token_name in state.descendant_tokens(item):
-                    state.tokens.pop(token_name, None)
+            for var in bound_vars:
+                if var != "_":
+                    state.tokens.pop(var, None)
+                    for token_name in state.descendant_tokens(var):
+                        state.tokens.pop(token_name, None)
             if state.dropped:
                 break
 
@@ -1463,9 +1507,9 @@ class FlowExecutorMixin:
 
         # 3. Read Dependencies (`event.get(...)`)
         gets = re.findall(r"event\.get\(\s*['\"]([^'\"]+)['\"]\s*\)", full_code)
-        sources = [SourceRef(kind="ruby_get", source_token="ruby", path=g) for g in gets]
+        sources = [SourceRef(kind="ruby_get", source_token="ruby", path=g) for g in gets]  # nosec B106
         if not sources:
-            sources = [SourceRef(kind="ruby_block", source_token="ruby")]
+            sources = [SourceRef(kind="ruby_block", source_token="ruby")]  # nosec B106
 
         # 4. State Mutations (`event.set(...)`). Route through
         # ``_store_destination`` (append=True) so canonical normalization,
@@ -1512,7 +1556,7 @@ class FlowExecutorMixin:
             return
 
         loc = _location(stmt.line, "translate")
-        sources = [SourceRef(kind="translate", source_token="translate", path=str(field))]
+        sources = [SourceRef(kind="translate", source_token="translate", path=str(field))]  # nosec B106
 
         dest_str = _normalize_field_ref(str(destination))
         if not dest_str:
@@ -1577,7 +1621,7 @@ class FlowExecutorMixin:
             clone_state = state.clone()
             type_lin = Lineage(
                 status="constant",
-                sources=[SourceRef(kind="constant", source_token="clone", expression=str(clone_type))],
+                sources=[SourceRef(kind="constant", source_token="clone", expression=str(clone_type))],  # nosec B106
                 expression=str(clone_type),
                 conditions=list(conditions),
                 parser_locations=[loc],
@@ -1650,7 +1694,7 @@ class FlowExecutorMixin:
         loc = _location(stmt.line, "split")
 
         success_state = state.clone()
-        sources = [SourceRef(kind="split", source_token="split", path=field_str)]
+        sources = [SourceRef(kind="split", source_token="split", path=field_str)]  # nosec B106
         lin = Lineage(
             status="dynamic",
             sources=sources,
@@ -1823,7 +1867,7 @@ class FlowExecutorMixin:
                 lins = [
                     Lineage(
                         status="dynamic",
-                        sources=[SourceRef(kind="dns", source_token="dns", expression=f)],
+                        sources=[SourceRef(kind="dns", source_token="dns", expression=f)],  # nosec B106
                         expression=f,
                         transformations=["dns"],
                         conditions=list(conditions),
@@ -1848,7 +1892,7 @@ class FlowExecutorMixin:
         dest_str = "elapsed.time"
         lin = Lineage(
             status="dynamic",
-            sources=[SourceRef(kind="elapsed", source_token="elapsed", path="timer")],
+            sources=[SourceRef(kind="elapsed", source_token="elapsed", path="timer")],  # nosec B106
             expression=dest_str,
             conditions=list(conditions),
             parser_locations=[loc],
@@ -1874,7 +1918,7 @@ class FlowExecutorMixin:
             if dest_str:
                 lin = Lineage(
                     status="dynamic",
-                    sources=[SourceRef(kind="uuid", source_token="uuid", path="generator")],
+                    sources=[SourceRef(kind="uuid", source_token="uuid", path="generator")],  # nosec B106
                     expression=dest_str,
                     conditions=list(conditions),
                     parser_locations=[loc],

@@ -626,7 +626,21 @@ class AnalyzerState:
     _untargeted_extractor_hint_keys: dict[str, dict[Key, int]] = field(
         default_factory=dict, init=False, repr=False, compare=False
     )
-    _extractor_hint_index_owned: bool = field(default=True, init=False, repr=False, compare=False)
+    # Per-kind copy-on-write tracking for the extractor hint index. Cycle 1 had
+    # a single ``_extractor_hint_index_owned`` flag that, when False, forced a
+    # full deep-copy of every kind's nested set on the next ``_ensure_extractor_hint_index``
+    # call. For workloads that fork once per ``if`` branch and add a single
+    # extractor per branch, that meant copying every kind's hint set on every
+    # fork — ~38% of analysis time on the dotted-target microbenchmark.
+    #
+    # The fix is per-kind ownership: the outer dicts are shallow-copied lazily
+    # (cheap, the kind set is bounded to ~4-6 entries) and only the kinds that
+    # actually need to mutate get a deep copy of their hint buckets. Other kinds
+    # remain shared by reference between parent and clone.
+    _extractor_hint_outer_owned: bool = field(default=True, init=False, repr=False, compare=False)
+    _extractor_hint_owned_kinds: set[str] = field(
+        default_factory=lambda: {"json", "kv", "csv", "xml"}, init=False, repr=False, compare=False
+    )
     _extractor_hint_index_sizes: tuple[int, int, int, int] = field(
         default=(0, 0, 0, 0), init=False, repr=False, compare=False
     )
@@ -1008,25 +1022,42 @@ class AnalyzerState:
             self._extractor_hint_index = {}
             self._untargeted_extractor_hints = {}
             self._untargeted_extractor_hint_keys = {}
-            self._extractor_hint_index_owned = True
+            self._extractor_hint_outer_owned = True
+            self._extractor_hint_owned_kinds = set(_EXTRACTOR_HINT_KINDS)
             self._extractor_hint_index_sizes = (0, 0, 0, 0)
-        if not self._extractor_hint_index_owned:
-            self._extractor_hint_index = {
-                kind: {key: set(values) for key, values in self._extractor_hint_index.get(kind, {}).items()}
-                for kind in _EXTRACTOR_HINT_KINDS
-            }
-            self._untargeted_extractor_hints = {
-                kind: list(hints) for kind, hints in self._untargeted_extractor_hints.items()
-            }
-            self._untargeted_extractor_hint_keys = {
-                kind: dict(keys) for kind, keys in self._untargeted_extractor_hint_keys.items()
-            }
-            self._extractor_hint_index_owned = True
+        # Outer-dict COW: shallow-copy the three top-level dicts the first time
+        # this clone touches the index. The dicts hold at most one entry per
+        # kind (~4-6 entries), so the shallow copy is cheap. Inner buckets are
+        # still shared by reference at this point — they are deep-copied per
+        # kind below, only for kinds that actually mutate.
+        if not self._extractor_hint_outer_owned:
+            self._extractor_hint_index = dict(self._extractor_hint_index)
+            self._untargeted_extractor_hints = dict(self._untargeted_extractor_hints)
+            self._untargeted_extractor_hint_keys = dict(self._untargeted_extractor_hint_keys)
+            self._extractor_hint_outer_owned = True
         indexes = self._extractor_hint_index
         old_sizes = self._extractor_hint_index_sizes
+        owned_kinds = self._extractor_hint_owned_kinds
         for kind_idx, kind in enumerate(_EXTRACTOR_HINT_KINDS):
-            kind_index = indexes.setdefault(kind, {})
             start = old_sizes[kind_idx]
+            if start == sizes[kind_idx]:
+                # No new hints for this kind — leave its buckets shared with
+                # the parent. This is the per-kind COW payoff: a 1000-branch
+                # parser that adds a fresh ``json`` extractor in each branch
+                # never deep-copies the ``kv``/``csv``/``xml`` buckets.
+                continue
+            if kind not in owned_kinds:
+                # Per-kind deep COW: copy this kind's index buckets and the
+                # untargeted bookkeeping (lists/dicts) so we can mutate them
+                # without disturbing the parent's view. Other kinds stay
+                # shared until they too need to mutate.
+                indexes[kind] = {key: set(values) for key, values in indexes.get(kind, {}).items()}
+                if kind in self._untargeted_extractor_hints:
+                    self._untargeted_extractor_hints[kind] = list(self._untargeted_extractor_hints[kind])
+                if kind in self._untargeted_extractor_hint_keys:
+                    self._untargeted_extractor_hint_keys[kind] = dict(self._untargeted_extractor_hint_keys[kind])
+                owned_kinds.add(kind)
+            kind_index = indexes.setdefault(kind, {})
             for pos, hint in enumerate(self._hints_for_kind(kind)[start:], start=start):
                 target = hint.details.get("target") if hint.details else None
                 if target:
@@ -1356,10 +1387,20 @@ class AnalyzerState:
         clone._static_destination_total_tokens = self._static_destination_total_tokens
         clone._output_anchor_seen = self._output_anchor_seen
         clone._hint_seen_by_kind = self._hint_seen_by_kind
+        # Per-kind copy-on-write for the extractor hint index. Both parent and
+        # clone share the outer dicts and inner buckets by reference; the next
+        # call to ``_ensure_extractor_hint_index`` on either side shallow-copies
+        # the outer dicts (cheap, ~4-6 entries) and only deep-copies the kinds
+        # whose hint count actually grew. The parent's flags are reset too —
+        # otherwise the parent could mutate a now-shared bucket in place and
+        # silently corrupt the clone's view.
+        self._extractor_hint_outer_owned = False
+        self._extractor_hint_owned_kinds = set()
         clone._extractor_hint_index = self._extractor_hint_index
         clone._untargeted_extractor_hints = self._untargeted_extractor_hints
         clone._untargeted_extractor_hint_keys = self._untargeted_extractor_hint_keys
-        clone._extractor_hint_index_owned = False
+        clone._extractor_hint_outer_owned = False
+        clone._extractor_hint_owned_kinds = set()
         clone._extractor_hint_index_sizes = self._extractor_hint_index_sizes
         clone._extractor_hint_generation = self._extractor_hint_generation
         clone._extractor_hint_generation_by_kind = dict(self._extractor_hint_generation_by_kind)

@@ -852,14 +852,25 @@ class QueryResult:
             # Multiple unconditional mappings are usually append/merge output,
             # not branch logic. Do not label these as conditional unless branch
             # predicates are actually present.
-            if "repeated" in valid_statuses or valid_statuses <= {
-                "exact",
-                "exact_capture",
-                "derived",
-                "constant",
-                "repeated",
-            }:
+            #
+            # Bug C1: gate `repeated` on actual evidence of merge/append
+            # semantics rather than the mere presence of >=2 unconditional
+            # mappings. Conservative signals that qualify:
+            #   1. any mapping's status is literally `repeated`
+            #   2. any mapping carries a transformation OR parser_location
+            #      naming a merge/append-style operation (`merge`, `add_tag`,
+            #      `add_field`) — case-insensitive substring matches
+            #      `mutate.merge`, `mutate.add_field`, `add_field append`, etc.
+            # Otherwise, fall back to `derived` — multiple mappings with no
+            # merge/append evidence are derived from multiple sources, not a
+            # repeated/append-style write.
+            if "repeated" in valid_statuses:
                 return "repeated"
+            for mapping in self.mappings:
+                for marker in (*mapping.transformations, *mapping.parser_locations):
+                    marker_l = str(marker).lower()
+                    if "merge" in marker_l or "add_tag" in marker_l or "add_field" in marker_l:
+                        return "repeated"
             return "derived"
         return _first_query_status(valid_statuses)
 

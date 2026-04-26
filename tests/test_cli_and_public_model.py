@@ -522,6 +522,40 @@ filter {
     assert result.has_unresolved is False
 
 
+def test_status_from_aggregate_distinguishes_derived_from_repeated_by_merge_evidence():
+    """C1: ``_status_from_aggregate`` must gate ``repeated`` on actual evidence
+    of merge/append semantics. Two unconditional ``exact`` mappings without a
+    merge/append-style transformation should aggregate to ``derived``; the same
+    pair with a ``merge`` transformation on either mapping should aggregate to
+    ``repeated``."""
+    from parser_lineage_analyzer import Lineage, QueryResult, SourceRef
+
+    derived = QueryResult(
+        "f",
+        ["f"],
+        [
+            Lineage(status="exact", sources=[SourceRef(kind="raw", path="a")], expression="a"),
+            Lineage(status="exact", sources=[SourceRef(kind="raw", path="b")], expression="b"),
+        ],
+    )
+    assert derived.status == "derived"
+
+    repeated = QueryResult(
+        "f",
+        ["f"],
+        [
+            Lineage(
+                status="exact",
+                sources=[SourceRef(kind="raw", path="a")],
+                expression="a",
+                transformations=["mutate.merge"],
+            ),
+            Lineage(status="exact", sources=[SourceRef(kind="raw", path="b")], expression="b"),
+        ],
+    )
+    assert repeated.status == "repeated"
+
+
 def test_scanner_has_no_backend_env_contract():
     assert not hasattr(scanner, "scanner_backend")
     assert scanner.strip_comments_keep_offsets("x // comment\n") == "x           \n"

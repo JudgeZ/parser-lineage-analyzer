@@ -584,7 +584,8 @@ def _specialize_lark_error_message(code: str, exc: object, message: str, start_l
     """
     token = getattr(exc, "token", None)
     token_type = getattr(token, "type", None) if token is not None else None
-    if token_type != "ELSE" and "Token('ELSE'" not in message:
+    # "ELSE" here is the Lark grammar token-type name, not a credential.
+    if token_type != "ELSE" and "Token('ELSE'" not in message:  # nosec B105
         return message
     raw_line = getattr(exc, "line", None) or 1
     pos = _line_offset(code, raw_line - 1)

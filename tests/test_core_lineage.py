@@ -347,6 +347,28 @@ def test_dynamic_destination_template_matches_empty_placeholder_query():
     assert any("dynamic destination template" in note for mapping in result.mappings for note in mapping.notes)
 
 
+def test_static_array_multivar_loop_resolves_each_index_to_constant():
+    """C4: ``for index, item in [...]`` over a literal array used to fall
+    through ``_exec_for``'s single-variable fast path and resolve as
+    ``unresolved``. The fast path now handles multi-variable iteration so
+    every destination templated on ``index`` or ``item`` resolves to its
+    constant value."""
+    code = r"""
+    filter {
+      for index, item in ["a", "b", "c"] {
+        mutate { add_field => { "event.idm.read_only_udm.additional.fields.tag_%{index}" => "%{item}" } }
+      }
+      mutate { merge => { "@output" => "event" } }
+    }
+    """
+    parser = ReverseParser(code)
+    by_index = {0: "a", 1: "b", 2: "c"}
+    for index, expected in by_index.items():
+        result = parser.query(f"additional.fields.tag_{index}")
+        assert result.status == "constant", f"tag_{index} status was {result.status}"
+        assert {m.expression for m in result.mappings} == {expected}
+
+
 def test_loop_variables_do_not_leak_after_loop():
     code = r"""
     filter {

@@ -191,7 +191,8 @@ def _intersect_with_analyzer(fixture_path: Path, claims: dict[str, list[str]]) -
                 if parser.query(f).mappings:
                     resolve_fields.append(f)
             except Exception:
-                pass
+                # Opportunistic header parsing; query failures are expected and harmless.
+                pass  # nosec B110
     if resolve_fields:
         refined["must_resolve_fields"] = resolve_fields[:3]
     return refined
