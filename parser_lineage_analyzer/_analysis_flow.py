@@ -1260,6 +1260,28 @@ class FlowExecutorMixin:
         # implemented in the dynamic fast path further down ``_exec_for``).
         is_indexed = len(stmt.variables) >= 2
         bound_vars = [v for v in stmt.variables if v]
+
+        # The per-iteration cleanup at the bottom of the loop unconditionally
+        # pops the loop-variable tokens (and their descendants) from
+        # ``state.tokens``. Without protection, that erases any pre-existing
+        # token whose name happens to collide with a loop variable — and
+        # ``index``/``item`` are common-enough field names in real parsers
+        # that the multi-variable shape (``for index, item in [...]``) makes
+        # this a real regression after the C4 dispatch widening. The dynamic
+        # path sidesteps this by cloning state per iteration; the fast path
+        # mutates in place, so snapshot the prior values once before the
+        # loop and restore them after. Iteration-scoped tokens that the body
+        # creates (e.g. ``index.subfield``) stay correctly cleaned up
+        # because the restore only writes names that existed beforehand.
+        saved_outer: dict[str, list[Lineage]] = {}
+        for var in bound_vars:
+            if var == "_":
+                continue
+            if var in state.tokens:
+                saved_outer[var] = state.tokens[var]
+            for token_name in state.descendant_tokens(var):
+                saved_outer[token_name] = state.tokens[token_name]
+
         for index, value in enumerate(values):
             if is_indexed:
                 index_var = stmt.variables[0]
@@ -1304,6 +1326,13 @@ class FlowExecutorMixin:
                         state.tokens.pop(token_name, None)
             if state.dropped:
                 break
+
+        # Restore pre-existing outer-scope tokens that the per-iteration pops
+        # would have clobbered. Names not present in ``saved_outer`` stay
+        # popped — those were the actual loop-iteration variables, which are
+        # intentionally scoped to the loop body.
+        for name, lineages in saved_outer.items():
+            state.tokens[name] = lineages
 
     def _exec_plugin(
         self, stmt: Plugin, state: AnalyzerState, conditions: list[str], depth: int = 0, loop_fanout: int = 1

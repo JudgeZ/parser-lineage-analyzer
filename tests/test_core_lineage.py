@@ -369,6 +369,56 @@ def test_static_array_multivar_loop_resolves_each_index_to_constant():
         assert {m.expression for m in result.mappings} == {expected}
 
 
+def test_static_array_loop_does_not_erase_outer_scope_token_with_same_name():
+    """C4 follow-up: ``_exec_static_string_loop`` pops the loop-variable
+    tokens (and their descendants) from ``state.tokens`` after each
+    iteration to scope them to the loop body. Without protection, that
+    would also erase any pre-existing token with the same name — and
+    ``index``/``item`` are common-enough field names in real parsers that
+    the multi-variable fast path (introduced by C4) would silently
+    regress to ``unresolved`` for any later reference to the prior
+    token. The dynamic path sidesteps this by cloning state per
+    iteration; the fast path now snapshots and restores outer-scope
+    tokens around the loop.
+    """
+    code = r"""
+    filter {
+      grok { match => { "message" => "%{WORD:item}\\s+%{INT:index}" } on_error => "_grokfail" }
+      for index, item in ["x", "y"] {
+        mutate { add_field => { "event.idm.read_only_udm.additional.fields.tmp_%{index}" => "%{item}" } }
+      }
+      mutate { replace => { "event.idm.read_only_udm.target.user.userid" => "%{item}" } }
+      mutate { replace => { "event.idm.read_only_udm.target.resource.id" => "%{index}" } }
+      mutate { merge => { "@output" => "event" } }
+    }
+    """
+    parser = ReverseParser(code)
+
+    # The loop body consumed ``index``/``item`` as iteration-scoped
+    # constants, but the post-loop replace must still see the grok
+    # captures — not the loop's per-iteration constants and not
+    # ``unresolved`` (which is what happened before the save+restore
+    # fix when the cleanup pop wiped the grok-derived tokens).
+    user_result = parser.query("target.user.userid")
+    assert user_result.status == "exact_capture", f"target.user.userid status was {user_result.status}"
+    user_kinds = {src.kind for mapping in user_result.mappings for src in mapping.sources}
+    assert user_kinds == {"grok_capture"}, f"unexpected sources for target.user.userid: {user_kinds}"
+
+    resource_result = parser.query("target.resource.id")
+    assert resource_result.status == "exact_capture", (
+        f"target.resource.id status was {resource_result.status} — outer-scope ``index`` "
+        "was clobbered by the loop's per-iteration cleanup pop"
+    )
+    resource_kinds = {src.kind for mapping in resource_result.mappings for src in mapping.sources}
+    assert resource_kinds == {"grok_capture"}, f"unexpected sources for target.resource.id: {resource_kinds}"
+
+    # And the loop-body destinations still resolve correctly — the
+    # save+restore must not interfere with the per-iteration semantics.
+    tmp0 = parser.query("additional.fields.tmp_0")
+    assert tmp0.status == "constant", f"loop body tmp_0 status was {tmp0.status}"
+    assert {m.expression for m in tmp0.mappings} == {"x"}
+
+
 def test_loop_variables_do_not_leak_after_loop():
     code = r"""
     filter {
