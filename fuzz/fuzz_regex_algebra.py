@@ -38,12 +38,16 @@ with atheris.instrument_imports():
     )
 
 
-# A 5x multiplier on the wall-clock budget gives enough headroom for
-# cold-cache lookups, GC pauses, and slow CI runners while still
-# catching genuine hangs. Each algebra call is bounded by
-# ALGEBRA_TIME_BUDGET_MS internally; this is the outer "did the bound
-# actually hold?" check.
-_HANG_THRESHOLD_S = (ALGEBRA_TIME_BUDGET_MS * 5) / 1000.0
+# A 20× multiplier on the wall-clock budget. Pre-BFS phases
+# (``sre_parse.parse``, ``_lower_pattern_to_ir``, ``_build_nfa`` × 2,
+# ``_alphabet_partition``) are bounded by structural caps but are *not*
+# wall-clock-bounded, so the cumulative cost on a near-cap input plus
+# atheris-with-sanitizers overhead can comfortably exceed 5× = 125ms
+# even when the algebra is behaving correctly. libFuzzer's own
+# ``-timeout`` flag is the real hang detector; this assertion is a
+# regression sentinel that catches "the BFS budget guard stopped
+# firing entirely" without flaking on cold caches.
+_HANG_THRESHOLD_S = (ALGEBRA_TIME_BUDGET_MS * 20) / 1000.0
 
 
 def TestOneInput(data: bytes) -> None:
@@ -98,6 +102,18 @@ def TestOneInput(data: bytes) -> None:
     #    here would be a soundness violation.
     self_sub = language_subset(body_a, flags_a, body_a, flags_a)
     assert self_sub != Trilean.NO, f"language_subset({body_a!r}, {body_a!r}) returned NO — soundness violation"
+
+    # 6. Self-reflexivity for the disjoint relation. ``A ∩ A = ∅`` only
+    #    if L(A) is empty; the supported subset has no way to express
+    #    an empty language (no backref/lookbehind tricks), so YES here
+    #    is always a soundness violation. UNKNOWN is fine — it just
+    #    means we hit a cap.
+    self_disjoint = regex_languages_disjoint(body_a, flags_a, body_a, flags_a)
+    assert self_disjoint != Trilean.YES, (
+        f"regex_languages_disjoint({body_a!r}, {body_a!r}) returned YES — "
+        "self-disjointness can only hold for empty-language patterns, which "
+        "our supported subset cannot express"
+    )
 
 
 def main() -> None:

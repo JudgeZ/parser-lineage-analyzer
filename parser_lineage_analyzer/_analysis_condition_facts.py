@@ -317,13 +317,19 @@ def _facts_contradict(left: Fact, right: Fact) -> bool:
     assert isinstance(left, RegexFact) and isinstance(right, RegexFact)
     if left.is_match and right.is_match:
         return regex_languages_disjoint(left.body, left.flags, right.body, right.flags) == Trilean.YES
-    if left.is_match != right.is_match:
+    # The arms below cover ``!~`` semantics. They are *currently
+    # unreachable* — ``_regex_fact_from_normalized_condition`` extracts
+    # only ``=~`` conditions, so ``is_match`` is always True for any
+    # RegexFact in flight today. The dispatch is kept so a future PR
+    # adding ``!~`` extraction has a clean place to plug in; tests for
+    # those paths land alongside that change.
+    if left.is_match != right.is_match:  # pragma: no cover - reserved for !~ support
         # Positive vs negative: contradicted iff L(positive) ⊆ L(negative).
         positive, negative = (left, right) if left.is_match else (right, left)
         return language_subset(positive.body, positive.flags, negative.body, negative.flags) == Trilean.YES
     # Both negative: never provably contradicts (something can satisfy
     # neither pattern simultaneously by lying outside both languages).
-    return False
+    return False  # pragma: no cover - reserved for !~ support
 
 
 def _literal_vs_regex_contradicts(literal: LiteralFact, regex: RegexFact) -> bool:
@@ -464,6 +470,12 @@ def _conditions_are_compatible_cached(conditions: tuple[str, ...]) -> bool:
     for field, rfs in by_field.items():
         for i, left in enumerate(rfs):
             for right in rfs[i + 1 :]:
+                # Identical-regex fast path: ``A`` is never disjoint
+                # from itself (the algebra would always return NO),
+                # but going through ``_facts_contradict`` is wasted
+                # work even on a cache hit. Skip directly.
+                if left.body == right.body and left.flags == right.flags and left.is_match == right.is_match:
+                    continue
                 if _facts_contradict(left, right):
                     return False
             for lf in literal_facts_by_field.get(field, ()):

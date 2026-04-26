@@ -718,14 +718,23 @@ def _lower_pattern_to_ir(body: str, flags: str) -> _IR | None:
 
     extra_flags = tree.state.flags & ~_PERMITTED_INLINE_FLAGS
     if extra_flags:
-        # Inline ``(?i)`` etc. inside the body. For Phase 1 we accept it
-        # only when the *only* extra flag is IGNORECASE — then we case-
-        # fold the whole IR. Anything else (multiline, dotall, verbose,
-        # ...) is unsupported.
-        if extra_flags == _sre_constants.SRE_FLAG_IGNORECASE:
-            case_fold = True
-        else:
-            return None
+        # Any inline flag group inside the body — including the
+        # unscoped ``(?i)`` — is unsupported. Logstash's Onigmo engine
+        # scopes ``(?i)`` to the *remainder of its enclosing group*,
+        # but CPython's ``sre_parse`` propagates it globally via
+        # ``tree.state.flags`` with no positional information we could
+        # use to recover the scoping. Folding the whole IR would
+        # over-approximate the language: for ``^A(?i)B$``, Onigmo
+        # accepts ``{A}{b,B}`` while a global fold accepts
+        # ``{a,A}{b,B}``. The over-approximation is sound for
+        # ``regex_languages_disjoint`` but unsound for
+        # ``language_subset`` and ``literal_in_regex_language`` — both
+        # could return YES based on strings that aren't actually in
+        # L(P) under Onigmo. Bailing here preserves soundness across
+        # all three primitives. Scoped ``(?i:...)`` is still honored
+        # via the SUBPATTERN ``add_flags`` path in ``_lower_node``,
+        # since that *is* an enclosing group whose scope is explicit.
+        return None
 
     items = list(tree)
     if not items:
@@ -1292,6 +1301,13 @@ def regex_languages_disjoint(body_a: str, flags_a: str, body_b: str, flags_b: st
     branches mutually exclusive; everything else preserves the existing
     "compatible" assumption.
     """
+    # Canonicalize argument order so swapped calls (``A,B`` and ``B,A``)
+    # share the same cache slot. The relation is symmetric, so the
+    # answer is invariant under swap; halving cache pressure shows up
+    # in workloads that pair regexes both ways (the literal-vs-regex
+    # dispatch in ``_facts_contradict`` currently does this).
+    if (body_a, flags_a) > (body_b, flags_b):
+        body_a, flags_a, body_b, flags_b = body_b, flags_b, body_a, flags_a
     return _disjoint_cached(body_a, flags_a, body_b, flags_b)
 
 

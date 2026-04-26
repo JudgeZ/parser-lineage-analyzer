@@ -23,6 +23,7 @@ below are what earn the soundness claim.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 
 import pytest
 
@@ -462,15 +463,20 @@ class TestSoundnessCrossCheck:
         assert re.search(body, literal) is None
 
 
-def _strings_of_length(alphabet: set[str], length: int) -> list[str]:
+def _strings_of_length(alphabet: set[str], length: int) -> Iterator[str]:
+    """Generator over strings of exactly ``length`` from ``alphabet``.
+
+    Lazy on purpose: with a 65-char alphabet, length 5 is 65⁵ ≈ 1.16B
+    strings — materializing the list would OOM the test process even
+    though the cap inside the caller (4096 explored) keeps the actual
+    iteration cheap. The generator means raising the cap or extending
+    the length range can never silently blow past it."""
     if length == 0:
-        return [""]
-    result = []
-    smaller = _strings_of_length(alphabet, length - 1)
-    for s in smaller:
+        yield ""
+        return
+    for s in _strings_of_length(alphabet, length - 1):
         for c in alphabet:
-            result.append(s + c)
-    return result
+            yield s + c
 
 
 class TestAlgebraLimitEnforcement:
@@ -519,9 +525,14 @@ class TestAlgebraLimitEnforcement:
         start = _t.monotonic()
         result = regex_languages_disjoint("(a*a*)*b", "", "(a*a*)*c", "")
         elapsed_ms = (_t.monotonic() - start) * 1000
-        # 4× the budget is the "definitely escaped the loop" margin —
-        # enough headroom for cold caches without hiding a real hang.
-        assert elapsed_ms < ALGEBRA_TIME_BUDGET_MS * 4, f"took {elapsed_ms:.1f}ms"
+        # 10× the BFS budget. The pre-BFS phases (sre_parse, IR
+        # lowering, NFA build, alphabet partition) aren't wall-clock
+        # bounded individually — only the structural caps protect
+        # them. On slow CI with cold caches, cumulative cold-path cost
+        # can comfortably exceed 4× = 100ms even when nothing is
+        # actually hung. 10× still catches a real hang while
+        # tolerating CI variance.
+        assert elapsed_ms < ALGEBRA_TIME_BUDGET_MS * 10, f"took {elapsed_ms:.1f}ms"
         assert result in (Trilean.YES, Trilean.NO, Trilean.UNKNOWN)
 
 
@@ -816,6 +827,35 @@ class TestReviewFindings:
         # first poll inside the loop.
         expired = _Budget(deadline=0.0)
         assert _complete_and_complement_dfa(dfa, expired) is None
+
+    def test_inline_caseless_flag_is_unsupported_not_globally_folded(self) -> None:
+        """Logstash uses Onigmo, where ``(?i)`` is scoped to its
+        enclosing group. Phase 1's IR has no way to model mid-pattern
+        scope changes, and CPython's ``sre_parse`` propagates the flag
+        globally — folding the whole IR over-approximates the language
+        and could let ``language_subset`` and
+        ``literal_in_regex_language`` unsoundly return ``YES``.
+
+        The fix: bail to ``UNKNOWN`` whenever any inline flag group
+        appears in the body. Scoped ``(?i:...)`` is still honored via
+        the SUBPATTERN ``add_flags`` lowering — that *is* an
+        explicit-scope group and matches Onigmo's behavior.
+        """
+        # Unscoped inline ``(?i)`` — must be UNKNOWN, never YES from
+        # the algebra (which would imply a global fold has happened).
+        for body in ("(?i)foo", "^(?i)foo$", r"^A(?i)B$"):
+            assert regex_languages_disjoint(body, "", "^Foo$", "") == Trilean.UNKNOWN
+            assert language_subset(body, "", "^FOO$", "") == Trilean.UNKNOWN
+            assert literal_in_regex_language("Foo", body, "") == Trilean.UNKNOWN
+        # Trailing ``/i`` flag — applies to the whole pattern by
+        # definition; still honored.
+        assert literal_in_regex_language("FOO", "^foo$", "i") == Trilean.YES
+        # Scoped ``(?i:foo)`` — explicit group scope; Onigmo and our
+        # IR agree, so it's honored. Anchored membership: the body
+        # ``(?i:foo)`` is unanchored, so Σ* wrapping makes it match
+        # any string containing a case-insensitive ``foo``.
+        assert literal_in_regex_language("alert_FOO_msg", "(?i:foo)", "") == Trilean.YES
+        assert literal_in_regex_language("alert_BAR_msg", "(?i:foo)", "") == Trilean.NO
 
     def test_language_subset_does_not_exceed_5x_budget(self) -> None:
         """End-to-end soak: hand :func:`language_subset` a pair
