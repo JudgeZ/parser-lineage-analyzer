@@ -126,32 +126,40 @@ class ShapeAnalysis:
 
 @dataclass(frozen=True)
 class RegexLiteral:
-    """An extracted ``=~ /body/flags`` regex literal."""
+    """An extracted ``=~ /body/flags`` or ``!~ /body/flags`` regex literal.
+
+    ``is_match`` is ``True`` for ``=~`` (positive match) and ``False`` for
+    ``!~`` (negative match). Downstream contradiction reasoning uses this
+    flag to dispatch the appropriate algebra arm.
+    """
 
     field: str
     body: str
     flags: str
+    is_match: bool = True
 
 
 # -- Extractor -------------------------------------------------------
 
-# Captures `<field>+ =~ /body/flags` from a normalized condition. The
-# body permits any character except an unescaped delimiter `/`; `\\.`
-# escapes any single character (including `/`). We do NOT validate the
-# body as a real regex here — that is `analyze_shape`'s job.
+# Captures `<field>+ <op> /body/flags` from a normalized condition where
+# ``<op>`` is ``=~`` (positive) or ``!~`` (negative). The body permits
+# any character except an unescaped delimiter `/`; `\\.` escapes any
+# single character (including `/`). We do NOT validate the body as a
+# real regex here — that is `analyze_shape`'s job.
 _EXTRACT_REGEX_LITERAL_RE = re.compile(
     r"^(?P<field>(?:\[[^\]]+\])+)"
-    r"\s*=~\s*"
+    r"\s*(?P<op>=~|!~)\s*"
     r"/(?P<body>(?:\\.|[^/\\])*)/"
     r"(?P<flags>[A-Za-z]*)$"
 )
 
 
 def extract_regex_literal(condition: str) -> RegexLiteral | None:
-    """Pull ``=~ /body/flags`` out of a normalized condition string.
+    """Pull ``=~ /body/flags`` or ``!~ /body/flags`` out of a normalized
+    condition string.
 
-    Returns ``None`` if the condition is not a single ``=~`` comparison
-    or if the body exceeds ``MAX_REGEX_BODY_BYTES``.
+    Returns ``None`` if the condition is not a single ``=~``/``!~``
+    comparison or if the body exceeds ``MAX_REGEX_BODY_BYTES``.
     """
     match = _EXTRACT_REGEX_LITERAL_RE.match(condition)
     if match is None:
@@ -163,6 +171,7 @@ def extract_regex_literal(condition: str) -> RegexLiteral | None:
         field=match.group("field"),
         body=body,
         flags=match.group("flags"),
+        is_match=match.group("op") == "=~",
     )
 
 
@@ -347,10 +356,29 @@ def exact_literal_value(condition: str) -> tuple[str, str] | None:
     body, including escaped metacharacters that resolve to a single
     literal char (``\\.`` => ``.``, ``\\\\`` => ``\\``). It also rejects
     trailing flags, which the prior extractor silently accepted —
-    fixing an unsoundness under ``/^Foo$/i``.
+    fixing an unsoundness under ``/^Foo$/i``. ``!~`` conditions return
+    ``None`` here; use :func:`neg_exact_literal_value` for those.
     """
     extracted = extract_regex_literal(condition)
-    if extracted is None:
+    if extracted is None or not extracted.is_match:
+        return None
+    analysis = analyze_shape(extracted.body, extracted.flags)
+    if analysis.shape != RegexShape.EXACT_LITERAL or analysis.literal_value is None:
+        return None
+    return extracted.field, analysis.literal_value
+
+
+def neg_exact_literal_value(condition: str) -> tuple[str, str] | None:
+    """Return ``(field, literal)`` if ``condition`` is ``!~ /^literal$/``
+    with all-pure-literal characters and no flags. Otherwise ``None``.
+
+    Mirror of :func:`exact_literal_value` for the negative-match operator.
+    A condition reducible by this function is semantically equivalent to
+    ``[field] != "literal"`` and downstream code uses it to emit a
+    :class:`LiteralFact` with ``is_equal=False``.
+    """
+    extracted = extract_regex_literal(condition)
+    if extracted is None or extracted.is_match:
         return None
     analysis = analyze_shape(extracted.body, extracted.flags)
     if analysis.shape != RegexShape.EXACT_LITERAL or analysis.literal_value is None:

@@ -52,6 +52,7 @@ from parser_lineage_analyzer._regex_algebra import (
     extract_regex_literal,
     language_subset,
     literal_in_regex_language,
+    neg_exact_literal_value,
     regex_languages_disjoint,
 )
 
@@ -653,6 +654,176 @@ class TestFactsContradictDispatch:
     def test_different_fields_never_contradict(self) -> None:
         assert _facts_contradict(RegexFact("[a]", "^X$", ""), RegexFact("[b]", "^Y$", "")) is False
         assert _facts_contradict(LiteralFact("[a]", "X"), RegexFact("[b]", "^Y$", "")) is False
+
+
+class TestNegMatchExtraction:
+    """``!~`` (negative regex match) flows through the same extractor +
+    fact-production pipeline as ``=~``, with ``is_match=False`` distinguishing
+    the two. The contradiction dispatch in ``_facts_contradict`` and
+    ``_literal_vs_regex_contradicts`` then handles the four operator-pair
+    combinations.
+
+    Soundness rule still applies: a YES (contradiction) must be a *proven*
+    contradiction. UNKNOWN propagates as compatible.
+    """
+
+    @pytest.mark.parametrize(
+        "condition,field,body,flags",
+        [
+            ("[type] !~ /^A$/", "[type]", "^A$", ""),
+            ("[a][b] !~ /^x$/", "[a][b]", "^x$", ""),
+            ("[type] !~ /^A$/i", "[type]", "^A$", "i"),
+            (r"[t] !~ /^foo\.bar$/", "[t]", r"^foo\.bar$", ""),
+            ("[t]   !~   /^A$/", "[t]", "^A$", ""),
+        ],
+    )
+    def test_extracts_neg_match(self, condition: str, field: str, body: str, flags: str) -> None:
+        result = extract_regex_literal(condition)
+        assert result is not None
+        assert (result.field, result.body, result.flags, result.is_match) == (field, body, flags, False)
+
+    @pytest.mark.parametrize(
+        "condition,field,body,flags",
+        [
+            ("[type] =~ /^A$/", "[type]", "^A$", ""),
+            (r"[t] =~ /^foo\.bar$/", "[t]", r"^foo\.bar$", ""),
+        ],
+    )
+    def test_extracts_pos_match_unchanged(self, condition: str, field: str, body: str, flags: str) -> None:
+        result = extract_regex_literal(condition)
+        assert result is not None
+        assert (result.field, result.body, result.flags, result.is_match) == (field, body, flags, True)
+
+    @pytest.mark.parametrize(
+        "condition,field,literal",
+        [
+            ("[t] !~ /^foo$/", "[t]", "foo"),
+            ("[type] !~ /^A$/", "[type]", "A"),
+            (r"[t] !~ /^foo\.bar$/", "[t]", "foo.bar"),
+            (r"[t] !~ /^192\.168\.1\.1$/", "[t]", "192.168.1.1"),
+            ("[a][b] !~ /^x$/", "[a][b]", "x"),
+        ],
+    )
+    def test_neg_exact_literal_value_recognizes(self, condition: str, field: str, literal: str) -> None:
+        assert neg_exact_literal_value(condition) == (field, literal)
+
+    @pytest.mark.parametrize(
+        "condition",
+        [
+            # =~ inputs MUST return None — that is exact_literal_value's job.
+            "[t] =~ /^foo$/",
+            "[t] =~ /^A$/",
+            # Non-literal bodies don't reduce.
+            "[t] !~ /^[A-Z]+$/",
+            r"[t] !~ /^\d+$/",
+            "[t] !~ /^(SEC|AUTH)$/",
+            # Flags rejected for soundness.
+            "[t] !~ /^A$/i",
+            # Not a regex literal at all.
+            '[t] != "foo"',
+        ],
+    )
+    def test_neg_exact_literal_value_rejects(self, condition: str) -> None:
+        assert neg_exact_literal_value(condition) is None
+
+    def test_exact_literal_value_rejects_neg_match(self) -> None:
+        # Soundness: ``exact_literal_value`` is named for ``=~`` and must
+        # NOT reduce ``!~ /^foo$/`` (which has equal-NOT semantics).
+        assert exact_literal_value("[t] !~ /^foo$/") is None
+        assert exact_literal_value("[t] =~ /^foo$/") == ("[t]", "foo")
+
+    def test_neg_match_literal_fast_path_emits_inequality(self) -> None:
+        # ``[t] !~ /^foo$/`` is semantically ``[t] != "foo"`` — both produce
+        # equivalent LiteralFacts.
+        from_neg_match = _literal_fact_from_normalized_condition("[t] !~ /^foo$/")
+        from_inequality = _literal_fact_from_normalized_condition('[t] != "foo"')
+        assert from_neg_match == from_inequality
+        assert from_neg_match == LiteralFact("[t]", "foo", is_equal=False)
+
+    def test_neg_match_non_literal_body_emits_regex_fact(self) -> None:
+        fact = _fact_from_condition("[t] !~ /^[A-Z]+$/")
+        assert isinstance(fact, RegexFact)
+        assert fact.field == "[t]"
+        assert fact.body == "^[A-Z]+$"
+        assert fact.is_match is False
+
+    @pytest.mark.parametrize(
+        "left,right,contradicts",
+        [
+            # =~ A vs !~ A: every value in L(A) is excluded by !~ A.
+            (RegexFact("[t]", "^A$", ""), RegexFact("[t]", "^A$", "", is_match=False), True),
+            (RegexFact("[t]", "^[A-Z]+$", ""), RegexFact("[t]", "^[A-Z]+$", "", is_match=False), True),
+            # =~ A vs !~ B where L(A) ⊆ L(B): contradicts (every match for A is excluded by !B).
+            (RegexFact("[t]", "^A$", ""), RegexFact("[t]", "^[A-Z]$", "", is_match=False), True),
+            # =~ A vs !~ B where L(A) and L(B) disjoint: compatible (=~A in L(A), !~B excludes L(B), no overlap).
+            (RegexFact("[t]", "^A$", ""), RegexFact("[t]", "^B$", "", is_match=False), False),
+            (RegexFact("[t]", "^[A-Z]+$", ""), RegexFact("[t]", "^[0-9]+$", "", is_match=False), False),
+            # !~ A vs !~ B: never provably contradicts (value can lie outside both).
+            (RegexFact("[t]", "^A$", "", is_match=False), RegexFact("[t]", "^B$", "", is_match=False), False),
+            (RegexFact("[t]", "^A$", "", is_match=False), RegexFact("[t]", "^A$", "", is_match=False), False),
+            # =~ A vs !~ B where L(A) overlaps but is NOT subset of L(B):
+            # compatible (a value in L(A)\L(B) satisfies both).
+            (RegexFact("[t]", "^[A-Z]+$", ""), RegexFact("[t]", "^A$", "", is_match=False), False),
+            # Different fields: never contradict.
+            (RegexFact("[a]", "^X$", ""), RegexFact("[b]", "^X$", "", is_match=False), False),
+        ],
+    )
+    def test_facts_contradict_neg_match_dispatch(self, left: RegexFact, right: RegexFact, contradicts: bool) -> None:
+        assert _facts_contradict(left, right) is contradicts
+        assert _facts_contradict(right, left) is contradicts  # commutative
+
+    @pytest.mark.parametrize(
+        "literal,regex,contradicts",
+        [
+            # [t] == "x" ∧ [t] !~ /A/ where "x" ∈ L(A) → contradicts.
+            (LiteralFact("[t]", "FOO"), RegexFact("[t]", "^[A-Z]+$", "", is_match=False), True),
+            (LiteralFact("[t]", "abc"), RegexFact("[t]", "^[a-z]+$", "", is_match=False), True),
+            # [t] == "x" ∧ [t] !~ /A/ where "x" ∉ L(A) → compatible.
+            (LiteralFact("[t]", "FOO"), RegexFact("[t]", "^[a-z]+$", "", is_match=False), False),
+            (LiteralFact("[t]", "123"), RegexFact("[t]", "^[a-z]+$", "", is_match=False), False),
+            # [t] != "x" ∧ [t] !~ /A/ → no general contradiction.
+            (LiteralFact("[t]", "FOO", is_equal=False), RegexFact("[t]", "^[A-Z]+$", "", is_match=False), False),
+            (LiteralFact("[t]", "x", is_equal=False), RegexFact("[t]", "^A$", "", is_match=False), False),
+        ],
+    )
+    def test_literal_vs_neg_match_regex(self, literal: LiteralFact, regex: RegexFact, contradicts: bool) -> None:
+        assert _facts_contradict(literal, regex) is contradicts
+        assert _facts_contradict(regex, literal) is contradicts  # commutative
+
+    @pytest.mark.parametrize(
+        "conditions,compatible",
+        [
+            # Literal fast-path equivalence end-to-end.
+            (['[t] == "foo"', "[t] !~ /^foo$/"], False),
+            (['[t] != "foo"', "[t] !~ /^foo$/"], True),
+            # Same field positive vs negative on identical body.
+            (["[t] =~ /^[A-Z]+$/", "[t] !~ /^[A-Z]+$/"], False),
+            # Same field positive matches a value that the negative excludes.
+            (['[t] == "FOO"', "[t] !~ /^[A-Z]+$/"], False),
+            (['[t] == "foo"', "[t] !~ /^[A-Z]+$/"], True),
+            # Two negatives never provably contradict.
+            (["[t] !~ /^A$/", "[t] !~ /^B$/"], True),
+            # =~ + !~ compatible across disjoint regexes.
+            (["[t] =~ /^A$/", "[t] !~ /^B$/"], True),
+        ],
+    )
+    def test_conditions_are_compatible_end_to_end(self, conditions: list[str], compatible: bool) -> None:
+        assert conditions_are_compatible(conditions) is compatible
+
+    def test_condition_is_contradicted_with_neg_match(self) -> None:
+        # else-if branch with `!~` against an `=~` prior — the negative
+        # excludes everything the positive admits.
+        assert condition_is_contradicted("[t] !~ /^[A-Z]+$/", ["[t] =~ /^[A-Z]+$/"]) is True
+        # `!~` prior, then a literal that lies in the excluded language.
+        assert condition_is_contradicted('[t] == "FOO"', ["[t] !~ /^[A-Z]+$/"]) is True
+        # `!~` prior, then a literal outside the excluded language — compatible.
+        assert condition_is_contradicted('[t] == "foo"', ["[t] !~ /^[A-Z]+$/"]) is False
+
+    def test_unsupported_neg_match_does_not_contradict(self) -> None:
+        # UNKNOWN must propagate as compatible. A grok-bearing or oversized
+        # body in a `!~` must never authorize a contradiction.
+        assert condition_is_contradicted("[t] !~ /%{NAME}/", ["[t] =~ /^B$/"]) is False
+        assert conditions_are_compatible(["[t] !~ /%{NAME}/", "[t] =~ /^B$/"]) is True
 
 
 class TestRegexStressFile:

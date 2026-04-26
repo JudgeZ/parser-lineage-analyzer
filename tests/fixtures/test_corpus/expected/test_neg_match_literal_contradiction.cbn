@@ -1,0 +1,49 @@
+# EXPECTED BEHAVIOR:
+# Exercises the `!~` (negative regex match) literal fast path. After F1
+# wires `!~` into the contradiction engine, `[t] !~ /^literal$/` reduces
+# to a LiteralFact equivalent to `[t] != "literal"`. The conjunction
+# `[event_type] == "login" and [event_type] !~ /^login$/` is unreachable;
+# the inner mutate's `should_not_appear` field comes from a contradicted
+# branch and the analyzer must not regress on the surrounding lineage.
+#
+# Reachable assignments (must_resolve_fields):
+#   * event.idm.read_only_udm.metadata.event_type — set by the outer
+#     mutate.replace, gated only by `[event_type] == "login"` (always
+#     reachable when entering the if).
+#   * event.idm.read_only_udm.security_result.category — set in the
+#     else branch, reachable when [event_type] != "login".
+#
+# The fixture must not emit malformed_config or parse_recovery warnings.
+filter {
+  if [event_type] == "login" {
+    mutate {
+      replace => {
+        "event.idm.read_only_udm.metadata.event_type" => "USER_LOGIN"
+      }
+    }
+    if [event_type] !~ /^login$/ {
+      # UNREACHABLE post-F1: outer == "login" forces [event_type] to be
+      # exactly "login", which is in the language /^login$/, so the !~
+      # excludes it. Pre-F1 this branch was treated as reachable.
+      mutate {
+        add_field => { "should_not_appear" => "true" }
+      }
+    }
+  } else {
+    mutate {
+      replace => {
+        "event.idm.read_only_udm.security_result.category" => "NETWORK_SUSPICIOUS"
+      }
+    }
+  }
+
+  # A second shape: same-field positive vs negative on the same body.
+  # `[action] =~ /^[A-Z]+$/` and `[action] !~ /^[A-Z]+$/` together are
+  # contradictory; the analyzer must not crash on conjunctions of this
+  # kind regardless of whether the surrounding logic uses them.
+  if [action] =~ /^[A-Z]+$/ and [action] !~ /^[A-Z]+$/ {
+    mutate {
+      add_field => { "uppercase_xor_lowercase" => "impossible" }
+    }
+  }
+}
