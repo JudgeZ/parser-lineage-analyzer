@@ -31,7 +31,6 @@ from ._regex_algebra import (
     is_exact_literal_regex as _regex_is_exact_literal,
     language_subset,
     literal_in_regex_language,
-    neg_exact_literal_value as _regex_neg_exact_literal_value,
     regex_languages_disjoint,
 )
 
@@ -111,10 +110,20 @@ def _literal_fact_from_normalized_condition(condition: str) -> LiteralFact | Non
     if regex_literal is not None:
         field, value = regex_literal
         return LiteralFact(field, value)
-    neg_regex_literal = _regex_neg_exact_literal_value(condition)
-    if neg_regex_literal is not None:
-        field, value = neg_regex_literal
-        return LiteralFact(field, value, is_equal=False)
+    # Intentional gap: ``[t] !~ /^literal$/`` is NOT reduced to
+    # ``LiteralFact(literal, is_equal=False)`` here, even though the body
+    # matches the EXACT_LITERAL shape. Reason: the analyzer's reality
+    # model uses Python ``re.search`` semantics, where ``$`` matches
+    # before a final ``\n``. So ``!~ /^foo$/`` excludes both ``"foo"``
+    # *and* ``"foo\n"``, while ``LiteralFact("foo", neq)`` would only
+    # exclude ``"foo"``. Sound on its own, but ``negated_literal_fact_from_condition``
+    # would flip the LiteralFact's ``is_equal`` and produce the false
+    # claim that ``NOT(!~ /^foo$/)`` means ``[t] == "foo"`` — a
+    # *narrower* match-set than the true ``=~ /^foo$/`` semantics. That
+    # narrower set unsoundly contradicts a peer fact like ``[t] != "foo"``
+    # whose witness ``"foo\n"`` lies *outside* the narrowed set but
+    # *inside* the true regex language. Letting ``!~`` stay as a
+    # :class:`RegexFact` keeps the algebra reasoning faithful.
     return None
 
 

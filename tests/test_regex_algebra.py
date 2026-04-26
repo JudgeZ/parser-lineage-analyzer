@@ -52,7 +52,6 @@ from parser_lineage_analyzer._regex_algebra import (
     extract_regex_literal,
     language_subset,
     literal_in_regex_language,
-    neg_exact_literal_value,
     regex_languages_disjoint,
 )
 
@@ -694,51 +693,29 @@ class TestNegMatchExtraction:
         assert result is not None
         assert (result.field, result.body, result.flags, result.is_match) == (field, body, flags, True)
 
-    @pytest.mark.parametrize(
-        "condition,field,literal",
-        [
-            ("[t] !~ /^foo$/", "[t]", "foo"),
-            ("[type] !~ /^A$/", "[type]", "A"),
-            (r"[t] !~ /^foo\.bar$/", "[t]", "foo.bar"),
-            (r"[t] !~ /^192\.168\.1\.1$/", "[t]", "192.168.1.1"),
-            ("[a][b] !~ /^x$/", "[a][b]", "x"),
-        ],
-    )
-    def test_neg_exact_literal_value_recognizes(self, condition: str, field: str, literal: str) -> None:
-        assert neg_exact_literal_value(condition) == (field, literal)
-
-    @pytest.mark.parametrize(
-        "condition",
-        [
-            # =~ inputs MUST return None — that is exact_literal_value's job.
-            "[t] =~ /^foo$/",
-            "[t] =~ /^A$/",
-            # Non-literal bodies don't reduce.
-            "[t] !~ /^[A-Z]+$/",
-            r"[t] !~ /^\d+$/",
-            "[t] !~ /^(SEC|AUTH)$/",
-            # Flags rejected for soundness.
-            "[t] !~ /^A$/i",
-            # Not a regex literal at all.
-            '[t] != "foo"',
-        ],
-    )
-    def test_neg_exact_literal_value_rejects(self, condition: str) -> None:
-        assert neg_exact_literal_value(condition) is None
-
     def test_exact_literal_value_rejects_neg_match(self) -> None:
         # Soundness: ``exact_literal_value`` is named for ``=~`` and must
-        # NOT reduce ``!~ /^foo$/`` (which has equal-NOT semantics).
+        # NOT reduce ``!~ /^foo$/``. (See the docstring on
+        # ``exact_literal_value`` for the NOT round-trip rationale.)
         assert exact_literal_value("[t] !~ /^foo$/") is None
         assert exact_literal_value("[t] =~ /^foo$/") == ("[t]", "foo")
 
-    def test_neg_match_literal_fast_path_emits_inequality(self) -> None:
-        # ``[t] !~ /^foo$/`` is semantically ``[t] != "foo"`` — both produce
-        # equivalent LiteralFacts.
-        from_neg_match = _literal_fact_from_normalized_condition("[t] !~ /^foo$/")
-        from_inequality = _literal_fact_from_normalized_condition('[t] != "foo"')
-        assert from_neg_match == from_inequality
-        assert from_neg_match == LiteralFact("[t]", "foo", is_equal=False)
+    def test_neg_match_literal_body_stays_a_regex_fact(self) -> None:
+        # Soundness: ``[t] !~ /^foo$/`` is intentionally NOT collapsed to
+        # ``LiteralFact(is_equal=False)``. Under Python re semantics ``$``
+        # matches before a final ``\n``, so ``!~ /^foo$/`` excludes both
+        # ``"foo"`` and ``"foo\n"`` while ``[t] != "foo"`` only excludes
+        # ``"foo"``. Letting the negative-match literal collapse would
+        # invert under ``negated_literal_fact_from_condition`` into the
+        # narrower ``[t] == "foo"`` claim and unsoundly contradict peers
+        # whose witnesses lie in ``L(=~ /^foo$/) \ {"foo"}`` (e.g.
+        # ``"foo\n"``). Keep it as a RegexFact so the symbolic algebra
+        # reasons faithfully.
+        fact = _fact_from_condition("[t] !~ /^foo$/")
+        assert isinstance(fact, RegexFact)
+        assert fact.field == "[t]"
+        assert fact.body == "^foo$"
+        assert fact.is_match is False
 
     def test_neg_match_non_literal_body_emits_regex_fact(self) -> None:
         fact = _fact_from_condition("[t] !~ /^[A-Z]+$/")
@@ -793,10 +770,12 @@ class TestNegMatchExtraction:
     @pytest.mark.parametrize(
         "conditions,compatible",
         [
-            # Literal fast-path equivalence end-to-end.
+            # Literal eq vs same-body !~ — `_literal_vs_regex_contradicts`
+            # consults `literal_in_regex_language` and finds the contradiction.
             (['[t] == "foo"', "[t] !~ /^foo$/"], False),
             (['[t] != "foo"', "[t] !~ /^foo$/"], True),
-            # Same field positive vs negative on identical body.
+            # Same field positive vs negative on identical body — algebra
+            # detects via `language_subset(body, body) == YES`.
             (["[t] =~ /^[A-Z]+$/", "[t] !~ /^[A-Z]+$/"], False),
             # Same field positive matches a value that the negative excludes.
             (['[t] == "FOO"', "[t] !~ /^[A-Z]+$/"], False),
@@ -824,6 +803,25 @@ class TestNegMatchExtraction:
         # body in a `!~` must never authorize a contradiction.
         assert condition_is_contradicted("[t] !~ /%{NAME}/", ["[t] =~ /^B$/"]) is False
         assert conditions_are_compatible(["[t] !~ /%{NAME}/", "[t] =~ /^B$/"]) is True
+
+    def test_not_negation_round_trip_does_not_unsoundly_contradict(self) -> None:
+        # Regression for chatgpt-codex-connector finding on PR #8.
+        #
+        # If ``!~ /^foo$/`` were collapsed to ``LiteralFact("foo", neq)``
+        # and then negated via ``negated_literal_fact_from_condition``,
+        # the result would be ``LiteralFact("foo", eq)``. Paired with
+        # ``[t] != "foo"`` that produces a same-field, same-value, opposite-
+        # ``is_equal`` pair which the LiteralFact dispatch contradicts.
+        #
+        # Reality: ``NOT(!~ /^foo$/) AND != "foo"`` ⇔ ``=~ /^foo$/ AND
+        # != "foo"``. The witness ``"foo\n"`` matches ``^foo$`` (Python
+        # ``re.search`` semantics: ``$`` matches before a final ``\n``)
+        # AND is not equal to ``"foo"``, so the conjunction is COMPATIBLE.
+        # Reporting CONTRADICTED here would silently drop a reachable
+        # branch.
+        assert conditions_are_compatible(["NOT([t] !~ /^foo$/)", '[t] != "foo"']) is True
+        # And the symmetric existing-behavior check (already sound):
+        assert conditions_are_compatible(["NOT([t] =~ /^foo$/)", '[t] == "foo"']) is False
 
 
 class TestRegexStressFile:

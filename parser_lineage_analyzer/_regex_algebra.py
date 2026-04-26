@@ -356,29 +356,21 @@ def exact_literal_value(condition: str) -> tuple[str, str] | None:
     body, including escaped metacharacters that resolve to a single
     literal char (``\\.`` => ``.``, ``\\\\`` => ``\\``). It also rejects
     trailing flags, which the prior extractor silently accepted —
-    fixing an unsoundness under ``/^Foo$/i``. ``!~`` conditions return
-    ``None`` here; use :func:`neg_exact_literal_value` for those.
+    fixing an unsoundness under ``/^Foo$/i``.
+
+    ``!~`` conditions return ``None``. There is intentionally no ``!~``
+    sibling: under Python ``re.search`` semantics ``$`` matches before a
+    final ``\\n``, so ``!~ /^literal$/`` excludes both ``"literal"`` and
+    ``"literal\\n"``. Reducing it to ``LiteralFact(literal, is_equal=False)``
+    is sound in isolation but ``negated_literal_fact_from_condition``
+    would flip the ``is_equal`` and produce a *narrower* match-set than
+    ``=~ /^literal$/`` actually has — unsoundly contradicting peer
+    facts whose witnesses live outside the narrowed set. ``!~``
+    conditions therefore stay as :class:`RegexFact` and the symbolic
+    algebra reasons about them faithfully.
     """
     extracted = extract_regex_literal(condition)
     if extracted is None or not extracted.is_match:
-        return None
-    analysis = analyze_shape(extracted.body, extracted.flags)
-    if analysis.shape != RegexShape.EXACT_LITERAL or analysis.literal_value is None:
-        return None
-    return extracted.field, analysis.literal_value
-
-
-def neg_exact_literal_value(condition: str) -> tuple[str, str] | None:
-    """Return ``(field, literal)`` if ``condition`` is ``!~ /^literal$/``
-    with all-pure-literal characters and no flags. Otherwise ``None``.
-
-    Mirror of :func:`exact_literal_value` for the negative-match operator.
-    A condition reducible by this function is semantically equivalent to
-    ``[field] != "literal"`` and downstream code uses it to emit a
-    :class:`LiteralFact` with ``is_equal=False``.
-    """
-    extracted = extract_regex_literal(condition)
-    if extracted is None or extracted.is_match:
         return None
     analysis = analyze_shape(extracted.body, extracted.flags)
     if analysis.shape != RegexShape.EXACT_LITERAL or analysis.literal_value is None:

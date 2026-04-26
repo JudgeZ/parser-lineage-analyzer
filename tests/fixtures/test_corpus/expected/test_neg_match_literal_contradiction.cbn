@@ -1,10 +1,24 @@
 # EXPECTED BEHAVIOR:
-# Exercises the `!~` (negative regex match) literal fast path. After F1
-# wires `!~` into the contradiction engine, `[t] !~ /^literal$/` reduces
-# to a LiteralFact equivalent to `[t] != "literal"`. The conjunction
-# `[event_type] == "login" and [event_type] !~ /^login$/` is unreachable;
-# the inner mutate's `should_not_appear` field comes from a contradicted
-# branch and the analyzer must not regress on the surrounding lineage.
+# Exercises the `!~` (negative regex match) operator. After F1 wires `!~`
+# through the contradiction engine, several common shapes become
+# provably contradictory via the symbolic regex algebra (NOT via a
+# literal LiteralFact reduction — see the docstring on
+# ``exact_literal_value`` for why the literal fast path is intentionally
+# absent for `!~`).
+#
+#   1. `[event_type] == "login"` ∧ inner `[event_type] !~ /^login$/`:
+#      the inner is detected as unreachable through
+#      ``_literal_vs_regex_contradicts(LiteralFact("login", eq),
+#       RegexFact("^login$", is_match=False))`` — the literal is in
+#      L(/^login$/), so the !~ excludes it.
+#
+#   2. `[action] =~ /^[A-Z]+$/` ∧ `[action] !~ /^[A-Z]+$/`: same body,
+#      pos vs neg — `_facts_contradict` calls
+#      `language_subset(body, body) == YES` and reports CONTRADICTED.
+#
+# The fixture's purpose is regression-against-crash and a smoke test
+# of the algebra paths in real parser context. Precision of the
+# contradiction detection itself is asserted in the unit tests.
 #
 # Reachable assignments (must_resolve_fields):
 #   * event.idm.read_only_udm.metadata.event_type — set by the outer
@@ -22,9 +36,9 @@ filter {
       }
     }
     if [event_type] !~ /^login$/ {
-      # UNREACHABLE post-F1: outer == "login" forces [event_type] to be
-      # exactly "login", which is in the language /^login$/, so the !~
-      # excludes it. Pre-F1 this branch was treated as reachable.
+      # UNREACHABLE: outer `== "login"` constrains [event_type] to the
+      # literal "login", which is in L(/^login$/), so `!~ /^login$/`
+      # excludes it. Detected via _literal_vs_regex_contradicts.
       mutate {
         add_field => { "should_not_appear" => "true" }
       }
@@ -37,10 +51,8 @@ filter {
     }
   }
 
-  # A second shape: same-field positive vs negative on the same body.
-  # `[action] =~ /^[A-Z]+$/` and `[action] !~ /^[A-Z]+$/` together are
-  # contradictory; the analyzer must not crash on conjunctions of this
-  # kind regardless of whether the surrounding logic uses them.
+  # Same-field positive vs negative on the same body: the regex algebra
+  # detects the contradiction via language_subset(body, body) == YES.
   if [action] =~ /^[A-Z]+$/ and [action] !~ /^[A-Z]+$/ {
     mutate {
       add_field => { "uppercase_xor_lowercase" => "impossible" }
