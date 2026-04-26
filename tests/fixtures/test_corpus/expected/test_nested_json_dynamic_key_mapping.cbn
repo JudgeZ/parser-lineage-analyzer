@@ -1,0 +1,26 @@
+# EXPECTED BEHAVIOR:
+# Analyzes the parser's capability to understand dynamic key extraction.
+# When a JSON structure is parsed, and its output is assigned to a dynamic field name,
+# the tool needs to track that `parsed_json` is a structured object, and subsequent
+# references to its internal keys (e.g., `[parsed_json][user][id]`) are implicitly dependent
+# on the successful execution of the JSON filter.
+
+filter {
+  json {
+    source => "raw_payload"
+    target => "parsed_json"
+    skip_on_invalid_json => true
+  }
+
+  if [parsed_json] {
+    if [parsed_json][user][id] {
+      mutate {
+        add_field => { "user_id" => "%{[parsed_json][user][id]}" }
+      }
+    } else {
+      mutate {
+        add_field => { "user_id" => "unknown" }
+      }
+    }
+  }
+}

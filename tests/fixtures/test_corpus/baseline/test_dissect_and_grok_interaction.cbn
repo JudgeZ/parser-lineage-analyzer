@@ -1,0 +1,19 @@
+# BASELINE REPRODUCTION: Dissect and Grok Interactions
+# Validates that a `dissect` filter followed by a `grok` filter on the same extracted
+# field does not break lineage or cause circular references.
+# The tool MUST link the final parsed fields back to the original `message` through
+# the intermediate dissect extraction.
+# EXPECTED BEHAVIOR: `final_extract` traces back to `message` via `intermediate_field`.
+filter {
+  dissect {
+    mapping => {
+      "message" => "%{ts} %{+ts} %{intermediate_field} %{rest}"
+    }
+  }
+  
+  grok {
+    match => {
+      "intermediate_field" => "%{WORD:final_extract}-%{INT:id}"
+    }
+  }
+}

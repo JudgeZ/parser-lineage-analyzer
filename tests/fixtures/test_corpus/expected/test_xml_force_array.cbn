@@ -1,0 +1,18 @@
+# EXPECTATION:
+# The `xml` filter has a `force_array` option which changes the schema of the parsed data.
+# When `force_array` is true, parsed nodes are arrays even if there is only one element.
+# The parser must infer the data type of the nested fields under `[target]`
+# to be arrays based on this configuration.
+filter {
+  xml {
+    source => "raw_xml"
+    target => "parsed_xml"
+    force_array => true
+  }
+
+  if [parsed_xml][events][0] {
+    mutate {
+      add_tag => ["has_events"]
+    }
+  }
+}

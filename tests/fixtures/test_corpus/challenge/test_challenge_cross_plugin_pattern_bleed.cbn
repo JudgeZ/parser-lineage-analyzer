@@ -1,0 +1,15 @@
+# CHALLENGE REPRODUCTION: Cross-Plugin Pattern Bleeding
+# Validates whether custom Grok patterns defined locally in one filter block
+# erroneously leak into the global pattern registry and affect subsequent parsers.
+# EXPECTED BEHAVIOR:
+# - `CUSTOM_APP_ID` defined in the first grok block MUST NOT be resolvable by the 
+#   second grok block unless explicitly injected into the global dictionary.
+filter {
+  grok {
+    pattern_definitions => { "CUSTOM_APP_ID" => "[A-Z]{3}-\d{4}" }
+    match => { "message1" => "%{CUSTOM_APP_ID:app_1}" }
+  }
+  grok {
+    match => { "message2" => "%{CUSTOM_APP_ID:app_2}" }
+  }
+}

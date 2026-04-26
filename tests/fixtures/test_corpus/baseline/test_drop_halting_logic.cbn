@@ -1,0 +1,14 @@
+# BASELINE REPRODUCTION: Conditional Drop Halting Logic
+# Validates that the `drop` plugin signifies the termination of an event's lifecycle.
+# The tool MUST recognize that logic following a `drop {}` is either unreachable or
+# conditional based on the outer `if` block.
+# EXPECTED BEHAVIOR: `surviving_field` is only created if `noise_level` is not "high".
+filter {
+  if [noise_level] == "high" {
+    drop { }
+  }
+  
+  mutate {
+    add_field => { "surviving_field" => "yes" }
+  }
+}

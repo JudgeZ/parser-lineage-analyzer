@@ -1,0 +1,44 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must trace fields extracted from a potentially sparse JSON payload.
+# 2. It needs to handle deep nesting conditional checks: `[json_payload][records][0][properties][security][classification]`.
+# 3. If a specific nested field does not exist, or does not match a complex boolean condition, the event is dropped.
+# 4. The parser must correctly map the existence of these nested JSON fields to the `drop` logic.
+# 5. This tests deep object reference parsing, type inference (assuming arrays vs objects), and implicit dropping based on structural mismatch.
+
+filter {
+  json {
+    source => "message"
+    target => "json_payload"
+  }
+
+  # Ensure the payload is structurally what we expect (array of records)
+  if ![json_payload][records] {
+    drop { }
+  }
+
+  # Split the array into individual events
+  split {
+    field => "[json_payload][records]"
+    target => "record"
+  }
+
+  # Now process the individual record
+  if [record][properties][security][classification] {
+    if [record][properties][security][classification] == "INTERNAL" or [record][properties][security][classification] == "PUBLIC" {
+      # We only want to process highly sensitive data in this pipeline
+      drop { }
+    }
+  } else {
+    # If there is no classification, we assume it's untrusted/unclassified and flag it, but don't drop
+    mutate {
+      add_tag => ["unclassified_record"]
+    }
+  }
+
+  # Further nested checks
+  if [record][audit][auth_info][is_mfa_used] == "false" and [record][properties][security][risk_score] > 80 {
+    mutate {
+      add_tag => ["high_risk_no_mfa"]
+    }
+  }
+}

@@ -1,0 +1,21 @@
+# TEST BEHAVIOR:
+# Tests parser's ability to handle Ruby blocks that use `gsub!`, `concat`,
+# and regex matches natively in Ruby rather than Logstash plugins.
+# The parser needs to trace that `final_message` depends on `msg_part1` and
+# `msg_part2`, even though they are mutated in place within the Ruby AST.
+filter {
+  ruby {
+    code => '
+      part1 = event.get("msg_part1") || ""
+      part2 = event.get("msg_part2") || ""
+      
+      part1.gsub!(/[^a-zA-Z0-9]/, "_")
+      
+      if part2 =~ /CRITICAL/
+        part2 = part2.upcase
+      end
+      
+      event.set("final_message", part1 + " : " + part2)
+    '
+  }
+}

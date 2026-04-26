@@ -1,0 +1,11 @@
+# BUG REPRODUCTION: Dynamic Loop Shadowing
+# This file validates that the shadowing deletion bug is specific to `_exec_static_string_loop`.
+# The dynamic loop uses standard branch merging and correctly preserves the `user`
+# outer-scope token while processing the iteration.
+# EXPECTED: Both outer `user` and the dynamic loop assignments are preserved.
+filter {
+  mutate { replace => { "user" => "Admin" } }
+  for x in token {
+    mutate { replace => { "user" => "User" } }
+  }
+}

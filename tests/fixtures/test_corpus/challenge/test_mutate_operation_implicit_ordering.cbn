@@ -1,0 +1,21 @@
+# CHALLENGE: Mutate Operation Implicit Ordering
+# Logstash `mutate` blocks execute operations in a fixed, predefined order, not the order
+# they are written in the configuration file. For instance, `rename` always executes before
+# `update`, `replace`, `gsub`, `split`, etc., regardless of the top-to-bottom order.
+# EXPECTED BEHAVIOR: 
+# The reverse parser must analyze this `mutate` block and construct an AST/lineage that
+# reflects the internal execution order (e.g., rename -> replace -> gsub -> lowercase -> split),
+# ensuring that variable lineage is tracked correctly across these sequentially applied operations.
+
+filter {
+  mutate {
+    # Written out of order intentionally
+    split => { "target_field" => "," }
+    lowercase => [ "target_field" ]
+    gsub => [
+      "target_field", " ", "_"
+    ]
+    rename => { "original_field" => "target_field" }
+    replace => { "target_field" => "%{target_field}_processed" }
+  }
+}

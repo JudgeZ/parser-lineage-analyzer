@@ -1,0 +1,13 @@
+filter {
+  # Bug: The json extractor ignores `array_function => "split_columns"`.
+  # In SecOps, this causes it to create `user_1`, `user_2`. But the analyzer
+  # still only tracks `user`. So `user_1` becomes unresolved!
+  # EXPECTED FIX: `user_1` should be linked to json `message` as array index 1.
+  json {
+    source => "message"
+    target => "user"
+    array_function => "split_columns"
+  }
+  
+  mutate { replace => { "target" => "%{user_1}" } }
+}

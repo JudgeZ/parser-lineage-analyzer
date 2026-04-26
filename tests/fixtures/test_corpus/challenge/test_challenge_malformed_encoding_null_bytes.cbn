@@ -1,0 +1,17 @@
+# CHALLENGE REPRODUCTION: Malformed Encoding and Null Byte Injection
+# Validates parser stability when encountering raw null bytes (\x00), invalid 
+# UTF-8 sequences, or surrogate halves within strings processed by grok and json.
+# EXPECTED BEHAVIOR:
+# - The parser MUST gracefully fail or sanitize the string rather than crashing the thread.
+filter {
+  mutate {
+    gsub => [ "raw_message", "\x00", "" ]
+  }
+  json {
+    source => "raw_message"
+    target => "parsed_data"
+  }
+  grok {
+    match => { "raw_message" => "%{WORD:command}\x00%{GREEDYDATA:args}" }
+  }
+}

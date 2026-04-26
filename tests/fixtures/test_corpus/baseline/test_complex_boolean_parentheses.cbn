@@ -1,0 +1,13 @@
+# BASELINE REPRODUCTION: Complex Nested Boolean Logic
+# Validates that the parser can handle deep and nested boolean logic with parentheses.
+# The tool MUST NOT crash on heavily nested `and`/`or` with `in` / `=~` operators.
+# EXPECTED BEHAVIOR: The AST represents the conditional logic accurately, and `nested_action_taken` is reached on the true path.
+filter {
+  if (([a] == "b" and [c] != "d") or [e] in ["f", "g"]) and !([h] =~ /(?i)regex/) {
+    if ([i] > 100 or [j] <= 50) {
+      mutate {
+        add_field => { "nested_action_taken" => "true" }
+      }
+    }
+  }
+}

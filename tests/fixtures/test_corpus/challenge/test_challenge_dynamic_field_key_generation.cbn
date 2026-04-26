@@ -1,0 +1,27 @@
+# TEST OBJECTIVE: Simulate highly dynamic field key generation using interpolation.
+# EXPECTED BEHAVIOR:
+# 1. The parser MUST recognize that fields like "%{nested[key]}_suffix" are created.
+# 2. It must track the dependency on the field "nested[key]".
+# 3. If "nested[key]" is undefined, the resulting field might be literal "%{nested[key]}_suffix" or undefined depending on runtime, the parser must note this ambiguity.
+# 4. Subsequent conditionals checking "%{dynamic_key}_suffix" must be linked to this dynamic creation.
+
+filter {
+  mutate {
+    add_field => {
+      "%{[dynamic][prefix]}_%{some_key}" => "%{other_value}"
+      "static_key_%{[dynamic][prefix]}" => "static_val"
+    }
+  }
+
+  if ["static_key_%{[dynamic][prefix]}"] == "static_val" {
+    mutate {
+      add_tag => ["matched_dynamic_static"]
+    }
+  }
+
+  mutate {
+    rename => {
+      "%{[dynamic][prefix]}_%{some_key}" => "renamed_dynamic_field"
+    }
+  }
+}

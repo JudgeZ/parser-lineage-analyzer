@@ -1,0 +1,18 @@
+# CHALLENGE: Mutate Convert Datatypes Complexities
+# Validates the handling of `mutate { convert => ... }` operations on various field types,
+# including nested fields, arrays, and invalid target types.
+# In the real 700+ parser corpus, type conversions are frequent and often target deep structures.
+# The tool MUST correctly identify the fields being converted and track their new intended types,
+# or gracefully degrade if the target type is unknown or invalid without failing the parse.
+# EXPECTED BEHAVIOR: Lineage tracks type changes for `deep.nested.field` and `array_field`.
+# Unknown types like `invalid_type` should emit a warning but allow parsing to continue.
+filter {
+  mutate {
+    convert => {
+      "simple_string" => "integer"
+      "[deep][nested][field]" => "float"
+      "array_field" => "string"
+      "bad_field" => "invalid_type"
+    }
+  }
+}

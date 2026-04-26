@@ -1,0 +1,24 @@
+# EXPECTED BEHAVIOR:
+# 1. Tests extreme grok regex patterns containing lookarounds, atomic groups, and nested optional matches.
+# 2. Ensures the regex engine or the parser abstraction correctly models complex regular expression constructs without catastrophic backtracking.
+# 3. Incorporates multiple overlapping captures and conditional breaks.
+
+filter {
+  grok {
+    match => {
+      "message" => [
+        "^(?>(?<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z))\s+(?!(?:ERROR|FATAL))(?<level>[A-Z]+)\s+(?<msg>(?:(?!\bEOF\b).)*)",
+        "^(?<date>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+(?<host>[^\s]+)\s+(?<process>[a-zA-Z0-9_\-]+)(?:\[(?<pid>\d+)\])?:\s+(?<msg>.*)"
+      ]
+    }
+    pattern_definitions => {
+      "COMPLEX_IP" => "(?<![0-9])(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(?![0-9])"
+    }
+  }
+
+  if [msg] =~ /failed/ {
+    grok {
+      match => { "msg" => ".*from %{COMPLEX_IP:src_ip}.*" }
+    }
+  }
+}

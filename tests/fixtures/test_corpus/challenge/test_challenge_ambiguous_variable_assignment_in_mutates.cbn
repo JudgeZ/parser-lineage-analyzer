@@ -1,0 +1,40 @@
+# Test: Challenge Ambiguous Variable Assignment in Mutates
+# Description: Parsers frequently mutate a field, instantly evaluate it in an `if` block, and then mutate it again. The parser must maintain the exact chronological state of the event at each step. This test challenges the analyzer to not simply collapse all mutations of a field into a single final state, but to evaluate the intermediate states correctly for conditional branching.
+
+filter {
+  mutate {
+    add_field => { "status_code" => "%{raw_status}" }
+  }
+
+  # First evaluation based on initial assignment
+  if [status_code] == "200" {
+    mutate {
+      replace => { "status_code" => "OK" }
+      add_tag => ["was_200"]
+    }
+  } else if [status_code] == "404" {
+    mutate {
+      replace => { "status_code" => "NOT_FOUND" }
+      add_tag => ["was_404"]
+    }
+  }
+
+  # Second evaluation based on the mutated state
+  if [status_code] == "OK" {
+    mutate {
+      add_field => { "is_success" => "true" }
+    }
+  } else if [status_code] == "NOT_FOUND" {
+    mutate {
+      add_field => { "is_success" => "false" }
+      add_field => { "error_type" => "client_error" }
+    }
+  }
+
+  # A catch-all that overwrites it again
+  if ![is_success] {
+    mutate {
+      replace => { "status_code" => "UNKNOWN_OR_OTHER" }
+    }
+  }
+}

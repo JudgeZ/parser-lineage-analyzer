@@ -1,0 +1,12 @@
+// EXPECTED BEHAVIOR:
+// The date filter uses a dynamic field reference `%{local_tz}` for the timezone.
+// The parser must track a read dependency on `[local_tz]` for the `date` block.
+// The output `[@timestamp]` depends not only on `[event_time]` but also `[local_tz]`.
+
+filter {
+  date {
+    match => [ "event_time", "ISO8601" ]
+    timezone => "%{local_tz}"
+    target => "@timestamp"
+  }
+}

@@ -1,0 +1,16 @@
+# CHALLENGE: Mutate Merge Duplicate Keys
+# Validates the handling of the `merge` operation in the `mutate` plugin when the source and
+# destination fields might contain overlapping or duplicated keys.
+# In the real corpus, merging complex objects is common and can create non-deterministic
+# lineage paths if not handled carefully.
+# The tool MUST parse the `merge` array structure correctly and track that `dest_field`
+# now depends on the contents of both `source_field_1` and `source_field_2`.
+# EXPECTED BEHAVIOR: Lineage shows `dest_field` as a composite of the merged sources.
+filter {
+  mutate {
+    merge => {
+      "dest_field" => "source_field_1"
+      "dest_field" => "source_field_2"
+    }
+  }
+}

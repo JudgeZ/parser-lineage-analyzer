@@ -1,0 +1,5 @@
+{
+  "must_have_warning_codes": ["mutate_ordering_drift", "runtime_condition"],
+  "must_not_have_warning_codes": ["malformed_config"],
+  "must_resolve_fields": ["activity", "username", "filename"]
+}

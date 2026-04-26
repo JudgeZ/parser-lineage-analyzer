@@ -1,0 +1,20 @@
+# EXPECTED BEHAVIOR:
+# This test verifies the parser can handle ruby blocks that explicitly control event flow using
+# `event.cancel` and potentially generate new events. While the parser may not execute the Ruby code,
+# it must recognize these API calls as significant control-flow altering side-effects.
+# It should flag the plugin as potentially dropping events or creating new ones.
+
+filter {
+  ruby {
+    code => "
+      if event.get('drop_me') == 'true'
+        event.cancel
+      else
+        event.set('kept', true)
+        # Simulate yielding a new event
+        # new_event = LogStash::Event.new({'clone' => true})
+        # new_event::yield
+      end
+    "
+  }
+}

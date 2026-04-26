@@ -1,0 +1,20 @@
+# EXPECTED BEHAVIOR:
+# In massive parsers, nested conditionals often contain regexes with capturing groups
+# whose existence determines the flow of inner blocks.
+# The parser must correctly scope these captured variables and handle deeply nested
+# logic without failing.
+filter {
+  if [message] =~ /^(?<outer_type>[A-Z]+)::(?<outer_val>\d+)$/ {
+    if [outer_type] == "SYS" {
+      if [outer_val] =~ /^(?<inner_val>10\d{2})$/ {
+        mutate { add_tag => ["sys_1000_series"] }
+      } else if [outer_val] =~ /^(?<inner_val>20\d{2})$/ {
+        mutate { add_tag => ["sys_2000_series"] }
+      }
+    } else if [outer_type] == "APP" {
+      if [message] =~ /ERROR/ {
+        mutate { add_tag => ["app_error"] }
+      }
+    }
+  }
+}

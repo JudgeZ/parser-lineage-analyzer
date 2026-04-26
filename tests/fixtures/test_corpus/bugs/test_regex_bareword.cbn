@@ -1,0 +1,13 @@
+# BUG REPRODUCTION: Unbalanced Regex Bareword Brace Corruption
+# This file tests the lexer's `_is_regex_literal_start` heuristic.
+# The unquoted path `/var_{/` is falsely identified as a regex literal, hiding the `{`.
+# The global brace depth drops below 0 on the subsequent `}`, truncating the mutate block.
+# EXPECTED FIX: The parser should retain the `target.ip` assignment and not crash Lark.
+filter {
+  mutate {
+    replace => {
+      "path" => /var_{/logs/}
+      "event.idm.read_only_udm.target.ip" => "1.1.1.1"
+    }
+  }
+}

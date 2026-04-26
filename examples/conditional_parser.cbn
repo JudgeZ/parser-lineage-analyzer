@@ -1,0 +1,44 @@
+filter {
+  kv {
+    source => "message"
+    field_split => " "
+    value_split => "="
+    trim_value => "\""
+  }
+
+  if [action] == "allow" {
+    mutate {
+      replace => {
+        "event.idm.read_only_udm.security_result.action" => "ALLOW"
+      }
+    }
+  } else if [action] == "deny" or [action] == "drop" {
+    mutate {
+      replace => {
+        "event.idm.read_only_udm.security_result.action" => "BLOCK"
+      }
+    }
+  } else {
+    mutate {
+      replace => {
+        "event.idm.read_only_udm.security_result.action" => "UNKNOWN_ACTION"
+      }
+    }
+  }
+
+  if [src] =~ /\\d+\\.\\d+\\.\\d+\\.\\d+/ {
+    mutate {
+      replace => {
+        "event.idm.read_only_udm.principal.ip" => "%{src}"
+      }
+    }
+  } else {
+    mutate {
+      replace => {
+        "event.idm.read_only_udm.principal.hostname" => "%{src}"
+      }
+    }
+  }
+
+  mutate { merge => { "@output" => "event" } }
+}

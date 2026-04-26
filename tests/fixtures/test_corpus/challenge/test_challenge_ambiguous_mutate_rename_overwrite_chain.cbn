@@ -1,0 +1,19 @@
+# EXPECTED BEHAVIOR:
+# This test challenges the parser's understanding of the internal execution order within a single mutate block.
+# In Logstash/CBN, operations within a single mutate block execute in a specific order (e.g., rename, update, replace, convert, etc.),
+# not strictly top-to-bottom.
+# The parser must correctly model this internal ordering:
+# 1. 'rename' from 'src1' to 'dest1' happens first.
+# 2. 'update' of 'dest1' happens next.
+# 3. 'replace' of 'src1' happens (if src1 still exists, which it shouldn't if renamed).
+# 4. 'copy' from 'dest1' to 'final_dest'.
+# The resulting state must precisely match the plugin's internal operation phases, avoiding blind top-to-bottom translation.
+
+filter {
+  mutate {
+    copy => { "dest1" => "final_dest" }
+    replace => { "src1" => "replaced_value" }
+    update => { "dest1" => "updated_value" }
+    rename => { "src1" => "dest1" }
+  }
+}

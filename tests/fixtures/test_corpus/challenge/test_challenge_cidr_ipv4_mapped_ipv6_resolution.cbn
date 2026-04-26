@@ -1,0 +1,12 @@
+# CHALLENGE REPRODUCTION: CIDR IPv4-Mapped IPv6 Resolution
+# Validates the CIDR plugin's ability to cross-evaluate IPv4 and IPv6-mapped IPv4 addresses.
+# EXPECTED BEHAVIOR:
+# - An address like `::ffff:192.168.1.5` MUST successfully evaluate against an IPv4 
+#   subnet like `192.168.0.0/16`.
+filter {
+  cidr {
+    address => [ "%{client.ip_v6_mapped}" ] # e.g., ::ffff:10.0.0.5
+    network => [ "10.0.0.0/8" ]
+    add_tag => [ "internal_network" ]
+  }
+}

@@ -1,0 +1,41 @@
+# EXPECTED BEHAVIOR:
+# 1. Parser must distinguish between `if [field]` (which checks if the field exists 
+#    and is not false/null) and `if [field] == "true"` (which checks string equality).
+# 2. Should track that `[is_active]` being set to boolean `true` vs string `"true"` 
+#    might evaluate differently depending on the parser engine's strictness, but standard 
+#    Logstash treats boolean true and string "true" differently in strict equality.
+# 3. Ensure no false positives in contradiction detection when existence and truthiness overlap.
+
+filter {
+  json {
+    source => "message"
+  }
+
+  # Checks if field exists and is truthy
+  if [is_admin] {
+    mutate {
+      add_tag => [ "admin_exists" ]
+    }
+  }
+
+  # Checks specific string value
+  if [is_admin] == "true" {
+    mutate {
+      add_tag => [ "admin_string_true" ]
+    }
+  }
+
+  # Checks boolean value (if JSON parsed it as boolean)
+  if [is_admin] == true {
+    mutate {
+      add_tag => [ "admin_boolean_true" ]
+    }
+  }
+
+  # Negation of existence
+  if ![missing_field] {
+    mutate {
+      add_field => { "status" => "missing_expected_field" }
+    }
+  }
+}

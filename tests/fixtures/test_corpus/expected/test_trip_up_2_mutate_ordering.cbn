@@ -1,0 +1,43 @@
+filter {
+  // Case 1: Missing `add_field` and `update` logic
+  // The analyzer's `_exec_mutate` loop forgot to implement these verbs.
+  // `update` only mutates an existing target, so seed `target.port` before
+  // updating it; otherwise documented Logstash behavior is a no-op.
+  mutate { replace => { "event.idm.read_only_udm.target.port" => "0" } }
+  mutate {
+    add_field => { "event.idm.read_only_udm.target.ip" => "%{src_ip}" }
+    update => { "event.idm.read_only_udm.target.port" => "443" }
+  }
+
+  // Case 2: `on_error` Blocks Silently Dropped
+  // The LALR statement grammar misidentifies `on_error` as a standalone plugin.
+  // The execution engine flags it as "unsupported plugin on_error" and discards
+  // the entire fallback logic, completely losing `event_timestamp`.
+  date {
+    match => ["time", "ISO8601"]
+    target => "event.idm.read_only_udm.metadata.event_timestamp"
+  } on_error {
+    mutate { 
+      replace => { "event.idm.read_only_udm.metadata.event_timestamp" => "1970-01-01T00:00:00Z" } 
+    }
+  }
+
+  // Case 3: Unquoted Bracket Array Syntax (`__config_parse_error__`)
+  // `config_parser.py` sees `[new]` as an array and `[field]` as a second array
+  // immediately following it. This violates the `key => value` grammar.
+  // It silently throws a `__config_parse_error__` and skips the entire block.
+  mutate {
+    rename => { old_field => [new][field] }
+    # This valid replace is also dragged down and skipped by the config parse error!
+    replace => { "event.idm.read_only_udm.security_result.action" => "BLOCK" }
+  }
+
+  // Case 4: Opaque Nested Conditional Logic
+  // The parser extracts the entire string as a single opaque condition.
+  // `[a] == "1" and [b] == "2"` instead of a proper logical syntax tree.
+  if [a] == "1" and [b] == "2" {
+    mutate {
+      replace => { "event.idm.read_only_udm.network.application_protocol" => "HTTPS" }
+    }
+  }
+}

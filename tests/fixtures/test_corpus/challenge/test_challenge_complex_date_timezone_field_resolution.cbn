@@ -1,0 +1,23 @@
+# TEST BEHAVIOR:
+# Simulates a scenario where the timezone for a date parsing operation is 
+# dynamically generated via an earlier translation or extraction.
+# The parser must understand that `event_time` extraction has an implicit
+# dependency on the `extracted_tz` field, which in turn depends on `region_code`.
+filter {
+  translate {
+    field => "region_code"
+    destination => "extracted_tz"
+    dictionary => {
+      "US" => "America/New_York"
+      "UK" => "Europe/London"
+      "JP" => "Asia/Tokyo"
+    }
+    fallback => "UTC"
+  }
+
+  date {
+    match => [ "raw_timestamp", "ISO8601", "yyyy-MM-dd HH:mm:ss" ]
+    target => "event_time"
+    timezone => "%{extracted_tz}"
+  }
+}

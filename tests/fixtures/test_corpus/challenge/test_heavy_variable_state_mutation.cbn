@@ -1,0 +1,60 @@
+/*
+ * TEST CORPUS: Heavy Variable State Mutation and Dependency Tracking
+ * 
+ * CHALLENGE:
+ * In large parsers, a single field might undergo dozens of transformations (assigned, copied,
+ * renamed, modified via gsub, used in logic, deleted, and recreated). Tracking the state of
+ * these variables throughout the parser lineage is critical for accurate reverse parsing.
+ * 
+ * EXPECTED BEHAVIOR:
+ * 1. The parser must accurately track `temp_host` through its entire lifecycle (creation, modification, renaming).
+ * 2. It should recognize when a variable is deleted (`remove_field`) and flag any subsequent use of it as a potential error or conditional logic gap.
+ * 3. The final state of `destination_host` should be correctly mapped back to its origin (`message` -> `temp_host` -> `destination_host`).
+ * 4. Ensure that conditional blocks that overwrite variables are evaluated as branch-specific state mutations.
+ */
+
+filter {
+  # Stage 1: Initial extraction
+  grok {
+    match => { "message" => "HOST:%{HOSTNAME:temp_host} IP:%{IP:temp_ip}" }
+  }
+
+  # Stage 2: Conditional mutation based on initial state
+  if [temp_host] {
+    mutate {
+      lowercase => [ "temp_host" ]
+      gsub => [ "temp_host", "internal\.corp$", "local" ]
+    }
+  } else {
+    mutate {
+      add_field => { "temp_host" => "unknown" }
+    }
+  }
+
+  # Stage 3: Renaming and copying
+  mutate {
+    rename => { "temp_host" => "destination_host" }
+    copy => { "temp_ip" => "destination_ip" }
+  }
+
+  # Stage 4: Deletion of temporary variables
+  mutate {
+    remove_field => [ "temp_ip", "message" ]
+  }
+
+  # Stage 5: Potential contradiction / error case in real parsers
+  # The parser analyzer should flag this if it checks for variable existence,
+  # as temp_host was renamed.
+  if [temp_host] == "unknown" {
+    mutate {
+      add_tag => [ "unresolved_host" ]
+    }
+  }
+
+  # Stage 6: Final transformation
+  if [destination_host] != "unknown" {
+    mutate {
+      add_field => { "fqdn" => "%{destination_host}.%{destination_ip}" }
+    }
+  }
+}

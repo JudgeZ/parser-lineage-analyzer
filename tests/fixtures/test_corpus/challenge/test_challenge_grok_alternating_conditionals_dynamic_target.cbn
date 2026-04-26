@@ -1,0 +1,47 @@
+# EXPECTED BEHAVIOR:
+# 1. Evaluate a complex if-else chain that determines which grok pattern to apply based on dynamic field contents.
+# 2. Use field interpolation `%{field_name}` inside the grok pattern matching logic.
+# 3. Target extraction into dynamically named fields based on event data.
+# 4. Handle fallbacks when primary grok fails, adding specific failure tags depending on the branch taken.
+# 5. This tests the parser's ability to maintain context in deeply nested control flows with dynamic variable resolution.
+
+filter {
+  if [log_type] == "syslog" {
+    grok {
+      match => { 
+        "message" => "%{SYSLOGTIMESTAMP:syslog_timestamp} %{SYSLOGHOST:syslog_hostname} %{DATA:syslog_program}(?:\[%{POSINT:syslog_pid}\])?: %{GREEDYDATA:syslog_message}" 
+      }
+      overwrite => [ "message" ]
+      tag_on_failure => [ "_grokparsefailure_syslog" ]
+    }
+  } else if [log_type] =~ /^auth/ and [src_ip] {
+    # Alternating condition with regex match and existence check
+    grok {
+      match => { 
+        # Dynamic target extraction using interpolated variables (often problematic in some parser engines)
+        "message" => "Accepted %{WORD:auth_method} for %{USER:[@metadata][auth_user]} from %{IP:src_ip} port %{POSINT:port}" 
+      }
+      add_field => {
+        "dynamic_user_%{auth_method}" => "%{[@metadata][auth_user]}"
+      }
+      tag_on_failure => [ "_grokparsefailure_auth" ]
+    }
+  } else {
+    # Fallback complex grok with multiple patterns
+    grok {
+      match => { 
+        "message" => [
+          "(?<custom_time>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z) \[%{LOGLEVEL:level}\] %{GREEDYDATA:msg}",
+          "%{TIMESTAMP_ISO8601:custom_time} %{LOGLEVEL:level} %{GREEDYDATA:msg}"
+        ]
+      }
+      tag_on_failure => [ "_grokparsefailure_fallback" ]
+    }
+  }
+
+  if !("_grokparsefailure_syslog" in [tags] or "_grokparsefailure_auth" in [tags]) {
+    mutate {
+      add_tag => [ "grok_success" ]
+    }
+  }
+}

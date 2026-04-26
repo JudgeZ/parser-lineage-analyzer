@@ -1,0 +1,19 @@
+# EXPECTED BEHAVIOR:
+# Simulates a ruby block that splits a single log event into multiple events
+# using the yield API. The parser must understand that this plugin can output
+# more events than it takes in, which affects downstream plugins that might
+# execute multiple times per original input.
+filter {
+  ruby {
+    code => "
+      if event.get('message_array')
+        event.get('message_array').each do |msg|
+          new_event = LogStash::Event.new('message' => msg)
+          new_event.set('split_from', event.get('id'))
+          yield new_event
+        end
+        event.cancel
+      end
+    "
+  }
+}

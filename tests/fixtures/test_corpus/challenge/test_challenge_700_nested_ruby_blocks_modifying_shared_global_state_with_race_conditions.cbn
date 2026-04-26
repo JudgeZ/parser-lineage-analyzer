@@ -1,0 +1,35 @@
+# EXPECTED BEHAVIOR:
+# 1. Simulates Ruby blocks storing state in global/class variables.
+# 2. The parser should recognize `@@shared_state` or `$global_state` across different ruby blocks.
+# 3. While a static parser can't run the ruby, it should parse the `init` and `code` blocks correctly and track that `ruby` is a blackbox that mutates the event.
+# 4. Nested or chained ruby blocks passing data.
+
+filter {
+  ruby {
+    init => "
+      @@shared_counter ||= 0
+      @@event_cache ||= {}
+    "
+    code => "
+      @@shared_counter += 1
+      event.set('counter', @@shared_counter)
+      if @@shared_counter % 100 == 0
+        @@event_cache.clear
+      end
+      @@event_cache[event.get('id')] = event.get('message')
+    "
+  }
+
+  if [counter] > 1000 {
+    ruby {
+      code => "
+        cached_msg = @@event_cache[event.get('parent_id')]
+        if cached_msg
+          event.set('parent_message', cached_msg)
+        else
+          event.cancel
+        end
+      "
+    }
+  }
+}

@@ -1,0 +1,20 @@
+# EXPECTATION: 
+# The ruby plugin supports both `init` and `code` blocks.
+# The parser must correctly associate both blocks with the same ruby filter instance.
+# State initialized in `init` should be considered opaque but acknowledged, 
+# and the `code` block execution should be treated as potentially mutating any field.
+filter {
+  ruby {
+    init => "
+      @my_regex = /complex_pattern_(?<id>\d+)/
+      require 'base64'
+    "
+    code => "
+      match = @my_regex.match(event.get('message'))
+      if match
+        event.set('extracted_id', match[:id])
+        event.set('decoded_payload', Base64.decode64(event.get('payload')))
+      end
+    "
+  }
+}

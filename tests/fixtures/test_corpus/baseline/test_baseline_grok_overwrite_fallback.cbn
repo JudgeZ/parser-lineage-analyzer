@@ -1,0 +1,17 @@
+# BASELINE REPRODUCTION: Grok Overwrite and Fallback
+# Validates that the parser understands the `overwrite` parameter in grok
+# and can handle multiple patterns where early patterns might fail.
+# The tool MUST parse the overwrite array and the pattern matches.
+# EXPECTED BEHAVIOR: AST correctly formed, grok parameters parsed including overwrite and tag_on_failure.
+filter {
+  grok {
+    match => {
+      "message" => [
+        "%{SYSLOGBASE} %{GREEDYDATA:syslog_message}",
+        "%{TIMESTAMP_ISO8601:timestamp} %{LOGLEVEL:level} %{GREEDYDATA:syslog_message}"
+      ]
+    }
+    overwrite => [ "message", "timestamp" ]
+    tag_on_failure => [ "_grokparsefailure_custom" ]
+  }
+}

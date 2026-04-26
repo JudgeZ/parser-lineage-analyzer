@@ -1,0 +1,43 @@
+/*
+ * EXPECTED BEHAVIOR:
+ * The parser must correctly handle multiple sequential filter blocks.
+ * It must maintain state correctly across block boundaries, tracking field lineage
+ * as fields are created, modified, or overwritten in subsequent blocks.
+ * If a variable is checked in the first block, mutated in the second, and checked 
+ * in the third, the lineage must reflect the chronological mutation sequence accurately.
+ */
+filter {
+  if [log_type] == "auth" {
+    mutate {
+      add_field => { "temp_status" => "pending" }
+    }
+  }
+}
+
+filter {
+  if [temp_status] == "pending" {
+    if [user] == "admin" {
+      mutate {
+        replace => { "temp_status" => "approved" }
+      }
+    } else {
+      mutate {
+        replace => { "temp_status" => "denied" }
+      }
+    }
+  }
+}
+
+filter {
+  if [temp_status] == "approved" {
+    mutate {
+      add_tag => ["admin_login_success"]
+      remove_field => ["temp_status"]
+    }
+  } else if [temp_status] == "denied" {
+    mutate {
+      add_tag => ["login_denied"]
+      remove_field => ["temp_status"]
+    }
+  }
+}

@@ -1,0 +1,13 @@
+# BASELINE REPRODUCTION: ExtractNumbers and I18n Transliteration
+# Validates specialized data sanitation plugins.
+# EXPECTED BEHAVIOR:
+# - `extractnumbers` should pull all numeric contiguous digits into an array of integers.
+# - `i18n` should successfully transliterate non-ASCII characters (e.g., `ñ` to `n`, `é` to `e`).
+filter {
+  extractnumbers {
+    source => "mixed_string"
+  }
+  i18n {
+    transliterate => [ "user_name_unicode", "company_name_unicode" ]
+  }
+}

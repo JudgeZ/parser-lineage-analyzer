@@ -1,0 +1,19 @@
+# EXPECTED BEHAVIOR:
+# Parsers might implement rate limiting or sampling via ruby blocks and drop filters.
+# This test evaluates dropping an event based on a dynamically calculated threshold.
+filter {
+  ruby {
+    code => "
+      score = event.get('threat_score').to_i
+      if score < 10
+        event.set('should_drop', true)
+      end
+    "
+  }
+  
+  if [should_drop] {
+    drop {
+      percentage => 50
+    }
+  }
+}

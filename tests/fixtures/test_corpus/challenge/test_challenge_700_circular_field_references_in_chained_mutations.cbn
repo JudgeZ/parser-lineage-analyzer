@@ -1,0 +1,40 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must correctly resolve the final field names after a series of chained renames, 
+#    some of which create circular references or overwrite existing fields.
+# 2. In the first mutate, `temp_a` is renamed to `temp_b`, `temp_b` to `temp_c`, and `temp_c` to `temp_a`.
+#    The parser must understand the execution order of renames within a single mutate block 
+#    (usually alphabetical or insertion order depending on the specific engine version, but often unpredictable).
+#    It must flag this as an ambiguous or potentially dangerous circular rename.
+# 3. The subsequent mutate blocks explicitly chain the renames. The parser should track the lineage:
+#    `original_field` -> `stage1` -> `stage2` -> `final_field`.
+# 4. If `final_field` is used in a later conditional, the parser should know it originated from `original_field`.
+# 5. This tests the graph analyzer's ability to handle cyclical or deeply chained data flow paths without
+#    infinite recursion.
+
+filter {
+  # Ambiguous/circular rename in a single block
+  mutate {
+    rename => { 
+      "temp_a" => "temp_b" 
+      "temp_b" => "temp_c"
+      "temp_c" => "temp_a"
+    }
+  }
+
+  # Chained renames across blocks
+  mutate {
+    rename => { "original_field" => "stage1" }
+  }
+  mutate {
+    rename => { "stage1" => "stage2" }
+  }
+  mutate {
+    rename => { "stage2" => "final_field" }
+  }
+
+  if [final_field] == "malicious" {
+    mutate {
+      add_tag => ["threat_detected"]
+    }
+  }
+}

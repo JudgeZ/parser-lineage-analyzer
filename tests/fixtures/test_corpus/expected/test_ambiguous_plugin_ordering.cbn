@@ -1,0 +1,14 @@
+# EXPECTED BEHAVIOR:
+# Evaluates how the parser handles multiple independent mutations within the same
+# block. The order of operations in Logstash mutate (coerce, rename, update, replace,
+# convert, gsub, join, merge, strip, split, uppercase, lowercase, capitalize, remove_field)
+# must be accurately reflected if the analyzer simulates execution.
+filter {
+  mutate {
+    add_field => { "test_field" => "initial" }
+    gsub => [ "test_field", "initial", "gsubbed" ]
+    uppercase => [ "test_field" ]
+    rename => { "test_field" => "final_field" }
+    remove_field => [ "test_field" ] # This would fail if it runs before rename, but in logstash remove is last
+  }
+}

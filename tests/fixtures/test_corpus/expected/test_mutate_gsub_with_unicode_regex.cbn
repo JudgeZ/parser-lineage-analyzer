@@ -1,0 +1,14 @@
+# EXPECTED BEHAVIOR:
+# The parser must properly parse gsub arguments that contain unicode ranges, hex escapes,
+# and literal unicode characters within the regex pattern and the replacement string.
+# The parser must maintain the exact representation of these sequences without corrupting them.
+filter {
+  mutate {
+    gsub => [
+      "message", "[\u0000-\u001F]", "",
+      "field1", "\\x{00E9}", "e",
+      "field2", "[\x00-\x7F]", "ASCII",
+      "field3", "🚀", "rocket"
+    ]
+  }
+}

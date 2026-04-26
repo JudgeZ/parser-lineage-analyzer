@@ -1,0 +1,29 @@
+# EXPECTED BEHAVIOR:
+# This test checks how the parser models regex backtracking vulnerabilities and timeout fallbacks.
+# The `message` field is matched against a poorly constructed regex likely to cause catastrophic backtracking.
+# The parser must understand the `timeout_millis` directive.
+# Crucially, the parser must correctly interpret the failure mode: if it times out, the `_groktimeout` tag is added.
+# The subsequent conditional checks for this tag to route to an alternative, safer dissect-based extraction.
+# The dependency graph must show the dissect plugin as a fallback execution path triggered specifically by the grok timeout state.
+
+filter {
+  grok {
+    match => {
+      "message" => "^(.*?,){10} %{GREEDYDATA:rest}" # Intentionally vulnerable pattern
+    }
+    timeout_millis => 500
+    tag_on_timeout => "_groktimeout"
+  }
+
+  if "_groktimeout" in [tags] {
+    dissect {
+      mapping => {
+        "message" => "%{f1},%{f2},%{f3},%{f4},%{f5},%{f6},%{f7},%{f8},%{f9},%{f10}, %{rest}"
+      }
+    }
+    mutate {
+      remove_tag => ["_groktimeout"]
+      add_tag => ["rescued_with_dissect"]
+    }
+  }
+}

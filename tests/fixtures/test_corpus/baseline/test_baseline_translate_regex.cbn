@@ -1,0 +1,18 @@
+# BASELINE REPRODUCTION: Translate Regex Matching
+# Validates the parser handles translate plugins with `regex => true` properly.
+# EXPECTED BEHAVIOR: The parser MUST recognize that dictionary keys are regex
+# patterns when `regex => true` is used, affecting how static analysis evaluates
+# potential matches.
+filter {
+  translate {
+    field => "http_user_agent"
+    destination => "is_mobile"
+    dictionary => {
+      "Android|iPhone|iPad" => "true"
+      "Windows NT|Macintosh" => "false"
+    }
+    regex => true
+    exact => false
+    fallback => "unknown"
+  }
+}

@@ -1,0 +1,19 @@
+# BASELINE REPRODUCTION: XML Filter with Namespaces and XPath
+# Validates that the `xml` filter is correctly handled, particularly when using
+# namespaces and XPath extractions which involve very weird syntax strings.
+# The tool MUST parse the xpath array correctly without getting confused by the slashes and colons.
+# EXPECTED BEHAVIOR: `extracted_value` lineage traces back to `xml_data`.
+filter {
+  xml {
+    source => "xml_data"
+    target => "parsed_xml"
+    namespaces => {
+      "xsl" => "http://www.w3.org/1999/XSL/Transform"
+      "xhtml" => "http://www.w3.org/1999/xhtml"
+    }
+    xpath => [
+      "/xsl:stylesheet/xsl:template/xhtml:html/text()", "extracted_value",
+      "//xhtml:body/xhtml:p/text()", "paragraph_text"
+    ]
+  }
+}

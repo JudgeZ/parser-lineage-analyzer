@@ -1,0 +1,15 @@
+# BASELINE REPRODUCTION: Elapsed Time Tracking
+# Validates the tracking of transaction durations across multiple log events.
+# EXPECTED BEHAVIOR:
+# - When a `start_event` is seen, it tracks the timestamp.
+# - When an `end_event` is seen with the same `transaction_id`, it computes `elapsed.time`.
+# - Timeout handling should expire stale transactions safely.
+filter {
+  elapsed {
+    start_tag => "start_event"
+    end_tag => "end_event"
+    unique_id_field => "transaction_id"
+    timeout => 300
+    new_event_on_match => false
+  }
+}

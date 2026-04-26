@@ -1,0 +1,13 @@
+# EXPECTED BEHAVIOR:
+# The parser must correctly interpret the array-of-arrays syntax for `gsub`
+# within the `mutate` filter. It needs to apply sequential replacements on
+# `my_field` and handle the regex substitution pattern accurately.
+filter {
+  mutate {
+    gsub => [
+      "my_field", "/", "_",
+      "my_field", "\\", "_",
+      "other_field", "^foo.*", "bar"
+    ]
+  }
+}

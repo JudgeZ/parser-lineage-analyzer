@@ -1,0 +1,65 @@
+filter {
+  # 1. Unmatched braces and weird characters in strings and regexes
+  if [message] =~ /some regex \{ with unmatched \[ brackets/ {
+    mutate { replace => { "event.idm.read_only_udm.target.ip" => "1.1.1.1" } }
+  }
+
+  # 2. Strings containing config delimiters
+  mutate {
+    replace => {
+      "weird_string" => "this has => { } [ ] # comments inside quotes"
+    }
+  }
+
+  # 3. Dynamic field names (unresolvable statically)
+  mutate {
+    replace => {
+      "event.idm.read_only_udm.network.%{dynamic_protocol}" => "weird_protocol"
+    }
+  }
+
+  # 4. Overwriting a field multiple times
+  mutate {
+    replace => { "event.idm.read_only_udm.target.hostname" => "host1" }
+  }
+  mutate {
+    replace => { "event.idm.read_only_udm.target.hostname" => "host2" }
+  }
+  mutate {
+    replace => { "event.idm.read_only_udm.target.hostname" => "host3" }
+  }
+
+  # 5. Empty blocks
+  if [foo] == "bar" {
+  } else {
+    mutate { replace => { "event.idm.read_only_udm.target.port" => "80" } }
+  }
+
+  # 6. Nested and redundant if statements
+  if [a] == "1" {
+    if [b] == "2" {
+      if [c] == "3" {
+         mutate { replace => { "event.idm.read_only_udm.target.mac" => "00:00:00:00:00:00" } }
+      }
+    }
+  }
+
+  # 7. Unsupported plugins and operations
+  statedump { label => "debug_point" }
+  
+  some_weird_plugin {
+    foo => "bar"
+  }
+
+  mutate {
+    # This is an unsupported mutate operation
+    weird_mutate => { "a" => "b" }
+  }
+
+  # 8. Loop that does nothing but exists
+  for _ in empty_array {
+    # nothing
+  }
+
+  mutate { merge => { "@output" => "event" } }
+}

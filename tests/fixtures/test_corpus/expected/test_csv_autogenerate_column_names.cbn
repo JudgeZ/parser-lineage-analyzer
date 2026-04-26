@@ -1,0 +1,18 @@
+# EXPECTED BEHAVIOR:
+# The parser must handle the CSV filter when `autogenerate_column_names` is true.
+# In this state, it should infer the creation of dynamic columns if possible,
+# or at least gracefully handle subsequent references to auto-generated column names like `column1` and `column2`.
+# Lineage tracking for `first_value` and `second_value` should trace back to the original `message` field via the CSV parse step.
+
+filter {
+  csv {
+    source => "message"
+    autogenerate_column_names => true
+    separator => ","
+  }
+
+  mutate {
+    rename => { "column1" => "first_value" }
+    rename => { "column2" => "second_value" }
+  }
+}

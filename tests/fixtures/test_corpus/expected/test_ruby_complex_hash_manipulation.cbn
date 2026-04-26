@@ -1,0 +1,20 @@
+# EXPECTED BEHAVIOR:
+# Tests the parser's handling of Ruby code that performs deep hash manipulation.
+# The parser must gracefully handle the ruby block, identifying 'event.get'
+# and 'event.set' calls if possible, or mark the lineage as opaque/tainted
+# if it cannot resolve the exact paths.
+
+filter {
+  ruby {
+    code => "
+      data = event.get('complex_nested_data')
+      if data.is_a?(Hash)
+        data.each do |k, v|
+          if v.is_a?(String) && v.start_with?('SECURE_')
+            event.set(\"parsed_[#{k}]\", v.sub('SECURE_', ''))
+          end
+        end
+      end
+    "
+  }
+}

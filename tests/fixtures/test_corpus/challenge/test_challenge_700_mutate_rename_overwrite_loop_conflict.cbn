@@ -1,0 +1,20 @@
+# EXPECTED BEHAVIOR:
+# Tests a degenerate mutate block that renames fields in a circular/conflicting
+# manner, overwriting its own targets. The parser should determine the final
+# state of the fields after sequentially applying these operations.
+filter {
+  mutate {
+    rename => {
+      "fieldA" => "fieldB"
+      "fieldB" => "fieldC"
+      "fieldC" => "fieldA"
+    }
+    replace => {
+      "fieldA" => "overwritten_by_replace"
+    }
+    copy => {
+      "fieldA" => "fieldD"
+      "fieldB" => "fieldA"
+    }
+  }
+}

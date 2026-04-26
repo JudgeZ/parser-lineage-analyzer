@@ -1,0 +1,20 @@
+# TEST EXPECTATION:
+# The parser should understand the 'xml' filter and its 'xpath' configuration.
+# The 'xpath' config is an array of [ "xpath_expression", "target_field" ].
+# The analyzer should establish that 'event_id' and 'event_data' are derived from 'raw_xml'.
+# It should also correctly parse the array syntax where pairs of elements act as key-value.
+
+filter {
+  xml {
+    source => "raw_xml"
+    xpath => [
+      "/Event/System/EventID/text()", "event_id",
+      "/Event/EventData/Data[@Name='ProcessId']/text()", "process_id"
+    ]
+    store_xml => false
+  }
+
+  if [event_id] == "4624" {
+    mutate { add_tag => ["windows_logon"] }
+  }
+}

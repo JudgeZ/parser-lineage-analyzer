@@ -1,0 +1,32 @@
+# CHALLENGE REPRODUCTION: Dead Letter Queue (DLQ) File Routing
+# Validates strict output isolation for events that fail parsing, ensuring they
+# are written to a safe quarantine zone rather than dropping them or polluting primary indices.
+# EXPECTED BEHAVIOR:
+# - Events containing failure tags MUST bypass Elasticsearch.
+# - They MUST be routed to a flat local file `dlq.log` with their raw payload intact.
+input {
+  beats {
+    port => 5044
+  }
+}
+
+filter {
+  json {
+    source => "message"
+    target => "payload"
+  }
+}
+
+output {
+  if "_jsonparsefailure" in [tags] {
+    file {
+      path => "/var/log/secops/dlq/json_failures_%{+YYYY-MM-dd}.log"
+      codec => "rubydebug"
+    }
+  } else {
+    elasticsearch {
+      hosts => ["https://es.local:9200"]
+      index => "beats-success-%{+YYYY.MM.dd}"
+    }
+  }
+}

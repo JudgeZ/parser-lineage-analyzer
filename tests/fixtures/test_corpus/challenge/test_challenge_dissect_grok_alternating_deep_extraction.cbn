@@ -1,0 +1,29 @@
+# EXPECTED BEHAVIOR:
+# Tests the parser's ability to follow a deep chain of extraction where
+# grok and dissect plugins are interleaved, passing extracted sub-strings
+# to each other. The parser must trace the data lineage correctly:
+# message -> (dissect) -> payload -> (grok) -> inner_json_string -> (json).
+
+filter {
+  dissect {
+    mapping => {
+      "message" => "%{header}|%{payload}"
+    }
+  }
+
+  grok {
+    match => { "payload" => "^\[%{WORD:log_level}\] - %{GREEDYDATA:inner_data}" }
+  }
+
+  dissect {
+    mapping => {
+      "inner_data" => "%{user_id}:%{inner_json_string}"
+    }
+  }
+
+  json {
+    source => "inner_json_string"
+    target => "parsed_json"
+    skip_on_invalid_json => true
+  }
+}

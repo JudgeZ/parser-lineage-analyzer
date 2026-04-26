@@ -1,0 +1,57 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must trace state variables mapped inside `aggregate` and their eventual push into the event stream.
+# 2. It must handle `map_action` updates where the `map` context is conditionally mutated based on event field presence.
+# 3. It must handle translate dictionary fallback loops where the key comes from the `aggregate` mapped state.
+# 4. It must properly parse the timeout code block executed when the aggregate times out.
+filter {
+  grok {
+    match => { "message" => "%{IP:client_ip} %{WORD:method} %{URIPATHPARAM:request}" }
+  }
+
+  if [method] == "START" {
+    aggregate {
+      task_id => "%{client_ip}"
+      code => "
+        map['request_count'] ||= 0
+        map['request_count'] += 1
+        map['paths'] ||= []
+        map['paths'] << event.get('request')
+        event.cancel
+      "
+      map_action => "create"
+    }
+  } else if [method] == "END" {
+    aggregate {
+      task_id => "%{client_ip}"
+      code => "
+        event.set('total_requests', map['request_count'])
+        event.set('all_paths', map['paths'])
+      "
+      map_action => "update"
+      end_of_task => true
+      timeout => 120
+      timeout_tags => ["aggregate_timeout"]
+      push_map_as_event_on_timeout => true
+      timeout_code => "
+        event.set('timeout_alert', true)
+        event.set('paths_at_timeout', map['paths'])
+      "
+    }
+  }
+
+  if "aggregate_timeout" in [tags] {
+    translate {
+      field => "client_ip"
+      destination => "threat_actor"
+      dictionary => {
+        "10.0.0.1" => "known_scanner"
+        "192.168.1.1" => "internal_bot"
+      }
+      fallback => "unknown_timeout_source"
+    }
+    
+    mutate {
+      add_field => { "escalation_required" => "true" }
+    }
+  }
+}

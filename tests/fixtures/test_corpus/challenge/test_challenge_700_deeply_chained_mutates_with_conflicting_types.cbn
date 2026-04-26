@@ -1,0 +1,46 @@
+# TEST BEHAVIOR:
+# This test simulates deeply chained `mutate` operations within a single filter block or across sequential mutate blocks.
+# The challenge is tracking the type of a field as it is converted from string to integer, to array, back to string, then split, then joined.
+# Expected parsing behavior:
+# - The parser should capture the exact sequence of `convert`, `split`, `join`, `gsub`, `merge`, and `rename`.
+# - It must preserve the order of operations, as order matters significantly in `mutate` plugins (e.g., Logstash mutate execution order).
+# - It should correctly identify when a field type becomes ambiguous or changes fundamentally.
+
+filter {
+  mutate {
+    # 1. Start by converting a string to an integer
+    convert => { "status_code" => "integer" }
+    
+    # 2. Rename it
+    rename => { "status_code" => "http_status" }
+    
+    # 3. Add a prefix (implicit conversion to string if it was an int, though mutate might do this strangely depending on order)
+    replace => { "http_status" => "STATUS_%{http_status}" }
+    
+    # 4. Split it back into an array
+    split => { "http_status" => "_" }
+    
+    # 5. Join it with a dash
+    join => { "http_status" => "-" }
+    
+    # 6. Gsub to replace STATUS with HTTP
+    gsub => [
+      "http_status", "^STATUS-", "HTTP-"
+    ]
+    
+    # 7. Merge it with another field to force an array again
+    merge => { "http_status" => "secondary_status" }
+  }
+
+  # Second mutate block to simulate sequential dependencies
+  mutate {
+    # 8. Strip whitespace from the array elements (if supported, otherwise just string)
+    strip => ["http_status"]
+    
+    # 9. Lowercase it
+    lowercase => ["http_status"]
+    
+    # 10. Finally rename it to a nested field
+    rename => { "http_status" => "[response][final_status]" }
+  }
+}

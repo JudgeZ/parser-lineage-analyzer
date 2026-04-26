@@ -1,0 +1,9 @@
+{
+  "must_resolve_fields": [
+    "nested_obj.status"
+  ],
+  "must_not_have_warning_codes": [
+    "malformed_config",
+    "parse_recovery"
+  ]
+}

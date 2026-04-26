@@ -1,0 +1,30 @@
+# TEST EXPECTATION:
+# The parser must identify deeply nested logical contradictions that make a code block unreachable.
+# In this scenario, the outer `if` requires `[status] == "success"`, but an inner `if` requires `[status] == "failure"`.
+# Since `status` is not mutated between the two checks, the inner block is logically unreachable.
+# The parser should either flag this contradiction or correctly prune the unreachable state branch without failure.
+
+filter {
+  if [status] == "success" {
+    mutate {
+      add_tag => ["processed"]
+    }
+
+    if [action] == "login" {
+      mutate {
+        add_field => { "event_type" => "authentication" }
+      }
+      
+      # Explicit contradiction with the outer block
+      if [status] == "failure" {
+        mutate {
+          add_tag => ["unreachable_code", "error"]
+        }
+      } else if [status] == "success" {
+         mutate {
+          add_tag => ["redundant_check"]
+        }
+      }
+    }
+  }
+}

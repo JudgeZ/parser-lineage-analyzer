@@ -1,0 +1,22 @@
+# EXPECTED BEHAVIOR:
+# 1. Tests `gsub` using multiple capture groups `\1`, `\2`, etc., in the replacement string.
+# 2. Specifically checks if the regex engine correctly substitutes backreferences.
+# 3. Mixes backreferences with logstash variable interpolation `%{field_name}` in the replacement string.
+
+filter {
+  mutate {
+    add_field => { "prefix" => "SECURE_" }
+  }
+
+  mutate {
+    gsub => [
+      "message", "(\w+)\s*=\s*'([^']+)'", "%{prefix}\1: \2"
+    ]
+  }
+
+  if [message] =~ /SECURE_/ {
+    mutate {
+      add_tag => ["scrubbed"]
+    }
+  }
+}

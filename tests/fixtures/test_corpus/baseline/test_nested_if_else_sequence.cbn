@@ -1,0 +1,16 @@
+# BASELINE REPRODUCTION: Nested If-Else If Sequences
+# Validates that the parser can accurately map flow control through a long sequence
+# of `if`, `else if`, and `else` blocks without losing context.
+# The tool MUST evaluate each path independently.
+# EXPECTED BEHAVIOR: Different conditional assignments correctly belong to their respective branches without bleeding into others.
+filter {
+  if [action] == "allow" {
+    mutate { add_field => { "outcome" => "success" } }
+  } else if [action] == "deny" {
+    mutate { add_field => { "outcome" => "failure" } }
+  } else if [action] == "quarantine" {
+    mutate { add_field => { "outcome" => "isolated" } }
+  } else {
+    mutate { add_field => { "outcome" => "unknown" } }
+  }
+}

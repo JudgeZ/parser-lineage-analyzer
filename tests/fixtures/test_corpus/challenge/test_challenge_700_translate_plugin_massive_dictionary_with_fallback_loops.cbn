@@ -1,0 +1,42 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must trace the dependency chain across multiple `translate` plugins.
+# 2. `translate_1` reads `error_code` and outputs to `error_category`. It has a fallback "unknown_error".
+# 3. `translate_2` reads the output of `translate_1` (`error_category`) and maps it to `action_required`.
+# 4. If `error_code` is missing or not in the dictionary, `error_category` becomes "unknown_error".
+# 5. `translate_2` must then evaluate "unknown_error" against its own dictionary, resulting in "escalate_to_l2".
+# 6. The parser graph must map this indirect fallback routing successfully, showing that an unmapped
+#    `error_code` eventually leads to `action_required` == "escalate_to_l2".
+# 7. It also contains regex mappings in the dictionary, so the parser must recognize the regex syntax 
+#    and potentially flag it if regex translation is enabled (e.g. `exact => false`).
+
+filter {
+  translate {
+    field => "error_code"
+    destination => "error_category"
+    exact => false
+    dictionary => {
+      "^100\d" => "network_timeout"
+      "^200\d" => "auth_failure"
+      "^500\d" => "server_crash"
+    }
+    fallback => "unknown_error"
+  }
+
+  translate {
+    field => "error_category"
+    destination => "action_required"
+    dictionary => {
+      "network_timeout" => "retry_connection"
+      "auth_failure" => "lock_account"
+      "server_crash" => "page_on_call"
+      "unknown_error" => "escalate_to_l2"
+    }
+    fallback => "log_and_ignore"
+  }
+
+  if [action_required] == "escalate_to_l2" {
+    mutate {
+      add_tag => ["l2_ticket_created"]
+    }
+  }
+}

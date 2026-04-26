@@ -1,0 +1,23 @@
+# EXPECTED BEHAVIOR:
+# This test challenges the parser's dynamic variable expansion capabilities within plugin arguments that expect regular expressions.
+# The `gsub` filter replaces occurrences matching a regex. Here, the regex pattern itself is dynamically constructed 
+# using the value of `[dynamic_pattern_str]`.
+# The parser must flag this as dynamic regex evaluation and recognize that the actual regex compilation happens at runtime per-event.
+# It must build a dependency from `[dynamic_pattern_str]` to the internal configuration of the `gsub` plugin.
+
+filter {
+  grok {
+    match => { "message" => "PATTERN:%{WORD:dynamic_pattern_str} TARGET:%{GREEDYDATA:target_string}" }
+  }
+
+  if [dynamic_pattern_str] {
+    mutate {
+      gsub => [
+        # The search pattern is dynamically built from the event field
+        "target_string", "(?i)%{dynamic_pattern_str}_v\d+", "REDACTED",
+        # Another replacement using an event field as the replacement value
+        "target_string", "\s+", "%{separator_char}"
+      ]
+    }
+  }
+}

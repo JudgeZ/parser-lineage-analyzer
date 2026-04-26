@@ -1,0 +1,14 @@
+# BASELINE REPRODUCTION: Memcached Community Plugin
+# Validates the parser's interaction with the `memcached` filter for high-speed
+# external state lookups.
+# EXPECTED BEHAVIOR:
+# - The parser attempts to get a key from memcached.
+# - If the connection fails or the key is absent, the parser must continue safely.
+filter {
+  memcached {
+    hosts => ["localhost:11211"]
+    get => {
+      "%{user.id}" => "user.profile_data"
+    }
+  }
+}

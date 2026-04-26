@@ -1,0 +1,17 @@
+/*
+ * EXPECTED BEHAVIOR:
+ * The parser must handle grok filters that define multiple patterns in the `pattern_definitions` dictionary, and use them within the `match` block.
+ * It needs to track the custom patterns and understand how they map to the extracted fields.
+ * Lineage tracking should show that `custom_id` and `action_type` came from `raw_data` via the `MY_CUSTOM_ID` and `MY_ACTION` patterns.
+ */
+filter {
+  grok {
+    pattern_definitions => {
+      "MY_CUSTOM_ID" => "[A-Z]{3}-\d{5}-\w+"
+      "MY_ACTION" => "(?:LOGIN|LOGOUT|DENY|ALLOW)"
+    }
+    match => {
+      "raw_data" => "%{TIMESTAMP_ISO8601:time} %{MY_CUSTOM_ID:custom_id} %{MY_ACTION:action_type} %{GREEDYDATA:rest}"
+    }
+  }
+}

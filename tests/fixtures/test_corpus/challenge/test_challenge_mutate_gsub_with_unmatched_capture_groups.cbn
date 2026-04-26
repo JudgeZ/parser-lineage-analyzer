@@ -1,0 +1,18 @@
+# EXPECTED BEHAVIOR:
+# Evaluates how the parser handles mutate gsub operations where the replacement string
+# references capture groups that may not exist in the regex pattern, or where the pattern
+# has optional capture groups. The analyzer should ideally warn about potentially undefined
+# backreferences or correctly model the literal replacement.
+filter {
+  mutate {
+    add_field => { "test_field" => "value123" }
+  }
+  mutate {
+    # \2 does not exist in the pattern
+    gsub => [ "test_field", "([a-z]+)(\d+)", "\1-\2-\3" ] 
+  }
+  mutate {
+    # Optional capture group \2 might be empty
+    gsub => [ "another_field", "([a-z]+)(\d+)?", "\1_\2" ]
+  }
+}

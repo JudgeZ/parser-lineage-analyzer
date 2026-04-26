@@ -1,0 +1,17 @@
+# TEST EXPECTATION:
+# The parser should track string manipulation functions within the mutate filter,
+# such as lowercase, uppercase, and strip. It should recognize these operate on
+# the values of the fields in-place, meaning the lineage of the field remains the same,
+# but its content has been transformed.
+
+filter {
+  mutate {
+    lowercase => [ "username", "email" ]
+    strip => [ "username" ]
+    uppercase => [ "action" ]
+  }
+
+  if [username] == "admin" {
+    mutate { add_tag => ["normalized_admin"] }
+  }
+}

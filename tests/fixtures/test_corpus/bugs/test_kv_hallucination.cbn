@@ -1,0 +1,12 @@
+filter {
+  # Bug: The analyzer ignores `include_keys` in the `kv` plugin.
+  # When any unresolved token is referenced later, the analyzer incorrectly
+  # assumes the `kv` plugin extracted it.
+  # EXPECTED FIX: `unrelated_field` should be unresolved, not derived from `kv`.
+  kv {
+    source => "message"
+    include_keys => ["allowed_field"]
+  }
+  
+  mutate { replace => { "target" => "%{unrelated_field}" } }
+}

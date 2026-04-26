@@ -1,0 +1,13 @@
+# CHALLENGE REPRODUCTION: Billion Laughs / XML Entity Expansion (XXE) Simulation
+# Validates the XML parser's resilience against malicious XML payloads designed
+# to exhaust memory via nested entity expansion.
+# EXPECTED BEHAVIOR:
+# - The parser MUST NOT crash or consume unbounded memory.
+# - It should abort the parse and tag the event with an error or `_xmlparsefailure`.
+filter {
+  xml {
+    source => "malicious_xml_payload"
+    target => "parsed_xml"
+    force_array => false
+  }
+}

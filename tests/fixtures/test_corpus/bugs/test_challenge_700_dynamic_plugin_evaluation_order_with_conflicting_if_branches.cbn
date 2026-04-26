@@ -1,0 +1,58 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must understand plugin execution order when multiple `if` branches evaluate to true simultaneously.
+# 2. It must track the mutation of `[target_field]` across two parallel, non-exclusive conditions.
+# 3. Since Logstash executes top-to-bottom, the first block will create `[target_field]`, and the second block will either convert it to an array, overwrite it, or fail depending on the operations used.
+# 4. In a 700+ parser corpus, such implicit dependencies across thousands of lines are a massive source of bugs. The parser must explicitly identify that `[target_field]` mutated from a String to an Array, or was overwritten.
+# 5. It must accurately predict the final state of `[target_field]` and the `[metadata][status]` field given varying input parameters.
+
+filter {
+  # Block 1: Always executes if message contains "error"
+  if "error" in [message] {
+    mutate {
+      add_field => { "target_field" => "error_found" }
+      add_tag => ["block_1_executed"]
+    }
+    
+    translate {
+      field => "target_field"
+      destination => "[metadata][status]"
+      dictionary => {
+        "error_found" => "critical"
+      }
+      fallback => "unknown"
+    }
+  }
+
+  # Block 2: Parallel non-exclusive condition. Might execute ALONG WITH Block 1.
+  if [source_ip] =~ /^192\.168\./ {
+    # If block 1 executed, target_field is already "error_found". 
+    # Calling add_field with the same key turns it into an array: ["error_found", "internal_network"]
+    mutate {
+      add_field => { "target_field" => "internal_network" }
+      add_tag => ["block_2_executed"]
+    }
+    
+    # This translate will now fail or act weirdly because target_field is an array, 
+    # not a string, breaking the logic if both blocks hit.
+    translate {
+      field => "target_field"
+      destination => "[metadata][internal_status]"
+      dictionary => {
+        "internal_network" => "trusted"
+      }
+      fallback => "untrusted"
+    }
+  }
+
+  # Downstream logic that relies on target_field being a string
+  if [target_field] == "error_found" {
+    mutate {
+      add_tag => ["exactly_error_found"]
+    }
+  } else if "error_found" in [target_field] {
+    # If it became an array, the "in" operator is needed.
+    mutate {
+      add_tag => ["array_contains_error_found"]
+    }
+  }
+}

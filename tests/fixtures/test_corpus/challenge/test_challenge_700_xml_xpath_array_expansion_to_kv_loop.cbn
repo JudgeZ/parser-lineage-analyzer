@@ -1,0 +1,40 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must trace a complex payload expansion: XML -> Array -> Split -> String -> KV.
+# 2. The `xml` plugin parses `raw_xml` and uses `xpath` to extract multiple `<config>` nodes into an array `config_nodes`.
+# 3. The `split` plugin clones the event for each element in the `config_nodes` array.
+# 4. The parser must recognize that after `split`, `config_nodes` is no longer an array but a single scalar value
+#    (or a single XML node string) in the context of the cloned event.
+# 5. A subsequent `kv` filter then parses that single string node to extract key-value pairs.
+# 6. The parser graph must accurately represent this dimensionality change (1 -> N -> 1 per event) 
+#    and map the final KV fields back to the original `raw_xml` through the intermediate `config_nodes` array element.
+
+filter {
+  xml {
+    source => "raw_xml"
+    store_xml => false
+    xpath => [
+      "/root/system/config", "config_nodes"
+    ]
+  }
+
+  if [config_nodes] {
+    # Splits the event into multiple events, one for each item in the array
+    split {
+      field => "config_nodes"
+    }
+
+    # config_nodes is now a single string representing one <config> node, e.g. "key=val;foo=bar"
+    kv {
+      source => "config_nodes"
+      target => "parsed_config"
+      field_split => ";"
+      value_split => "="
+    }
+
+    if [parsed_config][admin_enabled] == "true" {
+      mutate {
+        add_tag => ["admin_config_found"]
+      }
+    }
+  }
+}

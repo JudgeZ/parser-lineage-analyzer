@@ -1,0 +1,29 @@
+# TEST OBJECTIVE: Validate parser's handling of a ruby filter that cancels events based on complex class-level or global state across events.
+# EXPECTED BEHAVIOR:
+# 1. The parser MUST recognize the `init` block creating a global/class variable `@@event_counter`.
+# 2. It MUST recognize the mutation of `@@event_counter` in the `code` block.
+# 3. It MUST recognize `event.cancel` being called conditionally based on state.
+# 4. It MUST note that this parser introduces cross-event dependencies and potential race conditions in a multi-threaded environment.
+
+filter {
+  ruby {
+    init => "
+      @@event_counter = 0
+      @@max_events = 1000
+    "
+    code => "
+      @@event_counter += 1
+      if @@event_counter > @@max_events
+        event.cancel
+      else
+        event.set('event_id', @@event_counter)
+      end
+    "
+  }
+
+  if [event_id] {
+    mutate {
+      add_tag => ["processed_by_ruby_counter"]
+    }
+  }
+}

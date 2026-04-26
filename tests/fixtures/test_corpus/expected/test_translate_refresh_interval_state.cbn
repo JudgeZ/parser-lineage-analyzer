@@ -1,0 +1,16 @@
+# EXPECTED BEHAVIOR:
+# The translate filter uses external dictionaries.
+# The analyzer should log the `dictionary_path` as an external dependency in the graph.
+# It should also correctly track the `fallback` value as a potential state of `destination`.
+filter {
+  translate {
+    field => "error_code"
+    destination => "error_description"
+    dictionary_path => "/etc/logstash/dictionaries/errors.yaml"
+    refresh_interval => 300
+    fallback => "Unknown Error"
+  }
+  if [error_description] == "Unknown Error" {
+    mutate { add_tag => ["unmapped_error"] }
+  }
+}

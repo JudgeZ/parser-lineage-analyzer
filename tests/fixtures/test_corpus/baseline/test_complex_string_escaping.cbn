@@ -1,0 +1,13 @@
+# BASELINE REPRODUCTION: Complex String Concatenation and Escaping
+# Validates parser's ability to handle highly dense and convoluted strings
+# frequently found in command-line arguments being parsed.
+# The tool MUST not throw syntax errors on unbalanced quotes within properly escaped strings.
+# EXPECTED BEHAVIOR: The field `cmdline` correctly maps to the complex string.
+filter {
+  mutate {
+    add_field => {
+      "cmdline" => "cmd.exe /c \"echo \\\"Hello World\\\" && dir C:\\Windows\\System32\""
+      "escaped_quote_field" => "This is a literal quote: \""
+    }
+  }
+}

@@ -1,0 +1,24 @@
+# EXPECTED BEHAVIOR:
+# The parser must correctly resolve deeply nested field references, including array indices,
+# without misinterpreting the closing brackets as the end of a block or string.
+# It should extract the full lineage path: e.g., `events[0][process][parent][command_line]`.
+
+filter {
+  if [events][0][process][parent][command_line] =~ /powershell\.exe/ {
+    mutate {
+      add_field => {
+        "suspect_cmd" => "%{[events][0][process][parent][command_line]}"
+        "nested_eval" => "%{[%{[dynamic_root]}[0][value]]}"
+      }
+    }
+  }
+
+  mutate {
+    rename => {
+      "[network][tls][client][supported_ciphers][0]" => "[network][tls][cipher]"
+    }
+    copy => {
+      "[deeply][nested][object][array][5][subfield]" => "[extracted][value]"
+    }
+  }
+}

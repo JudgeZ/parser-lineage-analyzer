@@ -1,0 +1,12 @@
+# EXPECTED BEHAVIOR:
+# The parser must understand that the date filter attempts multiple formats
+# sequentially. It should track that `timestamp` is replaced by the parsed date,
+# and handle the presence of custom timezone and locale settings during the match.
+filter {
+  date {
+    match => [ "log_time", "MMM dd HH:mm:ss", "MMM  d HH:mm:ss", "ISO8601" ]
+    target => "@timestamp"
+    timezone => "UTC"
+    locale => "en"
+  }
+}

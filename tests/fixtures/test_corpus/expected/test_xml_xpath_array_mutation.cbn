@@ -1,0 +1,19 @@
+# EXPECTED BEHAVIOR:
+# 1. The `xml` plugin uses XPath to extract multiple values into an array field `[extracted][urls]`.
+# 2. The parser must understand that `[extracted][urls]` is created and is potentially an array.
+# 3. The `split` plugin then operates on this array, creating multiple events. The parser must link the split action to the output of the XML XPath extraction.
+
+filter {
+  xml {
+    source => "raw_xml"
+    xpath => [
+      "/html/body/a/@href", "[extracted][urls]"
+    ]
+  }
+
+  if [extracted][urls] {
+    split {
+      field => "[extracted][urls]"
+    }
+  }
+}

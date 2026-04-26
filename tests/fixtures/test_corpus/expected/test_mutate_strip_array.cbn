@@ -1,0 +1,11 @@
+// EXPECTED BEHAVIOR:
+// The parser should correctly track that `strip` is mutating `[tags]` and `[nested][field]`.
+// It should recognize `[tags]` is an array or string, and `[nested][field]` is a string.
+// Lineage for `[tags]` and `[nested][field]` should show a self-mutation (whitespace stripped).
+// It should not raise errors on stripping arrays, as Logstash mutates all elements in an array.
+
+filter {
+  mutate {
+    strip => ["tags", "[nested][field]"]
+  }
+}

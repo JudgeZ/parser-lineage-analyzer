@@ -1,0 +1,33 @@
+# EXPECTED BEHAVIOR:
+# This test checks if the parser supports string interpolation of dynamic fields directly
+# inside conditional regex evaluations.
+# E.g., comparing [message] against a regex built from another field `[dynamic_regex]`.
+# While some Logstash variants do not support this directly, Chronicle might have specific behavior.
+# If unsupported, the parser should either fail gracefully during validation or treat it as a literal string.
+# We also test standard regex matching where the field evaluated contains dynamic escapes.
+
+filter {
+  mutate {
+    add_field => { "dynamic_regex" => "error_code_\d{3}" }
+  }
+
+  # Test if parser allows interpolation in regex condition.
+  # Often `%{field}` isn't strictly allowed in `/.../` blocks in basic Logstash,
+  # but sometimes `~=` with a string is used or the parser needs to handle the syntax gracefully.
+  if [message] =~ /%{dynamic_regex}/ {
+    mutate {
+      add_tag => ["matched_dynamic_regex"]
+    }
+  } else if [message] =~ "error_code_404" {
+    # Fallback normal regex match
+    mutate {
+      add_tag => ["matched_literal_regex"]
+    }
+  }
+
+  if [dynamic_regex] =~ /^error_.*/ {
+    mutate {
+      add_field => { "is_error_pattern" => "true" }
+    }
+  }
+}

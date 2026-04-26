@@ -1,0 +1,23 @@
+# EXPECTED BEHAVIOR:
+# Sometimes an event contains an array of JSON-encoded strings. 
+# Logstash doesn't natively handle this well without ruby.
+# This test checks if the tool can handle custom ruby parsing loops that invoke JSON.
+filter {
+  ruby {
+    code => "
+      require 'json'
+      payloads = event.get('json_payloads')
+      if payloads.is_a?(Array)
+        parsed_payloads = []
+        payloads.each do |p|
+          begin
+            parsed_payloads << JSON.parse(p)
+          rescue JSON::ParserError
+            # Ignore or tag
+          end
+        end
+        event.set('parsed_objects', parsed_payloads)
+      end
+    "
+  }
+}

@@ -1,0 +1,43 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must correctly identify the `ruby` block's use of global variables ($global_cache)
+#    and understand that state might be shared across events (pollution risk).
+# 2. The parser must handle `event.cancel` and `yield` inside a complex nested loop within the ruby block.
+# 3. The parser must correctly parse the multiline string and inline regex containing string interpolation
+#    within the ruby block.
+# 4. It must identify the ambiguous routing dependency where the ruby block mutates `[routing_key]`,
+#    which is then immediately used in an `if` condition for an `elasticsearch` output/filter lookup.
+filter {
+  ruby {
+    init => "
+      $global_cache ||= {}
+      @timeout = 30
+    "
+    code => "
+      event_id = event.get('transaction_id')
+      if event_id && event_id =~ /^TXN-\d{4}-\w+$/
+        # Use multiline string and complex regex
+        data = event.get('raw_payload')
+        if data
+          matches = data.scan(/(?<=START).*?(?=END)/m)
+          if matches.any?
+             $global_cache[event_id] = matches.join(',')
+             event.set('[metadata][cache_hit]', true)
+          else
+             event.set('[metadata][cache_hit]', false)
+          end
+        end
+        event.set('routing_key', 'processed_' + event_id)
+      else
+        event.cancel
+      end
+    "
+  }
+
+  if [routing_key] =~ /^processed_/ {
+    mutate {
+      add_field => { "status" => "success" }
+    }
+  } else {
+    drop { percentage => 50 }
+  }
+}

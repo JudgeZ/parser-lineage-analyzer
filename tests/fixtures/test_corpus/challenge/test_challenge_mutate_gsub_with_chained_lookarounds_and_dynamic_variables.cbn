@@ -1,0 +1,33 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must correctly parse the complex gsub configuration where the replacement string contains multiple backreferences (`\1`, `\2`) mixed with event field interpolations (`%{[some_field]}`).
+# 2. It must handle chained gsub operations on the same field where the output of the first gsub is immediately used as the input for the second, modifying the state mid-plugin.
+# 3. It should recognize lookaround assertions (`(?<=...)`, `(?=...)`) in the regex and ensure they don't break the regex parser.
+# 4. It should identify that `[dynamic_replacement]` might not exist, and handle the interpolation fallback gracefully (e.g., treating it as literal or empty string depending on context).
+
+filter {
+  mutate {
+    add_field => {
+      "dynamic_replacement" => "REDACTED_%{[user][id]}"
+      "target_field" => "user_data: alice (ID: 12345), pass: secret123, hash: a1b2c3d4; user_data: bob (ID: 67890), pass: password!, hash: f5e6d7c8"
+    }
+  }
+
+  mutate {
+    gsub => [
+      # Chained operation 1: Redact passwords using lookbehinds and lookaheads
+      "target_field", "(?<=pass:\s)(.*?)(?=(?:,\s|;|$))", "%{[dynamic_replacement]}",
+      
+      # Chained operation 2: Extract and reformat user and ID using capture groups and backreferences
+      "target_field", "user_data:\s+(?<username>\w+)\s+\(ID:\s+(\d+)\)", "USER[\1]-UID[\2]",
+      
+      # Chained operation 3: Complex replacement mixing backreferences and literal event fields
+      "target_field", "USER\[(\w+)\]-UID\[(\d+)\](.*?)hash:\s*([a-f0-9]+)", "Account: \1, ID: \2, Hash: \4 (Processed by %{[host][hostname]})"
+    ]
+  }
+
+  if [target_field] =~ /REDACTED/ {
+    mutate {
+      add_tag => [ "contains_redactions" ]
+    }
+  }
+}

@@ -1,0 +1,24 @@
+# TEST EXPECTATION:
+# The parser should correctly track data lineage across sequential extractors.
+# The first grok extracts 'syslog_message'.
+# The second grok uses 'syslog_message' as its source to extract 'user'.
+# The parser must establish that 'user' transitively depends on 'message'.
+
+filter {
+  grok {
+    match => { "message" => "%{SYSLOGBASE} %{GREEDYDATA:syslog_message}" }
+  }
+
+  if [syslog_message] {
+    grok {
+      source => "syslog_message"
+      match => { "syslog_message" => "User %{USER:user} logged in" }
+    }
+  }
+
+  if [user] == "admin" {
+    mutate {
+      add_tag => [ "admin_login" ]
+    }
+  }
+}

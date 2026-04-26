@@ -1,0 +1,12 @@
+# CHALLENGE REPRODUCTION: Extreme Time Drift and Out-of-Bounds Dates
+# Validates the date plugin's handling of logs from the distant past (pre-epoch)
+# or the far future, evaluating the `allow_future_dates` constraint if applicable.
+# EXPECTED BEHAVIOR:
+# - Dates 100 years in the future should ideally trigger a failure or be clamped.
+# - Negative epoch timestamps (pre-1970) must parse correctly without underflow.
+filter {
+  date {
+    match => [ "timestamp_string", "ISO8601", "yyyy-MM-dd HH:mm:ss" ]
+    target => "@timestamp"
+  }
+}

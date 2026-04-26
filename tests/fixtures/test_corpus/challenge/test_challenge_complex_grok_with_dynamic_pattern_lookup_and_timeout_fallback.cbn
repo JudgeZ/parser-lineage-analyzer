@@ -1,0 +1,44 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must understand `grok` behavior when multiple patterns are provided
+#    and a `timeout_millis` is explicitly defined.
+# 2. It must track the `tag_on_timeout` behavior. If the regex evaluation takes too long
+#    (simulated or inferred by the parser due to potential catastrophic backtracking in the pattern),
+#    it should expect the `_groktimeout` tag (or the custom timeout tag) to be applied.
+# 3. Subsequent conditional logic relies on either a successful match (fields are created)
+#    or a timeout (tags are appended). The parser must maintain branches for both states.
+# 4. It should also properly handle custom pattern definitions provided inline.
+# 5. This tests the parser's ability to model non-deterministic plugin failures (timeouts)
+#    and the resulting bifurcated state paths.
+
+filter {
+  grok {
+    match => {
+      "message" => [
+        "%{SYSLOGBASE} %{GREEDYDATA:syslog_message}",
+        "(?m)%{TIMESTAMP_ISO8601:timestamp} %{LOGLEVEL:level} \[%{DATA:thread}\] %{JAVACLASS:class} - %{GREEDYDATA:logmessage}"
+      ]
+    }
+    pattern_definitions => {
+      "SYSLOGBASE" => "%{SYSLOGTIMESTAMP:timestamp} (?:%{SYSLOGFACILITY} )?%{SYSLOGHOST:logsource} %{SYSLOGPROG}:"
+      "SYSLOGPROG" => "%{PROG:program}(?:\[%{POSINT:pid}\])?"
+    }
+    timeout_millis => 500
+    tag_on_timeout => ["_groktimeout_custom"]
+  }
+
+  if "_grokparsefailure" in [tags] {
+    mutate {
+      add_field => { "parsing_status" => "failed" }
+    }
+  } else if "_groktimeout_custom" in [tags] {
+    mutate {
+      add_field => { "parsing_status" => "timeout" }
+      # Strip the problematic message to avoid downstream issues
+      remove_field => ["message"]
+    }
+  } else {
+    mutate {
+      add_field => { "parsing_status" => "success" }
+    }
+  }
+}

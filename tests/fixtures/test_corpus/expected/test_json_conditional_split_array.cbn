@@ -1,0 +1,18 @@
+# EXPECTED BEHAVIOR:
+# The parser must recognize that `json_data` is only parsed if it's a string,
+# and if the resulting parsed object contains an array in `json_data.items`,
+# the `split` filter will yield multiple events. Type tracking of `json_data`
+# is critical here.
+filter {
+  if [raw_json] =~ /^\{.*/ {
+    json {
+      source => "raw_json"
+      target => "parsed_data"
+    }
+    if [parsed_data][items] {
+      split {
+        field => "[parsed_data][items]"
+      }
+    }
+  }
+}

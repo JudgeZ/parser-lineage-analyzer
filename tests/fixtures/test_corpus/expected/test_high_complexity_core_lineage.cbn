@@ -1,0 +1,112 @@
+filter {
+  # 1. Initial extraction from a syslog wrapper
+  grok {
+    match => {
+      "message" => "%{SYSLOGTIMESTAMP:timestamp} %{HOSTNAME:syslog_host} %{WORD:app}\\[%{INT:pid}\\]: %{GREEDYDATA:payload}"
+    }
+    on_error => "grok_failed"
+  }
+
+  if [grok_failed] {
+    drop { }
+  }
+
+  # 2. Extract JSON payload
+  json {
+    source => "payload"
+    array_function => "split_columns"
+    on_error => "json_failed"
+  }
+
+  if ![json_failed] {
+    # 3. Handle base64 and url-encoded deep fields
+    if [data][encoded_url] != "" {
+      base64 { field => "data.encoded_url" }
+      url_decode { field => "data.encoded_url" }
+      mutate { replace => { "target_url" => "%{data.encoded_url}" } }
+    }
+
+    # 4. CSV parsing from a sub-field
+    if [data][csv_list] != "" {
+      csv {
+        source => "data.csv_list"
+        separator => "|"
+      }
+      # CSV creates column1, column2...
+      mutate {
+        replace => {
+          "event1.idm.read_only_udm.target.user.userid" => "%{column1}"
+          "event1.idm.read_only_udm.target.user.email_addresses" => "%{column2}"
+        }
+      }
+    }
+
+    # 5. Iterating over an array
+    for item in data.threats {
+      mutate {
+        replace => { "threat_cat" => "%{item.category}" }
+        lowercase => ["threat_cat"]
+      }
+      if [threat_cat] =~ /malware#botnet/ {
+        mutate {
+          merge => {
+            "event1.idm.read_only_udm.security_result.category" => "SOFTWARE_MALICIOUS"
+          }
+        }
+      } else {
+        mutate {
+          merge => {
+            "event1.idm.read_only_udm.security_result.category" => "NETWORK_SUSPICIOUS"
+          }
+        }
+      }
+    }
+
+    # 6. Iterating over a map/dictionary
+    for k, v in data.headers map {
+      mutate {
+        replace => { "event1.idm.read_only_udm.network.http.request_headers.%{k}" => "%{v}" }
+      }
+    }
+
+    # 7. Various mutations
+    mutate {
+      rename => { "syslog_host" => "observer_hostname" }
+      copy => { "event1.idm.read_only_udm.principal.hostname" => "observer_hostname" }
+      convert => { "pid" => "integer" }
+      gsub => [ "app", "v\\d+", "version_hidden" ]
+      split => {
+        source => "target_url"
+        target => "url_parts"
+        separator => "?"
+      }
+      remove_field => ["data"]
+    }
+
+    # 8. Date parsing
+    date {
+      match => ["timestamp", "MMM  d HH:mm:ss", "MMM dd HH:mm:ss"]
+      target => "event1.idm.read_only_udm.metadata.event_timestamp"
+    }
+
+    # 9. Complex conditional assignments
+    if [app] == "auth_svc" {
+      mutate { replace => { "event1.idm.read_only_udm.metadata.event_type" => "USER_LOGIN" } }
+    } else if [app] == "firewall" {
+      mutate { replace => { "event1.idm.read_only_udm.metadata.event_type" => "NETWORK_CONNECTION" } }
+      # Second event logic
+      mutate {
+        replace => { 
+          "event2.idm.read_only_udm.metadata.event_type" => "NETWORK_HTTP"
+          "event2.idm.read_only_udm.target.url" => "%{target_url}"
+        }
+      }
+      mutate { merge => { "@output" => "event2" } }
+    } else {
+      mutate { replace => { "event1.idm.read_only_udm.metadata.event_type" => "UNKNOWN_EVENT_TYPE" } }
+    }
+
+    # Output the primary event
+    mutate { merge => { "@output" => "event1" } }
+  }
+}

@@ -1,0 +1,36 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must detect the `yield` statement within the ruby block, which signifies that one input event is generating multiple output events.
+# 2. It must analyze the scope of `event.clone`. Any mutations on the cloned event before `yield` apply only to that clone.
+# 3. It must detect that `event.set('original_processed', true)` happens AFTER the yields. The parser needs to understand the execution order and graph splitting.
+# 4. Global or class-level variables (e.g., `@@batch_count`) used to track state across events must be flagged as a concurrency risk if the pipeline has multiple workers.
+# 5. Subsequent plugins in the pipeline will receive BOTH the yielded events and the original event. The parser must trace the data lineage for all branches.
+
+filter {
+  ruby {
+    init => "
+      @@batch_count = 0
+    "
+    code => "
+      @@batch_count += 1
+      items = event.get('items')
+      if items && items.is_a?(Array)
+        items.each_with_index do |item, index|
+          new_event = event.clone
+          new_event.set('item_detail', item)
+          new_event.set('split_index', index)
+          new_event.set('batch_id', @@batch_count)
+          new_event.remove('items')
+          yield new_event
+        end
+        event.set('original_processed', true)
+        event.set('total_items', items.length)
+      end
+    "
+  }
+
+  if [original_processed] {
+    mutate { add_tag => ["parent_event"] }
+  } else if [item_detail] {
+    mutate { add_tag => ["child_event"] }
+  }
+}

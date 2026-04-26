@@ -1,0 +1,13 @@
+# BASELINE: String Escapes and Quoting
+# Validates that strings with complex escape sequences, escaped quotes, and embedded
+# special characters do not prematurely terminate string tokens or confuse the lexer.
+# The tool MUST treat the entire string as a single literal token.
+# EXPECTED BEHAVIOR: `add_field` should receive the exact literal string.
+filter {
+  mutate {
+    add_field => {
+      "complex_string" => "This is a \"quoted\" word and a backslash \\ and \n newline"
+      'single_quoted' => 'Also can use "double quotes" inside single quotes \''
+    }
+  }
+}

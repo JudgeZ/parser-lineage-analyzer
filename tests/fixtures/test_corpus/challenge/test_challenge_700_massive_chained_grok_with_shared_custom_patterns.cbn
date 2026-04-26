@@ -1,0 +1,52 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must handle multiple Grok filters that use `pattern_definitions`.
+# 2. In complex 700+ line parser configurations, custom patterns might be redefined or reused.
+# 3. The first grok defines `CUSTOM_ID` as a 4-digit number.
+# 4. The second grok redefines `CUSTOM_ID` as an alphanumeric string in its own scope.
+# 5. The parser must correctly scope the `pattern_definitions` to the specific grok instance 
+#    and not let the second definition pollute the first or subsequent global lookups, unless 
+#    the engine specifies global scope for inline definitions (Logstash scopes them locally).
+# 6. It must also trace the fallbacks: if `grok_1` fails, it falls through to `grok_2`.
+# 7. Finally, it checks extraction results: `id_type` depends on which pattern succeeded, and 
+#    the graph must show a branch where `extracted_id` can be either numeric or alphanumeric.
+
+filter {
+  grok {
+    pattern_definitions => {
+      "CUSTOM_ID" => "\d{4}"
+      "PREFIX" => "SYS-"
+    }
+    match => {
+      "message" => "^%{PREFIX:prefix}%{CUSTOM_ID:extracted_id}$"
+    }
+    tag_on_failure => ["_grok_1_fail"]
+  }
+
+  if "_grok_1_fail" in [tags] {
+    grok {
+      pattern_definitions => {
+        # Redefining CUSTOM_ID with a different regex
+        "CUSTOM_ID" => "[A-Z0-9]{8}"
+        "PREFIX" => "APP-"
+      }
+      match => {
+        "message" => "^%{PREFIX:prefix}%{CUSTOM_ID:extracted_id}$"
+      }
+      tag_on_failure => ["_grok_2_fail"]
+    }
+  }
+
+  if !("_grok_1_fail" in [tags]) {
+    mutate {
+      add_field => { "id_type" => "numeric_short" }
+    }
+  } else if !("_grok_2_fail" in [tags]) {
+    mutate {
+      add_field => { "id_type" => "alphanumeric_long" }
+    }
+  } else {
+    mutate {
+      add_field => { "id_type" => "unknown" }
+    }
+  }
+}

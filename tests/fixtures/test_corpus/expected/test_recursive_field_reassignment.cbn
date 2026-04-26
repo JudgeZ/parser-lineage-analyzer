@@ -1,0 +1,19 @@
+# EXPECTED BEHAVIOR:
+# The lineage tracker must trace a highly entangled mutation chain where fields
+# are iteratively copied, renamed, modified, and combined.
+# Lineage should show `final_dest` depends on `field_a`, `field_b`, and `field_c`.
+filter {
+  mutate {
+    rename => { "field_a" => "temp_1" }
+    copy => { "field_b" => "temp_2" }
+  }
+  mutate {
+    merge => { "temp_1" => "temp_2" }
+    rename => { "temp_1" => "temp_3" }
+  }
+  mutate {
+    join => { "temp_3" => "," }
+    copy => { "temp_3" => "final_dest" }
+    remove_field => [ "temp_2", "temp_3" ]
+  }
+}

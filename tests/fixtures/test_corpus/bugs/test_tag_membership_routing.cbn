@@ -1,0 +1,15 @@
+# BUG REPRODUCTION: Tag set membership not tracked across mutate.add_tag
+# When a parser checks `if "<tag>" in [tags]` and the tag was never added by
+# any prior mutate.add_tag call, the branch is unreachable at runtime — but
+# before Phase 3B the analyzer treated `[tags]` membership checks as opaque
+# and silently executed the dead branch.
+# EXPECTED FIX: the analyzer recognizes this pattern, inspects prior add_tag
+# calls, and emits `unreachable_branch` when no add_tag could have produced
+# the literal being checked.
+filter {
+  mutate { add_tag => ["_seen"] }
+
+  if "_jsonparsefailure" in [tags] {
+    mutate { replace => { "x" => "fail" } }
+  }
+}

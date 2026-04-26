@@ -1,0 +1,53 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must trace the derivation of a dynamic timezone field before it is used by the `date` plugin.
+# 2. The timezone originates as a raw string `tz_offset`.
+# 3. A `mutate` gsub converts formats like `+05:00` into `+0500`.
+# 4. A `translate` maps known city names in `location` to standard TZ databases (e.g. `America/New_York`).
+# 5. An `if` logic decides whether to use the converted offset or the translated city timezone, storing it in `final_tz`.
+# 6. The `date` plugin then uses `%{final_tz}` as its timezone configuration.
+# 7. The parser must understand that the success of the `date` parsing is deeply coupled with the success 
+#    of the prior mutates and translates. If `final_tz` ends up being an invalid timezone string, `date` will fail.
+# 8. This tests dynamic parameter evaluation where the parameter dictates the behavior of the plugin.
+
+filter {
+  mutate {
+    add_field => { "temp_tz" => "%{tz_offset}" }
+  }
+
+  mutate {
+    gsub => [
+      "temp_tz", ":", ""
+    ]
+  }
+
+  translate {
+    field => "location"
+    destination => "city_tz"
+    dictionary => {
+      "NYC" => "America/New_York"
+      "LON" => "Europe/London"
+      "TOK" => "Asia/Tokyo"
+    }
+  }
+
+  if [city_tz] {
+    mutate {
+      add_field => { "final_tz" => "%{city_tz}" }
+    }
+  } else if [temp_tz] =~ /^[+-]\d{4}$/ {
+    mutate {
+      add_field => { "final_tz" => "%{temp_tz}" }
+    }
+  } else {
+    mutate {
+      add_field => { "final_tz" => "UTC" }
+    }
+  }
+
+  date {
+    match => [ "log_timestamp", "yyyy-MM-dd HH:mm:ss" ]
+    timezone => "%{final_tz}"
+    target => "@timestamp"
+    tag_on_failure => ["_dateparsefailure_tz_issue"]
+  }
+}

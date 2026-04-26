@@ -1,0 +1,13 @@
+# BASELINE REPRODUCTION: Environment Variables with Default Values
+# Validates syntax for resolving environment variables that might not be set.
+# EXPECTED BEHAVIOR:
+# - If `CLUSTER_ID` is not present in the environment, it MUST default to `unknown_cluster`.
+# - Ensures the parser doesn't crash on missing environment references.
+filter {
+  mutate {
+    add_field => { 
+      "node_id" => "${NODE_ID:standalone_node}" 
+      "cluster_name" => "${CLUSTER_ID:unknown_cluster}"
+    }
+  }
+}

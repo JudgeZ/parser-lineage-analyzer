@@ -1,0 +1,14 @@
+# BASELINE REPRODUCTION: Split and Join Combo
+# Validates parsing of split and join operations, which change the field type
+# from string to array and back to string. 
+# The tool MUST understand the field type transitions for analysis.
+# EXPECTED BEHAVIOR: AST formed with split and join plugins parsed with correct parameters.
+filter {
+  mutate {
+    split => { "user_list" => "," }
+  }
+  # ... some array operations might happen here ...
+  mutate {
+    join => { "user_list" => ";" }
+  }
+}

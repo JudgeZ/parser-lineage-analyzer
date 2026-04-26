@@ -1,0 +1,31 @@
+# EXPECTED BEHAVIOR:
+# This test verifies the parsing of highly dynamic `date` filter configurations where multiple parameters are evaluated at runtime.
+# Both the `timezone` and `locale` are drawn from event fields.
+# The parser must handle the cascading fallback of formats.
+# It must correctly map the implicit dependencies: `[user_tz]` and `[user_locale]` must be resolved before the date plugin can execute.
+# Failure to parse results in `_dateparsefailure`, which triggers a hard drop.
+
+filter {
+  json {
+    source => "message"
+  }
+
+  if [timestamp_string] {
+    date {
+      match => [ 
+        "timestamp_string", 
+        "ISO8601", 
+        "yyyy-MM-dd HH:mm:ss.SSS", 
+        "MMM dd HH:mm:ss",
+        "UNIX_MS"
+      ]
+      timezone => "%{[user_tz]}"
+      locale => "%{[user_locale]}"
+      target => "@timestamp"
+    }
+  }
+
+  if "_dateparsefailure" in [tags] {
+    drop { percentage => 100 }
+  }
+}

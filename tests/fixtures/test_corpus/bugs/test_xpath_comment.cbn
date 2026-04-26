@@ -1,0 +1,14 @@
+# BUG REPRODUCTION: XPath Comment Whitelisting
+# This file tests the lexer's `_is_unquoted_slash_mapping_key` heuristic.
+# The `//commented_out_node` line is intended to be a comment, but because it 
+# lacks a space after `//` and contains `=>`, the lexer treats it as an active config key.
+# EXPECTED FIX: The analyzer should ignore it. Currently, it evaluates the dead code.
+filter {
+  xml {
+    source => "message"
+    xpath => {
+//commented_out_node => "event.idm.read_only_udm.target.ip"
+      "//active_node" => "event.idm.read_only_udm.principal.ip"
+    }
+  }
+}

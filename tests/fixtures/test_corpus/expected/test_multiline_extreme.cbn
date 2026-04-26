@@ -1,0 +1,16 @@
+# EXPECTED BEHAVIOR:
+# The lexer must handle extreme multiline strings containing comments, interpolated
+# expressions, escapes, and conflicting quotes without breaking the token stream.
+filter {
+  mutate {
+    add_field => {
+      "extreme_string" => "This is a start.
+      # This looks like a comment but is inside a string.
+      Here is an interpolation: %{some_field}
+      Here is a quote: \" and another ' and a slash \\
+      } # this is not a closing brace for the mutate block!
+      More text.
+      "
+    }
+  }
+}

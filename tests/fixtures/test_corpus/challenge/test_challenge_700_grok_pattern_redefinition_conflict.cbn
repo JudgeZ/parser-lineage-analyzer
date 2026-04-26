@@ -1,0 +1,39 @@
+# TEST BEHAVIOR:
+# In a large configuration, Parser A might define a custom grok pattern "MY_DATE" 
+# expecting a specific format. Parser B might later define "MY_DATE" with a different regex.
+# The tool must handle how the grok engine resolves these conflicts, usually prioritizing
+# the most recently loaded pattern directory or the specific pattern_definitions block.
+# This test checks if pattern_definitions in a single grok block isolate the pattern,
+# or if it bleeds into the global pattern registry and affects subsequent grok blocks.
+filter {
+  # Parser A's logic
+  if [source] == "app_a" {
+    grok {
+      pattern_definitions => {
+        "CUSTOM_TS" => "%{YEAR}-%{MONTHNUM}-%{MONTHDAY}"
+      }
+      match => { "message" => "%{CUSTOM_TS:timestamp} %{LOGLEVEL:level} %{GREEDYDATA:msg}" }
+    }
+  }
+
+  # Parser B's logic
+  if [source] == "app_b" {
+    grok {
+      pattern_definitions => {
+        # Redefining the same pattern name with a different format
+        "CUSTOM_TS" => "%{MONTHDAY}/%{MONTHNUM}/%{YEAR}"
+      }
+      match => { "message" => "%{CUSTOM_TS:timestamp} %{WORD:module} %{GREEDYDATA:msg}" }
+    }
+  }
+
+  # Parser C's logic - relies on the global or previously defined CUSTOM_TS
+  if [source] == "app_c" {
+    grok {
+      # Does this use the global CUSTOM_TS, Parser A's, or Parser B's, or fail?
+      # Expected: Fails unless CUSTOM_TS is in the default patterns dictionary, 
+      # because pattern_definitions are scoped to the plugin instance.
+      match => { "message" => "%{CUSTOM_TS:timestamp} %{GREEDYDATA:msg}" }
+    }
+  }
+}

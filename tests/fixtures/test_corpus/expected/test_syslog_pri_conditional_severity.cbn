@@ -1,0 +1,14 @@
+# EXPECTED BEHAVIOR:
+# The parser must understand that `syslog_pri` creates `syslog_severity_code`
+# and `syslog_facility_code` (and their string equivalents). Subsequent
+# conditionals relying on these dynamically created fields must be correctly evaluated.
+filter {
+  syslog_pri {
+    syslog_pri_field_name => "syslog_pri"
+  }
+  if [syslog_severity] == "error" or [syslog_severity_code] <= 3 {
+    mutate {
+      add_tag => ["critical_syslog"]
+    }
+  }
+}

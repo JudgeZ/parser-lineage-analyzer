@@ -1,0 +1,23 @@
+# EXPECTED BEHAVIOR:
+# The parser must model the `map` object in the `aggregate` filter,
+# understanding that properties added to `map` in one event (task_id)
+# are accessible in subsequent events with the same task_id.
+# It should also recognize `map_action` and `timeout`.
+filter {
+  if [type] == "start" {
+    aggregate {
+      task_id => "%{session_id}"
+      code => "map['start_time'] = event.get('@timestamp')"
+      map_action => "create"
+    }
+  }
+  if [type] == "end" {
+    aggregate {
+      task_id => "%{session_id}"
+      code => "event.set('duration', event.get('@timestamp') - map['start_time'])"
+      map_action => "update"
+      end_of_task => true
+      timeout => 120
+    }
+  }
+}

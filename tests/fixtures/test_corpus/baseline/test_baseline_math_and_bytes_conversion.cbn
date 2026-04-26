@@ -1,0 +1,17 @@
+# BASELINE REPRODUCTION: Math and Bytes Plugins
+# Validates numeric manipulation and human-readable byte conversion.
+# EXPECTED BEHAVIOR:
+# - The string "10 MB" should be accurately converted to 10485760 bytes.
+# - Basic math operations should compute threat scores or durations accurately.
+filter {
+  bytes {
+    source => "file.size_string"
+    target => "file.size_bytes"
+  }
+  math {
+    calculate => [
+      [ "add", "score1", "score2", "total_score" ],
+      [ "divide", "total_bytes", "duration_seconds", "bytes_per_second" ]
+    ]
+  }
+}

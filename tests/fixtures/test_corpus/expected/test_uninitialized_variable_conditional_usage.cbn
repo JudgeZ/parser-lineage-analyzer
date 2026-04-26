@@ -1,0 +1,23 @@
+# EXPECTED BEHAVIOR:
+# The parser analyzer must detect that 'intermediate_val' is used outside the conditional block
+# where it was initialized. It should flag a potential "uninitialized variable" or "null reference"
+# warning. In a real 700+ parser corpus, inconsistent initialization paths lead to runtime 
+# parsing failures when the condition is not met.
+
+filter {
+  if [log_type] == "syslog" {
+    mutate {
+      add_field => { "intermediate_val" => "%{syslog_message}" }
+    }
+  } else if [log_type] == "wineventlog" {
+    mutate {
+      add_field => { "intermediate_val" => "%{EventData}" }
+    }
+  }
+  # What if log_type is neither? intermediate_val is not set.
+
+  # Analyzer should flag this usage as potentially unsafe
+  mutate {
+    gsub => [ "intermediate_val", "\\\\", "/" ]
+  }
+}

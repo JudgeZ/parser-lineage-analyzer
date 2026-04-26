@@ -1,0 +1,33 @@
+# EXPECTED BEHAVIOR:
+# 1. Simulates parsing a complex JSON where a specific field is an array of objects.
+# 2. Tests the parser's awareness of how arrays of objects interact with conditional logic (e.g., `[payload][events][0][id]`).
+# 3. Drops the event if specific elements in the array match a condition.
+
+filter {
+  json {
+    source => "raw_data"
+    target => "parsed"
+  }
+
+  if [parsed][items][0][type] == "malicious" or [parsed][items][1][type] == "malicious" {
+    mutate {
+      add_tag => ["malware_detected"]
+    }
+  }
+
+  if "malware_detected" in [tags] {
+    ruby {
+      code => "
+        items = event.get('[parsed][items]')
+        if items.is_a?(Array)
+          items.delete_if { |i| i['type'] == 'malicious' }
+          event.set('[parsed][items]', items)
+        end
+      "
+    }
+    
+    if ![parsed][items][0] {
+      drop { }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+# test_dissect_dynamic_delimiters.cbn
+# EXPECTED BEHAVIOR:
+# Tests the dissect filter where the delimiters or the patterns themselves are attempted to be dynamic.
+# Dissect usually expects static delimiters, so the parser must either handle or reject dynamic structures gracefully.
+filter {
+  dissect {
+    mapping => {
+      "message" => "%{ts} %{+ts} %{?ignored} %{syslog_host} %{dynamic_delimiter} %{msg}"
+    }
+  }
+}

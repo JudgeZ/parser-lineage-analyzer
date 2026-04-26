@@ -1,0 +1,40 @@
+# TEST OBJECTIVE: Validate handling of complex mutate operations involving type coercion, splitting, joining, and array merging.
+# EXPECTED BEHAVIOR:
+# 1. The parser MUST track `host_ips` changing from a string to an array via `split`.
+# 2. It MUST track `merge` operation combining `host_ips` and `additional_ips` into an array.
+# 3. It MUST track `join` converting the array back to a string.
+# 4. It MUST properly evaluate conditionals based on the intermediate array or string states.
+
+filter {
+  mutate {
+    split => { "host_ips" => "," }
+  }
+
+  if [host_ips][0] == "192.168.1.1" {
+    mutate {
+      add_field => { "is_local" => "true" }
+    }
+  }
+
+  mutate {
+    merge => { "host_ips" => "additional_ips" }
+  }
+
+  # Now host_ips is a combined array
+  if "10.0.0.1" in [host_ips] {
+    mutate {
+      add_tag => ["internal_routing"]
+    }
+  }
+
+  mutate {
+    join => { "host_ips" => ";" }
+  }
+
+  # Now host_ips is a string again
+  if [host_ips] =~ /192\.168\.1\.1;/ {
+    mutate {
+      add_tag => ["starts_with_local"]
+    }
+  }
+}

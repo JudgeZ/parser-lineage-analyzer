@@ -1,0 +1,38 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must detect that the `dictionary_path` in the `translate` plugin is not a static string but contains an interpolation `%{tenant_id}`.
+# 2. It must flag this as a dynamic dependency requirement. The system running this config must have files like `tenantA_dict.yml` present on disk dynamically.
+# 3. It must trace the `fallback` value and how it interacts with the dynamic lookup. If the file is missing, does it fallback? (Usually Logstash requires files to exist at startup unless `refresh_interval` and dynamic paths are fully supported by the specific version).
+# 4. The subsequent conditional depends on `[tenant_name]`. The parser needs to link the success of the dynamic translate operation to this downstream logic.
+# 5. It must handle the nested `translate` where the `field` to translate is also dynamically constructed.
+
+filter {
+  # Dynamic dictionary path
+  translate {
+    field => "code"
+    destination => "tenant_name"
+    dictionary_path => "/opt/dicts/%{tenant_id}_mapping.yml"
+    fallback => "unknown_tenant"
+    refresh_interval => 300
+  }
+
+  if [tenant_name] != "unknown_tenant" {
+    mutate {
+      add_tag => ["valid_tenant"]
+    }
+  }
+
+  mutate {
+    add_field => { "dynamic_field_key" => "custom_code_%{source_type}" }
+  }
+
+  # Dynamic field source
+  translate {
+    field => "%{dynamic_field_key}"
+    destination => "resolved_custom_code"
+    dictionary => {
+      "typeA_123" => "Category Alpha"
+      "typeB_456" => "Category Beta"
+    }
+    exact => true
+  }
+}

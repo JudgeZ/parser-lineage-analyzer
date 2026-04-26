@@ -1,0 +1,30 @@
+# CHALLENGE REPRODUCTION: Output Drop Blackhole
+# Validates intentional data destruction at the output layer for specific compliance
+# or verbosity thresholds, bypassing storage completely.
+# EXPECTED BEHAVIOR:
+# - If an event is flagged as `DEBUG_SPAM`, it MUST be routed to the `null` or 
+#   equivalent drop output instead of being saved to disk/network.
+input {
+  kafka {
+    topics => ["firehose"]
+    bootstrap_servers => "kafka.local:9092"
+  }
+}
+
+filter {
+  if [message] =~ /^DEBUG/ {
+    mutate { add_tag => [ "DEBUG_SPAM" ] }
+  }
+}
+
+output {
+  if "DEBUG_SPAM" in [tags] {
+    # Send to the void
+    null { }
+  } else {
+    elasticsearch {
+      hosts => ["https://es.local:9200"]
+      index => "production-logs"
+    }
+  }
+}

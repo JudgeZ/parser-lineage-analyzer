@@ -1,0 +1,12 @@
+# Test: Conditional with Regex Capture Groups
+# Description: Tests conditionals that perform regex matching and implicitly extract capture groups
+# into the event scope. The parser needs to realize that `(?<username>\w+)` creates a new field `username`
+# that is available within the block and subsequent blocks.
+
+filter {
+  if [message] =~ /User logged in: (?<username>\w+)/ {
+    mutate {
+      add_field => { "login_user" => "%{username}" }
+    }
+  }
+}

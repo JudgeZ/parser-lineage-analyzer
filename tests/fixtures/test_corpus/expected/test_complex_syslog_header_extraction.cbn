@@ -1,0 +1,43 @@
+# EXPECTED BEHAVIOR:
+# This test verifies the parsing of complex syslog headers where PRI and VERSION fields
+# might be separated by irregular whitespace (tabs, multiple spaces) and require mathematical
+# operations to determine severity and facility.
+# The parser must attempt multiple fallback grok patterns. It should correctly convert extracted
+# PRI strings to integers, and use modulo/division in conditional logic or ruby to set syslog severity.
+
+filter {
+  grok {
+    match => {
+      # Handles <165>1 2003-10-11T22:14:15.003Z ...
+      # as well as <165> 1    2003-10-11T22:14:15.003Z ...
+      "message" => [
+        "^<(?<syslog_pri>\d+)>(?<syslog_version>\d+)\s+%{TIMESTAMP_ISO8601:syslog_timestamp}\s+%{DATA:syslog_hostname}\s+%{DATA:syslog_app}\s+%{DATA:syslog_procid}\s+%{DATA:syslog_msgid}\s+(?<syslog_msg>.*)",
+        "^<(?<syslog_pri>\d+)>\s*(?<syslog_version>\d+)?\s*%{TIMESTAMP_ISO8601:syslog_timestamp}\s+(?<syslog_msg>.*)"
+      ]
+    }
+    tag_on_failure => ["_syslogparsefailure"]
+  }
+
+  if "_syslogparsefailure" not in [tags] and [syslog_pri] {
+    mutate {
+      convert => { "syslog_pri" => "integer" }
+    }
+    
+    # Simulating syslog math via ruby since conditionals lack modulo arithmetic directly
+    ruby {
+      code => "
+        pri = event.get('syslog_pri')
+        if pri
+          facility = pri / 8
+          severity = pri % 8
+          event.set('syslog_facility', facility)
+          event.set('syslog_severity', severity)
+        end
+      "
+    }
+
+    if [syslog_severity] <= 3 {
+      mutate { add_tag => ["high_priority_syslog"] }
+    }
+  }
+}

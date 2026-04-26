@@ -1,0 +1,36 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must encounter the `jdbc_streaming` and `rest` plugins. These are often custom or less-common external lookup plugins.
+# 2. It must NOT crash when encountering unknown or custom plugins.
+# 3. It should ideally create a generic node in the parsing graph representing an "external lookup" or "unknown plugin" with the specified `target`.
+# 4. It must understand that `[db_results]` and `[api_response]` are dynamically created fields (likely arrays or objects) resulting from these plugins.
+# 5. Downstream logic depends on these fields (`[db_results][0][user_role]`). The parser must assume these fields might exist and not throw an unresolved reference error, tracking them as "externally generated".
+
+filter {
+  jdbc_streaming {
+    jdbc_driver_library => "/opt/drivers/mysql.jar"
+    jdbc_driver_class => "com.mysql.jdbc.Driver"
+    jdbc_connection_string => "jdbc:mysql://localhost:3306/users"
+    jdbc_user => "logstash"
+    jdbc_password => "secret"
+    statement => "SELECT user_role, department FROM users WHERE user_id = :id"
+    parameters => { "id" => "user_id" }
+    target => "db_results"
+  }
+
+  if [db_results][0][user_role] == "admin" {
+    rest {
+      request => {
+        url => "https://api.internal/enrich?dep=%{[db_results][0][department]}"
+        method => "get"
+      }
+      target => "api_response"
+      fallback => { "enriched" => false }
+    }
+  }
+
+  if [api_response][enriched] {
+    mutate {
+      add_tag => ["enriched_admin"]
+    }
+  }
+}

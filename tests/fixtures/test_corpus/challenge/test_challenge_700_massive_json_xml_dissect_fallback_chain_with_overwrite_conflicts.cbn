@@ -1,0 +1,60 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must trace a highly ambiguous field overwrite chain through `json`, `xml`, and `kv` plugins.
+# 2. It must handle `json` parsing with `skip_on_invalid_json` and `target` overwrite conflicts 
+#    where the target is the same as the source but nested (`[payload][data]`).
+# 3. It must correctly interpret a massive inline fallback block where an `xml` parse failure 
+#    immediately triggers a `kv` parse on the same raw field, with `trim_key`, `trim_value`, 
+#    and `value_split_regex`.
+# 4. The parser must ensure that the recursive array expansions from `xml` (force_array => true) 
+#    do not cause infinite loops during type inference when passed to `mutate` -> `join`.
+
+filter {
+  json {
+    source => "raw_message"
+    target => "parsed_json"
+    skip_on_invalid_json => true
+    tag_on_failure => ["_json_failed"]
+  }
+
+  if "_json_failed" in [tags] or ![parsed_json] {
+    xml {
+      source => "raw_message"
+      target => "parsed_xml"
+      force_array => true
+      namespaces => {
+        "xmlns:foo" => "http://example.com/foo"
+      }
+      xpath => {
+        "/foo:Envelope/foo:Body/foo:Data/text()" => "[extracted][xml_data]"
+      }
+      store_xml => true
+    }
+
+    if "_xmlparsefailure" in [tags] {
+      kv {
+        source => "raw_message"
+        target => "parsed_kv"
+        field_split => "&?"
+        value_split => "="
+        trim_key => "\\s"
+        trim_value => "\\s\"'"
+        include_keys => [ "user", "id", "session" ]
+      }
+    }
+  }
+
+  if [parsed_xml] {
+    mutate {
+      join => { "[extracted][xml_data]" => "," }
+      rename => { "parsed_xml" => "[final_payload][xml]" }
+    }
+  } else if [parsed_json] {
+    mutate {
+      merge => { "[final_payload][json]" => "parsed_json" }
+    }
+  } else if [parsed_kv] {
+    mutate {
+      copy => { "parsed_kv" => "[final_payload][kv]" }
+    }
+  }
+}

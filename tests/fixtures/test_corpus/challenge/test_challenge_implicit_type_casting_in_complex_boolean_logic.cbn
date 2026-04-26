@@ -1,0 +1,31 @@
+# EXPECTED BEHAVIOR:
+# This test pushes the parser's understanding of implicit type casting and truthiness in boolean expressions.
+# 1. Checks truthiness of a string 'false'. In Logstash, the string "false" is truthy because it's not nil or boolean false.
+# 2. Checks numeric greater-than on a field that might be a string. This implicitly requires numeric casting.
+# 3. Combines `in` operators on arrays and strings.
+# The parser must correctly model Logstash's specific idiosyncrasies regarding types during conditional evaluation,
+# specifically warning or handling string-to-number comparisons and truthiness of populated strings.
+
+filter {
+  mutate {
+    add_field => {
+      "str_false" => "false"
+      "num_str" => "100"
+      "array_field" => ["apple", "banana"]
+    }
+  }
+
+  # "false" as a string is truthy
+  if [str_false] and [num_str] > 50 {
+    mutate { add_tag => ["condition_1_passed"] }
+  }
+
+  if "apple" in [array_field] and "ban" in [array_field][1] {
+    mutate { add_tag => ["condition_2_passed"] }
+  }
+
+  if ![missing_field] and [str_false] != false {
+    # [str_false] is the string "false", which is not the boolean false
+    mutate { add_tag => ["condition_3_passed"] }
+  }
+}

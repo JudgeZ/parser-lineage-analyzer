@@ -1,0 +1,53 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must handle the `xml` filter with explicit namespace definitions (`namespaces`).
+# 2. It needs to track XPath extractions into target fields. Note that logstash XML XPath
+#    extractions *always* result in arrays, even if only one element matches.
+# 3. The parser must understand that `[parsed_data][userId]` and `[parsed_data][eventCount]`
+#    are arrays after the XML filter.
+# 4. The subsequent `mutate` `join` operations are necessary to convert these single-element
+#    arrays back into strings. The parser must model this array-to-string type coercion.
+# 5. If the XML parsing fails (e.g., malformed XML), it will tag with `_xmlparsefailure`.
+# 6. The conditional logic then falls back to attempting to parse the same payload as JSON.
+# 7. This tests complex structured data parsing, namespace handling, implicit array creation
+#    by XPath, explicit array flattening, and cross-format fallback logic.
+
+filter {
+  xml {
+    source => "raw_payload"
+    target => "doc"
+    namespaces => {
+      "ext" => "http://example.com/ext"
+      "core" => "http://example.com/core"
+    }
+    xpath => {
+      "/core:Event/ext:User/@id" => "[parsed_data][userId]"
+      "/core:Event/core:Details/core:Count/text()" => "[parsed_data][eventCount]"
+    }
+    store_xml => false
+  }
+
+  if "_xmlparsefailure" in [tags] {
+    # Fallback to JSON if it wasn't XML
+    json {
+      source => "raw_payload"
+      target => "parsed_data"
+    }
+  } else {
+    # XPath results in arrays, so we must join them if we want strings
+    mutate {
+      join => { "[parsed_data][userId]" => "," }
+      join => { "[parsed_data][eventCount]" => "," }
+    }
+    
+    # After joining, we can convert types
+    mutate {
+      convert => { "[parsed_data][eventCount]" => "integer" }
+    }
+  }
+
+  if [parsed_data][userId] {
+    mutate {
+      add_field => { "user_extracted" => "true" }
+    }
+  }
+}

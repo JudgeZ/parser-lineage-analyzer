@@ -1,0 +1,14 @@
+# EXPECTED BEHAVIOR:
+# The parser must properly parse newlines and tab characters as delimiters inside the dissect mapping.
+# The `message` field is tokenized into `field_A`, `field_B`, and `field_C`.
+# Lineage must correctly attribute these extracted fields back to `message`.
+# The parser must preserve exact whitespace when analyzing dissect literals without throwing syntax errors.
+
+filter {
+  dissect {
+    mapping => {
+      "message" => "%{field_A} \t %{field_B}
+%{field_C} -> %{field_D}"
+    }
+  }
+}

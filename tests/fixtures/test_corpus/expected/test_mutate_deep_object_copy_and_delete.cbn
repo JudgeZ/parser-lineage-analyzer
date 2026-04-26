@@ -1,0 +1,35 @@
+# EXPECTED BEHAVIOR:
+# This test verifies the correct behavior of pointer references and order of operations
+# when copying deep nested objects and subsequently deleting the source.
+# If [source][parent] is copied to [target][parent], and then [source] is deleted,
+# the [target][parent] data MUST persist. The parser must ensure deep copying of values
+# rather than passing references that are destroyed upon removal of the original field.
+
+filter {
+  # Assume we have [app][metadata][user_info][id]
+  mutate {
+    copy => { "[app][metadata]" => "[backup][metadata]" }
+  }
+
+  mutate {
+    # Removing the entire source root after copying its child
+    remove_field => ["[app]"]
+  }
+
+  # If [backup][metadata] is gone, the deep copy failed and was just a reference.
+  if ![backup][metadata] {
+    mutate {
+      add_tag => ["deep_copy_failed"]
+    }
+  } else {
+    mutate {
+      add_tag => ["deep_copy_success"]
+      rename => { "[backup][metadata][user_info]" => "[final][user_data]" }
+    }
+  }
+
+  # Validate nested deletion
+  mutate {
+    remove_field => ["[backup][metadata]"]
+  }
+}

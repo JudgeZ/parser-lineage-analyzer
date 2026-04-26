@@ -1,0 +1,15 @@
+# BASELINE REPRODUCTION: Grok Multiple Pattern Aggregation
+# Validates that the grok extractor correctly aggregates captures from multiple
+# patterns supplied in an array. The tool MUST continue to extract all possible
+# tokens from every pattern in the array.
+# EXPECTED BEHAVIOR: Both `user1` and `user2` should be successfully linked to grok.
+filter {
+  grok {
+    match => {
+      "message" => [
+        "%{WORD:user1} logged in",
+        "%{WORD:user2} logged out"
+      ]
+    }
+  }
+}

@@ -1,0 +1,15 @@
+# EXPECTED BEHAVIOR:
+# 1. The json plugin parses a string that results in a multi-dimensional array (e.g. `[[1,2], [3,4]]`).
+# 2. The `split` plugin then operates on this field. The parser needs to track that `data_matrix` transitions from an array of arrays to a single array per event clone.
+# 3. Lineage must reflect the complex type manipulation (string -> [][] -> []).
+
+filter {
+  json {
+    source => "raw_matrix"
+    target => "data_matrix"
+  }
+
+  split {
+    field => "data_matrix"
+  }
+}

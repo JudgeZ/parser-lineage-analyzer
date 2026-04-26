@@ -1,0 +1,10 @@
+{
+  "must_not_have_warning_codes": [
+    "malformed_config"
+  ],
+  "must_resolve_fields": [
+    "syslog_pri",
+    "syslog_version",
+    "syslog_msg"
+  ]
+}

@@ -1,0 +1,28 @@
+# Test: Challenge Conditional Drop with Complex Field Existence Checks
+# Description: Enterprise corpuses use deeply nested and highly specific existence checks to drop noise. The parser must understand `[field]` vs `![field]` vs `[field] == ""` vs `[nested][field]` and evaluate them accurately. Complex Boolean logic combining these existence checks, especially across multiple event types, tests the parser's ability to model short-circuit evaluation and variable presence.
+
+filter {
+  if ![source_ip] and ![destination_ip] {
+    if [metadata][event_type] == "network_flow" or [log_type] =~ /flow/ {
+      drop { }
+    }
+  }
+
+  if [nested][user][id] and (![nested][user][name] or [nested][user][name] == "") {
+    mutate {
+      add_field => { "[nested][user][name]" => "UNKNOWN_USER_%{[nested][user][id]}" }
+    }
+  } else if ![nested][user][id] and ![nested][user][name] {
+    if "auth_failure" in [tags] {
+      # Keep auth failures even without user details, but tag them
+      mutate { add_tag => ["anonymous_auth_failure"] }
+    } else {
+      drop { }
+    }
+  }
+  
+  # A check that is technically always false if the above drop matched, but structurally valid
+  if ![nested][user][id] and ![nested][user][name] and "auth_failure" not in [tags] {
+    mutate { add_tag => ["should_never_happen_due_to_prior_drop"] }
+  }
+}

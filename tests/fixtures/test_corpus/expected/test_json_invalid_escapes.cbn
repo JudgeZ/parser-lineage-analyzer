@@ -1,0 +1,11 @@
+# test_json_invalid_escapes.cbn
+# EXPECTED BEHAVIOR:
+# Tests JSON parsing behavior when encountering invalid escape sequences or truncated JSON.
+# It should gracefully fail the JSON parse, tag with `_jsonparsefailure`, and continue with the raw string if fallback is defined.
+filter {
+  json {
+    source => "message"
+    target => "parsed_json"
+    skip_on_invalid_json => true
+  }
+}

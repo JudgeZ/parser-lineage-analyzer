@@ -1,0 +1,28 @@
+# EXPECTED BEHAVIOR:
+# 1. Handling of Ruby blocks that contain `begin ... rescue ... end` blocks.
+# 2. The parser should treat the Ruby block content as an opaque string or parse it 
+#    minimally, ensuring that internal keywords (like `rescue` or `end`) do not break 
+#    the outer Logstash configuration parsing.
+# 3. Ensuring that `init` and `code` blocks are correctly demarcated even with complex 
+#    internal Ruby syntax.
+
+filter {
+  ruby {
+    init => "
+      require 'base64'
+      @logger.info('Initializing custom ruby filter')
+    "
+    code => "
+      begin
+        raw_data = event.get('encoded_payload')
+        if raw_data
+          decoded = Base64.decode64(raw_data)
+          event.set('decoded_payload', decoded)
+        end
+      rescue => e
+        event.tag('_rubyexception')
+        @logger.error('Ruby exception occurred', :error => e.message)
+      end
+    "
+  }
+}

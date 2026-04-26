@@ -1,0 +1,39 @@
+# TEST BEHAVIOR:
+# This test simulates a scenario where string interpolation in mutations creates a cyclical
+# dependency or deep recursive reference chain (e.g., %{a} interpolates to %{b}, which interpolates to %{a}).
+# The parser MUST detect and break the infinite loop during evaluation or parsing, falling
+# back to the literal string or returning an error, but NEVER crashing or hanging.
+# It also tests deep linear interpolation chains that stress the string builder.
+
+filter {
+  mutate {
+    add_field => {
+      "field_a" => "value_a_and_%{field_b}"
+      "field_b" => "value_b_and_%{field_c}"
+      "field_c" => "value_c_and_%{field_a}" # CYCLE!
+      
+      # Linear deep nesting
+      "deep_0" => "start"
+      "deep_1" => "d1_%{deep_0}"
+      "deep_2" => "d2_%{deep_1}"
+      "deep_3" => "d3_%{deep_2}"
+      "deep_4" => "d4_%{deep_3}"
+      "deep_5" => "d5_%{deep_4}"
+      "deep_6" => "d6_%{deep_5}"
+      "deep_7" => "d7_%{deep_6}"
+      "deep_8" => "d8_%{deep_7}"
+      "deep_9" => "d9_%{deep_8}"
+      "deep_10" => "d10_%{deep_9}"
+      
+      # Dynamic field reference cycle
+      "dyn_key" => "dyn_val"
+      "dyn_val" => "dyn_key"
+      "target" => "%{[%{dyn_key}]}"
+    }
+  }
+
+  # Attempt to use the cyclical field in a conditional
+  if [field_a] =~ /something/ {
+    mutate { add_tag => ["cycle_matched"] }
+  }
+}

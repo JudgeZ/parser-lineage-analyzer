@@ -1,0 +1,17 @@
+# EXPECTED BEHAVIOR:
+# Mutate operations like `join` implicitly assume an array, coercing strings if necessary.
+# Subsequent conditionals might check string properties (like length or regex) on the joined result.
+# The parser must infer the transition from `array<string>` to `string` across these boundaries.
+filter {
+  mutate {
+    add_field => { "tags_list" => ["a", "b", "c"] }
+  }
+  mutate {
+    join => { "tags_list" => "," }
+  }
+  if [tags_list] =~ /a,b/ {
+    mutate {
+      add_tag => ["joined_successfully"]
+    }
+  }
+}

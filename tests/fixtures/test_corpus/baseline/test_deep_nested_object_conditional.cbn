@@ -1,0 +1,14 @@
+# BASELINE REPRODUCTION: Deep Nested Object Conditional
+# Validates that the parser correctly handles field references to deeply nested
+# JSON objects within conditionals, a staple of modern 700+ line parsers.
+# EXPECTED BEHAVIOR: The parser MUST accurately track the nested brackets
+# `[event][metadata][original_time]` without parsing errors and link it to
+# the date extraction.
+filter {
+  if [event][metadata][original_time] {
+    date {
+      match => [ "[event][metadata][original_time]", "ISO8601" ]
+      target => "@timestamp"
+    }
+  }
+}

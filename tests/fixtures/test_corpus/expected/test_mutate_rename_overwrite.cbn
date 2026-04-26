@@ -1,0 +1,20 @@
+# EXPECTATION:
+# Renaming a field to an already existing field overwrites the target field.
+# The parser must understand that `[destination]`'s lineage is entirely replaced
+# by `[source]`, breaking any previous lineage `[destination]` had before this operation.
+filter {
+  mutate {
+    add_field => { "destination" => "original_value" }
+    add_field => { "source" => "new_value" }
+  }
+
+  mutate {
+    rename => { "source" => "destination" }
+  }
+
+  if [destination] == "new_value" {
+    mutate {
+      add_tag => ["rename_successful"]
+    }
+  }
+}

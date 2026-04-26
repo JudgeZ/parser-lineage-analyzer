@@ -1,0 +1,22 @@
+# TEST BEHAVIOR:
+# This test challenges the parser to evaluate a drop condition on a field
+# that may be a string or an object depending on earlier JSON/Grok extraction.
+# If `[user][id]` is an object, the condition `[user][id] == "0"` might behave
+# differently (or fail) compared to when it is a string. The parser must
+# track the multiple possible type states of `[user][id]`.
+filter {
+  json {
+    source => "raw_data"
+    target => "user"
+  }
+
+  if [user] == "system" {
+    mutate {
+      replace => { "[user][id]" => "0" }
+    }
+  }
+
+  if [user][id] == "0" or [user][id] == 0 {
+    drop {}
+  }
+}

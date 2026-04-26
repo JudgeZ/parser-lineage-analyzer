@@ -1,0 +1,18 @@
+# EXPECTED BEHAVIOR:
+# In massive parsers, users sometimes provide huge arrays of grok patterns, leading to 
+# combinatorial explosion and catastrophic backtracking if not optimized.
+# This test evaluates if the parser handles multiple patterns and break_on_match correctly.
+filter {
+  grok {
+    match => {
+      "message" => [
+        "%{SYSLOGBASE} %{GREEDYDATA:syslog_message}",
+        "%{TIMESTAMP_ISO8601:timestamp} \[%{LOGLEVEL:level}\] %{GREEDYDATA:message}",
+        "%{IPORHOST:clientip} %{USER:ident} %{USER:auth} \[%{HTTPDATE:timestamp}\] \"%{WORD:verb} %{DATA:request} HTTP/%{NUMBER:httpversion}\" %{NUMBER:response:int} (?:-|%{NUMBER:bytes:int})",
+        "%{GREEDYDATA:unparsed_fallback}"
+      ]
+    }
+    break_on_match => true
+    tag_on_failure => ["_grokparsefailure", "needs_custom_pattern"]
+  }
+}

@@ -1,0 +1,25 @@
+# EXPECTED BEHAVIOR:
+# 1. Evaluates truthiness of arrays, strings, and missing fields across deep logic branches.
+# 2. Specifically tests empty strings, arrays with empty strings, and arrays with one element vs multiple elements.
+
+filter {
+  mutate {
+    add_field => {
+      "empty_str" => ""
+      "empty_array" => []
+      "single_element_array" => ["value"]
+    }
+  }
+
+  if [missing_field] or [empty_str] == "" {
+    if [empty_array] {
+      mutate { add_tag => ["array_is_truthy"] }
+    } else {
+      mutate { add_tag => ["array_is_falsy"] }
+    }
+    
+    if [single_element_array] == "value" {
+      mutate { add_tag => ["array_equals_string"] }
+    }
+  }
+}

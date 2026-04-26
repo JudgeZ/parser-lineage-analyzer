@@ -1,0 +1,35 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must track the `clone` plugin, which duplicates the event and adds a type tag (`clone_type_a`, `clone_type_b`).
+# 2. It must understand that there are now 3 events: the original (unchanged type), clone A, and clone B.
+# 3. The `drop` logic removes the original event if it's "noisy". The parser must track that the clones might survive even if the parent is dropped.
+# 4. Clone A undergoes further cloning (`clone_type_a_1`), creating a 4th event.
+# 5. The parser must map the data lineage: the final outputs could be `clone_type_b`, `clone_type_a_1`, and `clone_type_a` (if not dropped).
+# 6. It must correctly scope mutations (like `add_field => { "branch" => ... }`) to only the specific cloned event paths.
+
+filter {
+  clone {
+    clones => ["clone_type_a", "clone_type_b"]
+  }
+
+  if [type] == "original_noisy_event" {
+    drop {}
+  }
+
+  if [type] == "clone_type_a" {
+    mutate { add_field => { "branch" => "A" } }
+    
+    # Nested clone
+    clone {
+      clones => ["clone_type_a_1"]
+    }
+
+    if [type] == "clone_type_a_1" {
+       mutate { add_field => { "sub_branch" => "A1" } }
+    }
+  }
+
+  if [type] == "clone_type_b" {
+    mutate { add_field => { "branch" => "B" } }
+    # specific processing for B
+  }
+}

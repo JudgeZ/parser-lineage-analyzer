@@ -1,0 +1,16 @@
+# BASELINE REPRODUCTION: Mutate Internal Execution Ordering
+# Validates that the parser understands (or gracefully handles) the internal,
+# strict execution order of Logstash `mutate` operations within a single block.
+# Logstash executes mutate operations in this specific order: rename, update,
+# replace, convert, gsub, uppercase, capitalize, lowercase, strip, remove,
+# split, join, merge, copy, add_field.
+# The tool MUST handle these without cyclomatic errors or incorrectly resolving
+# dependencies based on textual top-to-bottom order.
+# EXPECTED BEHAVIOR: `final_field` lineage traces back to `initial_field` via the specific sequence, or correctly flags the complex mutation.
+filter {
+  mutate {
+    add_field => { "final_field" => "%{copied_field}_added" }
+    copy => { "renamed_field" => "copied_field" }
+    rename => { "initial_field" => "renamed_field" }
+  }
+}

@@ -1,0 +1,12 @@
+# BUG REPRODUCTION: Mutate Join Unsupported Operation
+# The `mutate { join => ... }` operation is a standard Logstash capability.
+# The analyzer fails to implement this operation in `_MUTATE_OP_HANDLERS`, meaning
+# any usage of `mutate.join` is silently ignored and the parser is tainted with
+# an `unsupported_mutate_operation` warning, losing all data mutations.
+# EXPECTED FIX: `join` should join the array elements, and `target` should be exact.
+filter {
+  mutate { replace => { "user" => "Alice,Bob" } }
+  mutate { split => { "user" => "," } }
+  mutate { join => { "user" => " " } }
+  mutate { replace => { "target" => "%{user}" } }
+}

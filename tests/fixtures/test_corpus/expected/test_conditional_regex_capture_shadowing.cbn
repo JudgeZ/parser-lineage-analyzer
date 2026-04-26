@@ -1,0 +1,16 @@
+# EXPECTATION:
+# Logstash allows named capture groups directly within regex conditionals.
+# If `message` matches the regex, it implicitly creates or overwrites the field `[captured_value]`.
+# The parser must identify this implicit mutation within the control flow condition
+# and update the lineage of `[captured_value]` inside the `if` block.
+filter {
+  if [message] =~ /start_(?<captured_value>[A-Z0-9]+)_end/ {
+    mutate {
+      add_field => { "new_field" => "Found %{captured_value}" }
+    }
+  } else {
+    mutate {
+      add_field => { "new_field" => "Not found" }
+    }
+  }
+}

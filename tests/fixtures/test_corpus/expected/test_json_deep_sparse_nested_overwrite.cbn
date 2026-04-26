@@ -1,0 +1,16 @@
+# EXPECTED BEHAVIOR:
+# Deeply nested JSON target merging. If `[app][details]` already exists as a string,
+# and JSON attempts to write an object there, it creates a type conflict.
+# The parser must identify this potential collision and document the expected overwrite or failure behavior.
+filter {
+  mutate {
+    add_field => { "[app][details]" => "Some generic info" }
+  }
+  json {
+    source => "json_payload"
+    target => "[app][details]"
+  }
+  if "_jsonparsefailure" not in [tags] {
+    mutate { add_tag => ["json_overwrite_success"] }
+  }
+}

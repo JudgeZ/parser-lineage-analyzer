@@ -1,0 +1,18 @@
+filter {
+  json {
+    source => "message"
+    array_function => "split_columns"
+  }
+  for item in tags {
+    mutate {
+      replace => {
+        "event.idm.read_only_udm.security_result.category" => "%{item}"
+      }
+    }
+    mutate {
+      merge => {
+        "@output" => "event"
+      }
+    }
+  }
+}

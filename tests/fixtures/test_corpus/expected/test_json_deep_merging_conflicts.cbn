@@ -1,0 +1,18 @@
+# EXPECTED BEHAVIOR:
+# JSON parsing into a target that already exists (like the root of the document).
+# The parser needs to handle field collisions. If the parsed JSON contains a `message` field,
+# it might overwrite the original `message` field. The analyzer must represent this destructive
+# mutation explicitly.
+filter {
+  json {
+    source => "raw_json"
+    target => "@metadata"
+  }
+  json {
+    source => "another_json"
+    # No target implies root level merging
+  }
+  mutate {
+    rename => { "[@metadata][temp]" => "final_val" }
+  }
+}

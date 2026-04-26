@@ -1,0 +1,12 @@
+# BASELINE REPRODUCTION: Drop Abort Logic
+# Validates that `drop { }` correctly terminates the current branch path.
+# The tool MUST continue to ensure that assignments occurring after a `drop`
+# in the same branch are completely ignored.
+# EXPECTED BEHAVIOR: `user.role` should be unresolved (dropped). `user.type` should exist.
+filter {
+  mutate { replace => { "user.type" => "Admin" } }
+  if [user] == "Alice" {
+    drop { }
+    mutate { replace => { "user.role" => "Ghost" } }
+  }
+}

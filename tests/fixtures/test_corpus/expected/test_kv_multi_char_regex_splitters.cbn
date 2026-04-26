@@ -1,0 +1,17 @@
+# EXPECTED BEHAVIOR:
+# Real world 700+ parsers often abuse the kv filter to parse chaotic key-value formats.
+# This test evaluates the parser's ability to handle multi-character and regex-based
+# field_split and value_split parameters, along with prefixing and trimming.
+filter {
+  kv {
+    source => "messy_payload"
+    target => "extracted_kvs"
+    field_split => "(?:\|\||;;)"
+    value_split => "(?:==>|:=)"
+    trim_key => "\[\] "
+    trim_value => "\"' "
+    prefix => "dyn_"
+    recursive => true
+    allow_duplicate_values => false
+  }
+}

@@ -1,0 +1,45 @@
+/*
+ * TEST CORPUS: XML Namespaces and Mixed Content
+ * 
+ * CHALLENGE:
+ * Real-world XML logs often contain complex namespace declarations, mixed content (text and child elements),
+ * and deeply nested structures. A robust parser must be able to resolve namespaces correctly, extract
+ * values even when elements are prefixed, and handle attributes mixed with inner text.
+ * 
+ * EXPECTED BEHAVIOR:
+ * 1. The parser should correctly identify the `xml` parsing section.
+ * 2. It must extract `EventID` considering the default namespace or explicit namespace prefixes if defined.
+ * 3. It should correctly handle the extraction of attributes, such as `SystemTime` inside `<TimeCreated>`.
+ * 4. The parser must not fail when encountering mixed content or unmapped namespaces, and should fallback gracefully.
+ * 5. Conditional logic based on extracted XML fields should be accurately evaluated.
+ */
+
+filter {
+  xml {
+    source => "message"
+    target => "parsed_xml"
+    store_xml => false
+    xpath => [
+      "/Event/System/EventID/text()", "event_id",
+      "/Event/System/TimeCreated/@SystemTime", "event_time",
+      "//EventData/Data[@Name='SubjectUserName']/text()", "username"
+    ]
+  }
+
+  if [event_id] == "4624" {
+    mutate {
+      add_field => { "event_type" => "login_success" }
+    }
+  } else if [event_id] == "4625" {
+    mutate {
+      add_field => { "event_type" => "login_failure" }
+    }
+  }
+
+  if [parsed_xml][Event][EventData][Data] {
+    # Testing nested field access created by hypothetical store_xml => true (even though false above, real configs might mix them)
+    mutate {
+      rename => { "[parsed_xml][Event][EventData][Data]" => "raw_event_data" }
+    }
+  }
+}

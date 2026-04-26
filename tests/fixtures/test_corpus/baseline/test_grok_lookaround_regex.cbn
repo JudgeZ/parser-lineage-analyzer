@@ -1,0 +1,24 @@
+# BASELINE REPRODUCTION: Grok with Lookaround Regex
+# Validates the grok plugin's handling of complex regular expressions,
+# particularly those containing lookaheads and lookbehinds.
+#
+# High-volume security logs often require very precise extraction patterns
+# using `(?=...)`, `(?!...)`, `(?<=...)`, and `(?<!...)` constructs to avoid
+# catastrophic backtracking.
+#
+# EXPECTED BEHAVIOR: The parser must correctly tokenize the regex literal
+# without breaking on the parentheses, question marks, or exclamation points.
+# The AST should capture the full regex pattern intact.
+filter {
+  grok {
+    match => {
+      "message" => [
+        "^(?<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)\s+(?P<level>INFO|ERROR|WARN)\s+(?<msg>(?!.*password).*)$",
+        "(?<=user=)(?<username>[a-zA-Z0-9]+)(?=\s)",
+        "%{IP:client_ip} - - \[%{HTTPDATE:timestamp}\] \"(?:%{WORD:verb} %{NOTSPACE:request}(?: HTTP/%{NUMBER:httpversion})?|%{DATA:rawrequest})\" %{NUMBER:response} (?:%{NUMBER:bytes}|-)"
+      ]
+    }
+    timeout_millis => 500
+    tag_on_timeout => "_groktimeout"
+  }
+}

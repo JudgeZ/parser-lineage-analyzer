@@ -1,0 +1,38 @@
+start: map
+     | config_item*
+?config_item: key (ARROW|EQ) value -> pair
+            | key                  -> flag
+?value: atom
+      | map
+      | array
+map: LBRACE config_item* RBRACE
+array: LBRACKET [value (COMMA? value)* COMMA?] RBRACKET
+?key: atom
+?atom: STRING -> string
+     | REGEX  -> regex
+     | XPATH  -> bare
+     | BRACKET_REF -> bracket_ref
+     | IDENT  -> ident
+     | BARE   -> bare
+
+ARROW.10: "=>"
+EQ.1: "="
+LBRACE: "{"
+RBRACE: "}"
+LBRACKET: "["
+RBRACKET: "]"
+COMMA: ","
+STRING.20: /"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/
+BRACKET_REF.18: /\[[A-Za-z_@0-9.:-]+\](\[[A-Za-z_@0-9.:-]+\])*/
+REGEX.6: /\/(\\.|[^\/\\\n])*\/[A-Za-z]*(?=$|[\s,\]\}=])/
+XPATH.31: /\/\/[^{}\[\],=\s]+(?=\s*(?:=>|=))/
+IDENT.4: /[A-Za-z_@][A-Za-z0-9_@.:-]*/
+BARE.5: /[^{}\[\],=\s]+/
+HASH_COMMENT.30: /#[^\n]*/
+SLASH_COMMENT.30: /(?<!:)\/\/(?!\S+\s*(?:=>|=))[^\n]*/
+BLOCK_COMMENT.30: /\/\*(.|\n)*?\*\//
+%ignore HASH_COMMENT
+%ignore SLASH_COMMENT
+%ignore BLOCK_COMMENT
+%import common.WS
+%ignore WS

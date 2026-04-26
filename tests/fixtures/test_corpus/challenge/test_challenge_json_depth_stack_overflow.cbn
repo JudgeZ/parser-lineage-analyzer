@@ -1,0 +1,12 @@
+# CHALLENGE REPRODUCTION: JSON Depth Stack Overflow Attack
+# Validates the parser's resilience against maliciously deep JSON objects.
+# EXPECTED BEHAVIOR:
+# - A payload with {"a":{"a":{"a":...}}} nested 10,000 levels deep should not crash the JVM/parser.
+# - The parser should enforce a maximum nesting depth limit and gracefully abort parsing,
+#   tagging the event with `_jsonparsefailure` or similar.
+filter {
+  json {
+    source => "malicious_deep_json"
+    target => "parsed_deep"
+  }
+}

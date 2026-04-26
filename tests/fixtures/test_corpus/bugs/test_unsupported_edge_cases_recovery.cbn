@@ -1,0 +1,356 @@
+filter {
+  # ==============================================================================
+  # 1. Unsupported Plugins
+  # The analyzer only knows specific plugins. Custom plugins like 'ruby' or 
+  # 'translate' will be flagged as "unsupported plugin" and skipped.
+  # ==============================================================================
+  some_weird_plugin {
+    code => "event.set('computed_hash', Digest::SHA256.hexdigest(event.get('message')))"
+  }
+
+  another_weird_plugin {
+    source => "status_code"
+    target => "status_message"
+    dictionary => {
+      "200" => "OK"
+      "404" => "Not Found"
+    }
+  }
+
+  # ==============================================================================
+  # 2. Dynamic Destinations
+  # The static analyzer doesn't have a raw log to know what %{key_name} evaluates to.
+  # It will flag this lineage as "dynamic" because it cannot resolve the final UDM path.
+  # ==============================================================================
+  json {
+    source => "message"
+    array_function => "split_columns"
+  }
+
+  for key_name, value in metadata_map {
+    mutate {
+      replace => {
+        "target.labels.%{key_name}" => "%{value}"
+      }
+    }
+  }
+
+  # ==============================================================================
+  # 3. Nested Interpolation
+  # Static analysis cannot safely compute nested strings. 
+  # This will be marked as dynamic/unresolved with a warning.
+  # ==============================================================================
+  mutate {
+    replace => {
+      "principal.hostname" => "%{host_prefix_%{host_index}}"
+    }
+  }
+
+  # ==============================================================================
+  # 4. Strict Runtime Logic (Math & Regex)
+  # The analyzer does not execute math (> 1000) or evaluate regexes (/malicious_.*/).
+  # It will simply over-approximate and return BOTH branches with the raw conditions attached.
+  # ==============================================================================
+  if [bytes] > 1000 and [message] =~ /malicious_.*_payload/ {
+    mutate {
+      replace => {
+        "security_result.action" => "BLOCK"
+      }
+    }
+  } else {
+    mutate {
+      replace => {
+        "security_result.action" => "ALLOW"
+      }
+    }
+  }
+
+  # ==============================================================================
+  # 5. Massive Monolithic Repetition (Simulated)
+  # In a real parser, you might see 50,000 'else if' branches here.
+  # The parser avoids OOM crashes by capping "Prior Negations" to 32,
+  # but parsing massive files still takes CPU time due to the Python lexer.
+  # ==============================================================================
+  if [event_id] == "1" {
+    mutate { replace => { "event_type" => "PROCESS_LAUNCH" } }
+  } else if [event_id] == "2" {
+    mutate { replace => { "event_type" => "FILE_CREATION" } }
+  } else if [event_id] == "3" {
+    mutate { replace => { "event_type" => "NETWORK_CONNECTION" } }
+  }
+  # ... imagine 140,000 more lines of this ...
+
+
+  # ==============================================================================
+  # 6. Dissect Advanced Modifiers (Append / Indirect)
+  # Dissect supports modifiers like + (append) or & (indirect reference).
+  # The static analyzer warns on indirect/append fields because it cannot accurately
+  # trace complex string concatenations or dynamic target indirection.
+  # ==============================================================================
+  dissect {
+    mapping => {
+      "message" => "%{+syslog_timestamp} %{+syslog_timestamp} %{+syslog_timestamp} %{&dynamic_target}"
+    }
+  }
+
+  # ==============================================================================
+  # 7. Unrolled or Iterative Gsub
+  # While the parser supports gsub, if you pass an array of many replacements,
+  # or try to use dynamic strings in the regex/replacement, it simply marks it as a
+  # single symbolic "gsub" transformation rather than computing the string result.
+  # ==============================================================================
+  mutate {
+    gsub => [
+      "user_agent", "(.*)Chrome(.*)", "Chrome",
+      "user_agent", "(.*)Safari(.*)", "Safari"
+    ]
+  }
+
+  # ==============================================================================
+  # 8. Dynamic Source Tokens (e.g. from a loop)
+  # If the source token of an extractor is itself a dynamic variable 
+  # (like a loop variable or nested string), the extractor output might 
+  # be too ambiguous to map deterministically.
+  # ==============================================================================
+  for field_name in ["src_ip", "dst_ip"] {
+    grok {
+      match => {
+        "%{field_name}" => "%{IPV4:extracted_ip}"
+      }
+    }
+  }
+
+  # ==============================================================================
+  # 9. Statedump Terminations
+  # A statedump{} call usually stops execution in a real SecOps environment.
+  # The analyzer treats this gracefully but might truncate analysis of 
+  # later blocks if it interprets statedump as an abort path.
+  # ==============================================================================
+  if [debug_mode] == "true" {
+    statedump {}
+  }
+
+
+  # ==============================================================================
+  # 10. Dynamic Output Anchors
+  # Parsers can use interpolation for the @output target, emitting dynamically 
+  # named UDM events. The static analyzer will struggle to map the lineage to a 
+  # concrete UDM output name, likely flagging the anchor as "dynamic" or unresolved.
+  # ==============================================================================
+  mutate {
+    merge => {
+      "@output" => "%{dynamic_event_name}"
+    }
+  }
+
+  # ==============================================================================
+  # 11. Inline Grok Pattern Definitions
+  # Grok allows custom regex patterns to be defined inline. 
+  # Because the static analyzer does not execute the Grok/Regex engine, 
+  # it cannot automatically expand inline pattern definitions to discover 
+  # deeply nested named captures that might exist within them.
+  # ==============================================================================
+  grok {
+    pattern_definitions => {
+      "MY_CUSTOM_PATTERN" => "(?<inner_secret>[A-Z0-9]+)"
+    }
+    match => {
+      "message" => "%{MY_CUSTOM_PATTERN:outer_field}"
+    }
+  }
+
+  # ==============================================================================
+  # 12. XML Namespaces and XPath Complexity
+  # The xml plugin allows namespace injection and complex XPath functions 
+  # (like count(), concat(), or deeply nested wildcards). The analyzer uses simple 
+  # string matching for bare XPaths and will likely fail to map functional XPaths 
+  # to a clean, deterministic lineage token.
+  # ==============================================================================
+  xml {
+    source => "raw_xml"
+    namespaces => {
+      "foo" => "http://www.foo.com/bar"
+    }
+    xpath => {
+      "count(//foo:Event/Data)" => "event_count"
+    }
+  }
+
+  # ==============================================================================
+  # 13. Over-wide Loop Variable Extraction
+  # SecOps parsers technically iterate over arrays (item, index) or maps (key, value). 
+  # If a parser declares more than 2 variables (e.g. attempting to unpack tuples),
+  # the static analyzer will warn and treat the trailing variables as opaque, 
+  # symbolic loop items, breaking direct data-path inference.
+  # ==============================================================================
+  for i, j, k, l in complex_nested_array {
+    mutate {
+      replace => {
+        "event.idm.read_only_udm.target.user.userid" => "%{k}"
+      }
+    }
+  }
+
+  # ==============================================================================
+  # 14. Dynamic Timezones in Date Filter
+  # The date extractor can dynamically adjust its timezone based on a parsed token.
+  # Static analysis cannot determine which timezone was applied to the timestamp, 
+  # meaning the exact UDM timestamp lineage is technically "conditional" or "dynamic".
+  # ==============================================================================
+  date {
+    match => ["time", "ISO8601"]
+    timezone => "%{extracted_timezone}"
+    target => "event.idm.read_only_udm.metadata.event_timestamp"
+  }
+
+  # ==============================================================================
+  # 15. Standard Logstash Named Captures vs Python `(?P<name>...)`
+  # Logstash often uses the Oniguruma regex capture syntax `(?<name>...)`. 
+  # However, the analyzer's metadata parser uses the Python regex group syntax 
+  # `(?P<token>...)` to scrape the field names during static analysis. 
+  # As a result, standard Logstash named regex captures are completely missed!
+  # ==============================================================================
+  mutate {
+    replace => {
+      "extracted_data" => "%{message}"
+    }
+  }
+  if [message] =~ /(?<username>[A-Za-z]+) logged in/ {
+    mutate { replace => { "user.name" => "%{username}" } }
+  }
+
+  # ==============================================================================
+  # 16. Array Index Access inside Interpolation
+  # SecOps allows referencing specific array indexes natively like `%{[tags][0]}`.
+  # In UDM, fields like tags are repeated, so the analyzer handles array indexes
+  # cleanly but tracking the exact numerical position across complex nested loop
+  # structures remains an inherent static limit.
+  # ==============================================================================
+  mutate {
+    replace => {
+      "event.idm.read_only_udm.labels.value" => "%{[tags][0]}"
+    }
+  }
+
+  # ==============================================================================
+  # 17. Unquoted URLs (Comment Collisions)
+  # In the config grammar (config.lark), SLASH_COMMENT ignores anything after `//`. 
+  # If a user provides an unquoted URL like `http://google.com` as a bare atom, 
+  # the lexer will parse `http:` as the value and silently delete `//google.com` 
+  # as a comment. This corrupts the config map.
+  # ==============================================================================
+  mutate {
+    replace => {
+      "reference_url" => http://www.google.com
+    }
+  }
+
+  # ==============================================================================
+  # 18. Multi-line Regex Conditions
+  # The parser frontend uses a heuristic scanner to protect regex literals from 
+  # being mangled by comment-stripping. However, this heuristic expects the closing
+  # slash `/` to be on the same line. If a regex literal spans multiple lines,
+  # the LALR grammar will receive invalid tokens and fail-open to an Unknown block.
+  # ==============================================================================
+  if [payload] =~ /start_of_payload
+     middle_of_payload
+     end_of_payload/ {
+     mutate { replace => { "threat.verdict" => "MALICIOUS" } }
+  }
+
+  # ==============================================================================
+  # 19. Self-Referential Merges (Array Expansion)
+  # Merging a token into itself (or appending) technically turns it into an array 
+  # in UDM, or pushes its own elements onto itself. The static analyzer tracks the 
+  # lineage as "repeated", but structurally tracing the nested depth of array-of-arrays 
+  # generated by recursive merges is beyond its scope.
+  # ==============================================================================
+  mutate {
+    merge => {
+      "event.idm.read_only_udm.labels" => "%{event.idm.read_only_udm.labels}"
+    }
+  }
+
+  # ==============================================================================
+  # 20. Dynamic Loop Maps (Iterating over arbitrary objects)
+  # The `for key, value in %{dynamic_map}` loop is valid SecOps syntax, but it
+  # destroys static lineage because neither the keys nor the map structure are known.
+  # The analyzer assigns "exact" lineage to the map_key and map_value pseudo-sources, 
+  # but any UDM field populated by them is inherently data-dependent.
+  # ==============================================================================
+  for dyn_key, dyn_val in %{unknown_json_payload} {
+    mutate {
+      replace => {
+        "event.idm.read_only_udm.additional.fields.%{dyn_key}" => "%{dyn_val}"
+      }
+    }
+  }
+
+
+  # ==============================================================================
+  # 21. Dynamic Regex Conditions (Interpolated Regexes)
+  # A parser can use string interpolation inside a conditional regex check. 
+  # The LALR statement scanner `HEADER` might fail to categorize this securely, 
+  # and the static analyzer can't unroll the runtime value being matched against.
+  # ==============================================================================
+  if [hostname] =~ "%{known_malicious_domain}" {
+    mutate { replace => { "security_result.category" => "C2" } }
+  }
+
+  # ==============================================================================
+  # 22. Gsub Regex Backreferences
+  # Logstash `gsub` supports regex backreferences (e.g. \1, \2) to rewrite strings.
+  # The static analyzer cannot simulate regex backreferences, meaning any transformations 
+  # generated by this block are just logged generically as "gsub" instead of resolving 
+  # the exact concatenated string format.
+  # ==============================================================================
+  mutate {
+    gsub => [
+      "user_agent", "(Mozilla)/(.*)", "\1-BROWSER-\2"
+    ]
+  }
+
+  # ==============================================================================
+  # 23. Indirect Field References in Conditionals
+  # If a conditional branch checks the value of a dynamically-named field, 
+  # the static analyzer will treat the entire branch as `conditional`, but it 
+  # is fundamentally blind to the underlying field that drove the decision.
+  # ==============================================================================
+  if "%{dynamic_field_key}" == "true" {
+    mutate { replace => { "action" => "ALLOW" } }
+  }
+
+  # ==============================================================================
+  # 24. Missing JSON array_function Handlers
+  # The JSON plugin accepts array functions like `extract_elements` or `split_columns`.
+  # The static analyzer ignores the array_function logic entirely. For example, 
+  # `extract_elements` radically changes how JSON loops interact with arrays, 
+  # but the analyzer just treats them as standard flat paths.
+  # ==============================================================================
+  json {
+    source => "message"
+    array_function => "extract_elements"
+  }
+
+
+  # ==============================================================================
+  # 25. Malformed Syntax (Mangled Braces)
+  # If an author forgets closing braces or botches the syntax entirely, 
+  # the Lark LALR parser will fail-open. It catches the UnexpectedInput exception,
+  # skips the broken chunk as an "Unknown" node, and continues. Lineage in the 
+  # broken chunk is lost entirely.
+  # ==============================================================================
+  if [broken_syntax] == "true" {
+    mutate {
+      replace => {
+        "udm.field" => "value"
+      # MISSING CLOSING BRACES HERE FOR MUTATE AND IF!
+      
+  # The parser will try to recover from the missing braces above 
+  # when it hits the next valid, recognized statement block.
+  mutate {
+    replace => {
+      "event.idm.read_only_udm.target.ip" => "1.1.1.1"
+    }
+  }
+}

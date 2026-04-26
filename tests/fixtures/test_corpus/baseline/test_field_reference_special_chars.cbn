@@ -1,0 +1,14 @@
+# BASELINE REPRODUCTION: Field References with Special Characters
+# Validates that fields with symbols, spaces, or leading decorators (e.g. `@timestamp`,
+# `[message headers][Content-Type]`) are properly tokenized and tracked.
+# The tool MUST correctly identify field paths even with dashes or spaces.
+# EXPECTED BEHAVIOR: `clean_timestamp` traces directly to `@timestamp`, and `extracted_type` traces to `[message headers][Content-Type]`.
+filter {
+  mutate {
+    rename => {
+      "@timestamp" => "clean_timestamp"
+      "[message headers][Content-Type]" => "extracted_type"
+      "field-with-dashes" => "normalized_field"
+    }
+  }
+}

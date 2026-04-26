@@ -1,0 +1,35 @@
+# TEST BEHAVIOR:
+# This test simulates a massive boolean condition with mixed operators (and, or, in, !~, =~, ==, !=, !).
+# The parser must correctly handle operator precedence, properly scope parentheses, and not get lost in deep nesting.
+# It tests the limit of AST depth for conditional expressions and short-circuit evaluation logic.
+# Expected parsing behavior:
+# - AST should accurately reflect `not in`, regex negation `!~`, and nested `and`/`or` groups.
+# - The parser should NOT crash due to recursion depth limits.
+# - It should correctly resolve the implicit string comparisons and regexes.
+
+filter {
+  if (([action] == "deny" or [action] == "drop") and [src_ip] in ["10.0.0.1", "10.0.0.2"]) or
+     (!([dest_port] in [80, 443, 8080]) and [protocol] =~ /^(tcp|udp)$/i and [payload] !~ /(?i)heartbeat/) or
+     ((([user_agent] =~ /curl/ or [user_agent] =~ /wget/) and [http_status] >= 400) and !("internal" in [tags])) {
+    
+    mutate {
+      add_tag => ["suspicious_complex_match"]
+    }
+    
+    if [bytes_out] > 1000000 and ([bytes_in] < 500 or [bytes_in] == 0) {
+      drop { percentage => 50 }
+    } else if [bytes_out] < 100 and [bytes_in] > 1000000 {
+      mutate {
+        add_tag => ["potential_exfiltration"]
+      }
+    }
+  } else if [action] == "allow" and [user] == "admin" and ("superadmin" in [groups] or "wheel" in [groups]) and !([client_ip] =~ /^192\.168\./) {
+    mutate {
+      add_tag => ["external_admin_access"]
+    }
+  } else {
+    mutate {
+      add_tag => ["routine_traffic"]
+    }
+  }
+}

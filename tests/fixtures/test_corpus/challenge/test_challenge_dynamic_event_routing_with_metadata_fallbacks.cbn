@@ -1,0 +1,51 @@
+# TEST EXPECTATION
+# This test simulates a massive 700+ parser where event routing relies heavily on 
+# [@metadata] fields that are dynamically populated by regex conditionals.
+# The parser must track the state of [@metadata][parser_stage], evaluate it in 
+# nested conditionals, apply a Grok, and if it fails (using the _grokparsefailure tag),
+# execute a fallback Dissect. Finally, it uses the result of Dissect for a Translate lookup.
+# Challenges:
+# 1. [@metadata] field state tracking across multiple blocks.
+# 2. Tag-based conditional routing ('in [tags]' check).
+# 3. Chained plugin fallbacks (Grok -> Dissect -> Translate).
+# 4. Implicit field creation and dependency for Translate plugin.
+
+filter {
+  if [message] =~ /^(?:ERROR|WARN) \[.*\]/ {
+    mutate { add_field => { "[@metadata][parser_stage]" => "stage1" } }
+  } else {
+    mutate { add_field => { "[@metadata][parser_stage]" => "stage2" } }
+  }
+
+  if "[@metadata][parser_stage]" == "stage1" {
+    grok {
+      match => { "message" => "%{LOGLEVEL:level} \[%{DATA:module}\] %{GREEDYDATA:msg}" }
+      tag_on_failure => ["_grok_failed_stage1"]
+    }
+    
+    if "_grok_failed_stage1" in [tags] {
+      dissect {
+        mapping => { "message" => "%{level} [%{module}] %{msg}" }
+        add_tag => ["dissect_fallback_success"]
+      }
+    }
+    
+    if [module] {
+      translate {
+        field => "module"
+        destination => "team_owner"
+        dictionary => {
+          "auth" => "security"
+          "db"   => "data_eng"
+        }
+        fallback => "unassigned"
+      }
+    }
+  } else if "[@metadata][parser_stage]" == "stage2" {
+    kv {
+      source => "message"
+      field_split => "&"
+      value_split => "="
+    }
+  }
+}

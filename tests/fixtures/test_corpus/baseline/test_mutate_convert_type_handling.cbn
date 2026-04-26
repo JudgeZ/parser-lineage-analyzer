@@ -1,0 +1,18 @@
+# BASELINE REPRODUCTION: Mutate Convert Type Handling
+# Validates how the parser handles type conversion via mutate.
+# EXPECTED BEHAVIOR: The parser MUST track the type of the field after conversion.
+# Operations on the converted field (like conditionals) must reflect the updated type.
+filter {
+  mutate {
+    convert => {
+      "port" => "integer"
+      "is_admin" => "boolean"
+      "score" => "float"
+      "nested_data" => "string"
+    }
+  }
+
+  if [port] == 80 {
+    mutate { add_tag => ["http"] }
+  }
+}

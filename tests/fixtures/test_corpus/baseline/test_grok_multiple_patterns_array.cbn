@@ -1,0 +1,15 @@
+# BASELINE REPRODUCTION: Grok Multiple Match Arrays
+# Validates that a `grok` filter can handle an array of possible matching patterns
+# for a single field without throwing a syntax error.
+# The tool MUST successfully parse the array block and establish lineage for all captures.
+# EXPECTED BEHAVIOR: Both `pattern1_capture` and `pattern2_capture` should trace back to `message_field`.
+filter {
+  grok {
+    match => {
+      "message_field" => [
+        "%{WORD:pattern1_capture} %{NUMBER:num}",
+        "%{IP:pattern2_capture} %{WORD:word}"
+      ]
+    }
+  }
+}

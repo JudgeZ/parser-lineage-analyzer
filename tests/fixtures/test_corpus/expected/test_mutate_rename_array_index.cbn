@@ -1,0 +1,10 @@
+// EXPECTED BEHAVIOR:
+// The parser must handle renaming from a specific array index `[ip_addresses][0]`.
+// It should map the lineage of `primary_ip` back to `[ip_addresses][0]`, or at least `[ip_addresses]`.
+// Ensures array index syntax doesn't break the field reference AST node.
+
+filter {
+  mutate {
+    rename => { "[ip_addresses][0]" => "primary_ip" }
+  }
+}

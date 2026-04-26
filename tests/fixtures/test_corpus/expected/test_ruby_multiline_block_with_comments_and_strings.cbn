@@ -1,0 +1,18 @@
+# EXPECTED BEHAVIOR:
+# The parser must correctly isolate the Ruby code block without being tripped up
+# by comments starting with `#`, single quotes, double quotes, or braces `{}`
+# inside the Ruby strings. The entire block between `code => '...'` should be
+# treated as an opaque string or properly escaped string literal.
+filter {
+  ruby {
+    code => "
+      # This is a ruby comment
+      event.set('new_field', 'value with { and }')
+      if event.get('some_field') == 'true' # another comment
+        event.set('status', \"success\")
+      else
+        event.set('status', 'fail')
+      end
+    "
+  }
+}

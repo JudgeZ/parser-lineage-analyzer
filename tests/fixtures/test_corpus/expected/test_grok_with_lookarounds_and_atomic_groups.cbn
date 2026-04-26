@@ -1,0 +1,11 @@
+# EXPECTED BEHAVIOR:
+# The parser must accurately extract grok patterns that use advanced PCRE regex features.
+# This includes positive/negative lookaheads `(?=...)`, `(?!...)`, positive/negative lookbehinds `(?<=...)`, `(?<!...)`,
+# and atomic groups `(?>...)`. These regex constructs often contain confusing punctuation that can trip up naive parsers.
+filter {
+  grok {
+    match => {
+      "message" => "^(?<timestamp>\d{4}-\d{2}-\d{2}) (?=(?:ERROR|WARN))(?<level>[A-Z]+) (?!admin)(?<user>\w+) (?<=ID:)(?<id>\d+) (?<![A-Z])(?<session>\w+) (?>\w+\s+)*(?<msg>.*)$"
+    }
+  }
+}

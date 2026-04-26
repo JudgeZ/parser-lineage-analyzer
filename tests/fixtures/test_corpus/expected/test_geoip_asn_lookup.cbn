@@ -1,0 +1,17 @@
+# EXPECTATION:
+# The `geoip` filter enriches IPs with geographic data, sometimes specifically ASN data.
+# The `target` field becomes a complex object with predictable fields (e.g., `asn`, `as_org`).
+# The parser must update the lineage of `[target][as_org]` to point back to the `source` field.
+filter {
+  geoip {
+    source => "client_ip"
+    target => "asn_info"
+    database => "GeoLite2-ASN.mmdb"
+  }
+
+  if [asn_info][as_org] =~ /Cloudflare/ {
+    mutate {
+      add_tag => ["cdn_traffic"]
+    }
+  }
+}

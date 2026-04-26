@@ -1,0 +1,19 @@
+# CHALLENGE: Date Timezone Coercion via Dynamic Reference
+# Validates the `date` plugin when the `timezone` is not a static string but a dynamic
+# field reference.
+# In the 700+ parser corpus, some devices send timezone offsets in a separate field,
+# which the `date` filter must use.
+# The tool MUST verify that the `timezone` parameter correctly references an existing
+# field in the lineage. If `device_tz` is missing or not a string, it should log a warning.
+# EXPECTED BEHAVIOR: Lineage tracks `device_tz` as a dependency for the `timestamp` extraction.
+filter {
+  grok {
+    match => { "message" => "%{TIMESTAMP_ISO8601:timestamp} %{NOTSPACE:device_tz}" }
+  }
+  
+  date {
+    match => [ "timestamp", "ISO8601" ]
+    timezone => "%{device_tz}"
+    target => "@timestamp"
+  }
+}

@@ -1,0 +1,13 @@
+# EXPECTED BEHAVIOR:
+# The parser must correctly parse complex conditionals with deeply nested parentheses and
+# logical operators (and, or, ! / not, ==, !=, in, =~, !~).
+# The parser must correctly establish the precedence and grouping of these expressions without errors.
+filter {
+  if (([network][direction] == "inbound" and !("trusted" in [tags])) or 
+     ([network][direction] == "outbound" and ([dest_port] in [80, 443] and [dest_ip] !~ /^10\./))) and 
+     !([action] == "blocked" or [user] == "system") {
+    mutate {
+      add_tag => ["requires_inspection"]
+    }
+  }
+}

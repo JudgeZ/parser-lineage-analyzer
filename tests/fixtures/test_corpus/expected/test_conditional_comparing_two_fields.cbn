@@ -1,0 +1,17 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser should recognize that both sides of the comparison are field references, not string literals.
+# 2. Lineage tracking must note that the outcome of this conditional depends on both `source_ip` and `dest_ip`.
+# 3. The `add_tag` mutation should only be recorded under the branch where the fields are strictly equal.
+# 4. Handle whitespace gracefully between the field references and the `==` operator.
+
+filter {
+  if [source_ip] == [dest_ip] {
+    mutate {
+      add_tag => ["same_src_dest"]
+    }
+  } else if [source_ip] != [dest_ip] and [source_ip] {
+    mutate {
+      add_tag => ["different_src_dest"]
+    }
+  }
+}

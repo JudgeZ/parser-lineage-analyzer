@@ -1,0 +1,18 @@
+# BASELINE REPRODUCTION: Date Dynamic Timezone
+# Validates that the parser can handle dynamic timezone values that depend on
+# another extracted field.
+# EXPECTED BEHAVIOR: The parser MUST track the dependency of the `timezone`
+# attribute to the `[event][timezone]` field, not just treat it as a string.
+filter {
+  grok {
+    match => { "message" => "%{TIMESTAMP_ISO8601:timestamp} %{WORD:[event][timezone]}" }
+  }
+
+  if [timestamp] and [event][timezone] {
+    date {
+      match => [ "timestamp", "ISO8601" ]
+      timezone => "%{[event][timezone]}"
+      target => "@timestamp"
+    }
+  }
+}

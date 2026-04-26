@@ -1,0 +1,46 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must trace the lifecycle of the `metadata.tags` field.
+# 2. It begins as a raw string from a KV extraction.
+# 3. It is subsequently mutated into an array via a `split` operation.
+# 4. A conditional block then checks if `"urgent"` is in this array.
+# 5. If true, a new field is added, and the array is mutated again (appending).
+# 6. Finally, the array is joined back into a string.
+# 7. The parser must correctly infer the type changes (string -> array -> string) 
+#    and understand that the conditional `in` operator applies to the array state.
+# 8. This tests implicit type coercion tracking and state mutation dependencies.
+
+filter {
+  kv {
+    source => "raw_message"
+    field_split => ","
+    value_split => "="
+    target => "metadata"
+  }
+
+  mutate {
+    split => { "[metadata][tags]" => "|" }
+  }
+
+  if "urgent" in [metadata][tags] {
+    mutate {
+      add_field => { "escalation_required" => "true" }
+      # Append to the array
+      merge => { "[metadata][tags]" => "escalated" }
+    }
+  } else {
+    mutate {
+      add_field => { "escalation_required" => "false" }
+    }
+  }
+
+  mutate {
+    # Coerce back to string
+    join => { "[metadata][tags]" => "," }
+  }
+
+  if [metadata][tags] =~ /escalated/ {
+    mutate {
+      add_tag => ["was_escalated"]
+    }
+  }
+}

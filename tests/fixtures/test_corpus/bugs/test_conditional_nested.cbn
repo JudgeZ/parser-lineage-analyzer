@@ -1,0 +1,9 @@
+# BUG REPRODUCTION: Nested Field Condition Contradiction Blindspot
+# The `_analysis_condition_facts` regex only extracts facts from top-level fields
+# like `[user]`. It fails to parse conditions involving nested fields like `[user][name]`.
+# EXPECTED FIX: `user.role` should be correctly tracked with the condition `[user][name] == "Alice"`.
+filter {
+  if [user][name] == "Alice" {
+    mutate { replace => { "user.role" => "Admin" } }
+  }
+}

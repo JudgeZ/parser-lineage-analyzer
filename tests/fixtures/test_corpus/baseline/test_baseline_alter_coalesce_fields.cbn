@@ -1,0 +1,15 @@
+# BASELINE REPRODUCTION: Alter Plugin Coalesce
+# Validates the coalescing of multiple optional fields into a single primary field.
+# EXPECTED BEHAVIOR:
+# - The `coalesce` action should look at an array of fields and pick the first non-null value.
+# - If `client.ip` is null, it should fall back to `source.ip`, then `host.ip`.
+filter {
+  alter {
+    coalesce => [
+      "primary_ip", "client.ip", "source.ip", "host.ip"
+    ]
+    condrewrite => [
+      "status", "broken", "failed"
+    ]
+  }
+}

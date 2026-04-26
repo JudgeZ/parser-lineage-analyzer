@@ -1,0 +1,47 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must process a sequence of `gsub` operations in a `mutate` block.
+# 2. These operations use regex capture groups and backreferences `\1`, `\2`.
+# 3. The `gsub` sequence is highly order-dependent, as later operations operate on the results of earlier ones.
+# 4. The parser must understand that `gsub` acts on arrays as well as strings, and the variable interpolation `%{[field]}` might be used in the replacement.
+# 5. This tests the parser's ability to maintain state across complex string mutations and handle regex backreferences.
+
+filter {
+  mutate {
+    # Step 1: Strip outer brackets
+    gsub => [
+      "raw_data", "^\[(.*)\]$", "\1"
+    ]
+  }
+
+  mutate {
+    # Step 2: Replace pipes with commas, but only if preceded by a word character
+    gsub => [
+      "raw_data", "(\w)\|", "\1,"
+    ]
+  }
+
+  mutate {
+    # Step 3: Extract key-value pairs where value is quoted, removing the quotes
+    gsub => [
+      "raw_data", "(\w+)=\"([^\"]+)\"", "\1=\2"
+    ]
+  }
+
+  mutate {
+    # Step 4: Mask sensitive data using lookarounds
+    gsub => [
+      "raw_data", "(?<=password=)[^\s,]+", "********"
+    ]
+  }
+  
+  mutate {
+     # Step 5: Split the deeply mutated string into an array
+     split => { "raw_data" => "," }
+  }
+
+  if "admin=true" in [raw_data] {
+    mutate {
+      add_tag => ["privileged_access"]
+    }
+  }
+}

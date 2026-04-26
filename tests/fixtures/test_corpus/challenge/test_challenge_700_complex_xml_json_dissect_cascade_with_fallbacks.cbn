@@ -1,0 +1,57 @@
+# TEST BEHAVIOR:
+# This test simulates a payload that might be XML, JSON, or just plain text, using a cascade of parsers.
+# It uses `xml`, `json`, and `dissect` plugins sequentially, relying on tagging or conditional checks to route.
+# Expected parsing behavior:
+# - The parser must correctly represent the nested configurations of `xml` (namespaces, xpath), `json` (source/target), and `dissect`.
+# - It should accurately capture the conditional routing that prevents executing JSON on a successfully parsed XML payload.
+# - It must parse the complex fallback logic correctly.
+
+filter {
+  # Attempt XML first
+  if [message] =~ /^<\?xml/ {
+    xml {
+      source => "message"
+      target => "parsed_xml"
+      store_xml => true
+      remove_namespaces => false
+      xpath => [
+        "/Envelope/Body/Fault/faultstring/text()", "xml_error",
+        "//Response/Data[@type='complex']/Value/text()", "complex_data"
+      ]
+      add_tag => ["xml_success"]
+    }
+  }
+
+  # If not XML or XML failed (no success tag), attempt JSON
+  if "xml_success" not in [tags] and [message] =~ /^{.*}$/ {
+    json {
+      source => "message"
+      target => "parsed_json"
+      skip_on_invalid_json => true
+      add_tag => ["json_success"]
+    }
+  }
+
+  # If neither XML nor JSON succeeded, fallback to Dissect and then Grok
+  if "xml_success" not in [tags] and "json_success" not in [tags] {
+    dissect {
+      mapping => {
+        "message" => "%{timestamp} [%{loglevel}] %{module} - %{rest_of_message}"
+      }
+      add_tag => ["dissect_success"]
+    }
+    
+    if "dissect_success" in [tags] {
+      # Further parse the rest of the message with grok
+      grok {
+        match => { "rest_of_message" => "User=%{USERNAME:user} IP=%{IP:client_ip} Action=%{WORD:action}" }
+        tag_on_failure => ["grok_fallback_failed"]
+      }
+    } else {
+       # Ultimate fallback
+       mutate {
+         add_tag => ["unparseable_payload"]
+       }
+    }
+  }
+}

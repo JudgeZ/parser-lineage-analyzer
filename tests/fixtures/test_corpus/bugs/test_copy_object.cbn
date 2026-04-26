@@ -1,0 +1,9 @@
+# BUG REPRODUCTION: Object Copy Incompleteness
+# This file tests the `_exec_copy_mutate_op` plugin handler on objects.
+# Like rename, copying `user` to `target.user` should iterate and copy descendant tokens.
+# `user.name` is preserved, but `target.user.name` is never created.
+# EXPECTED FIX: `target.user.name` should evaluate to "Alice". Currently evaluates to unresolved.
+filter {
+  mutate { replace => { "user.name" => "Alice" } }
+  mutate { copy => { "user" => "target.user" } }
+}

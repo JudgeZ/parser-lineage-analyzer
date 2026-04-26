@@ -1,0 +1,26 @@
+# BASELINE REPRODUCTION: Conditional Tags Routing
+# Validates that the parser can track dynamic tag manipulations across multiple
+# conditionals, which is a very common routing pattern in 700+ line parsers.
+# EXPECTED BEHAVIOR: The parser MUST track the addition of `custom_tag` and
+# correctly resolve the subsequent `if "custom_tag" in [tags]` block without
+# treating the condition as an opaque or dead branch.
+filter {
+  grok {
+    match => { "message" => "%{SYSLOGBASE} %{GREEDYDATA:syslog_message}" }
+    add_tag => ["custom_tag"]
+  }
+
+  if "custom_tag" in [tags] {
+    mutate {
+      add_field => { "processing_stage" => "syslog_parsed" }
+    }
+  } else {
+    mutate {
+      add_tag => ["unparsed"]
+    }
+  }
+
+  if "unparsed" in [tags] {
+    drop {}
+  }
+}

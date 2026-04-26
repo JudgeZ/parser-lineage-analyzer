@@ -1,0 +1,21 @@
+# EXPECTED BEHAVIOR:
+# Tests handling of multi-stage text processing where a substring is extracted
+# and then further parsed based on content. The analyzer must understand the data
+# lineage: raw_message -> (grok) -> message_body -> (conditional grok) -> specific_fields.
+# This pattern is highly prevalent in 700+ line parser corpuses.
+
+filter {
+  grok {
+    match => { "message" => "%{SYSLOGTIMESTAMP:syslog_timestamp} %{SYSLOGHOST:syslog_hostname} %{DATA:syslog_program}(?:\[%{POSINT:syslog_pid}\])?: %{GREEDYDATA:message_body}" }
+  }
+
+  if [syslog_program] == "sshd" {
+    grok {
+      match => { "message_body" => "(?:%{WORD:action} password for %{USER:username} from %{IP:src_ip})" }
+    }
+  } else if [syslog_program] == "sudo" {
+    grok {
+      match => { "message_body" => "%{USER:username} : TTY=%{DATA:tty} ; PWD=%{DATA:pwd} ; USER=%{USER:target_user} ; COMMAND=%{GREEDYDATA:command}" }
+    }
+  }
+}

@@ -1,0 +1,46 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must map out a large routing tree (if/elsif ladder).
+# 2. Inside the ladder, there are nested `if` statements. The parser must not confuse
+#    the nested `if` statements with the outer `if/elsif` control flow.
+# 3. An inner block might mutate a field that the outer ladder was checking, but since
+#    it's an `elsif` structure, those subsequent outer branches wouldn't evaluate anyway.
+#    However, after the ladder, a final `if` checks the field again. The parser must correctly
+#    aggregate all possible terminal states of that field from all branches.
+# 4. In branch A, `status` becomes "resolved". In branch B, it becomes "escalated".
+# 5. In branch C, `status` is dropped.
+# 6. The final check `if [status] == "resolved"` must correctly link to branch A.
+
+filter {
+  if [event_type] == "login" {
+    if [user] == "admin" {
+      mutate {
+        replace => { "status" => "escalated" }
+      }
+    } else {
+      mutate {
+        replace => { "status" => "resolved" }
+      }
+    }
+  } else if [event_type] == "logout" {
+    mutate {
+      replace => { "status" => "resolved" }
+    }
+  } else if [event_type] == "scan" {
+    drop { }
+  } else if [event_type] == "heartbeat" {
+    # Doing nothing to status
+  } else {
+    mutate {
+      replace => { "status" => "unknown" }
+    }
+  }
+
+  # This logic executes after the routing ladder
+  # The parser must know that 'status' could be: "escalated", "resolved", "unknown", or its original value
+  # And it will NEVER reach here if event_type was "scan"
+  if [status] == "resolved" {
+    mutate {
+      add_tag => ["handled_smoothly"]
+    }
+  }
+}

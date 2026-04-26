@@ -1,0 +1,19 @@
+# EXPECTATION:
+# Real-world grok patterns often contain poorly optimized regexes that can backtrack excessively.
+# Logstash handles this via `timeout_millis`.
+# The parser must recognize the `timeout_millis` setting and treat a grok match failure 
+# (either by timeout or non-match) as a potential path in the lineage analysis,
+# triggering the `_grokparsefailure` tag fallback.
+filter {
+  grok {
+    match => { "message" => "%{GREEDYDATA:greedy_1} %{GREEDYDATA:greedy_2} %{IP:target_ip}" }
+    timeout_millis => 500
+    tag_on_timeout => "_groktimeout_custom"
+  }
+
+  if "_groktimeout_custom" in [tags] or "_grokparsefailure" in [tags] {
+    mutate {
+      add_field => { "parsing_status" => "failed" }
+    }
+  }
+}

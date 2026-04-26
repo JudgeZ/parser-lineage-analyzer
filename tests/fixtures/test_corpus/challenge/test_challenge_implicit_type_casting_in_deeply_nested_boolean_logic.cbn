@@ -1,0 +1,52 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must correctly interpret the deeply nested boolean conditions with mixed `and`, `or`, and implicit type casting.
+# 2. It must handle `[tags]` as an array in the `in` / `not in` clauses.
+# 3. It should recognize when a string comparison like `[status] == "true"` is used instead of a boolean `[status] == true`.
+# 4. It should process the negated regular expressions `!~` alongside complex grouping with parentheses.
+# 5. It must parse the contradiction where `[status]` is evaluated against mutually exclusive conditions without erroring out, simulating dead code paths.
+
+filter {
+  mutate {
+    add_field => {
+      "status" => "true"
+      "code" => "404"
+      "message" => "Error occurred: Connection reset by peer"
+    }
+    add_tag => ["error", "network", "retry_attempted"]
+  }
+
+  if (([status] == "true" or [status] == true) and (([code] in ["400", "401", "403", "404"]) or ([code] =~ /^5\d\d$/))) {
+    if ("error" in [tags] and "resolved" not in [tags]) or ([message] =~ /Connection reset/ and [message] !~ /ignore/) {
+      mutate {
+        add_tag => ["requires_attention"]
+      }
+    }
+  }
+
+  # Complex contradiction and type mix
+  if (!([status] == "false") and [status] != false) {
+    if ([code] < "500" and [code] >= 400) { # String vs Integer comparison
+      mutate {
+        add_field => { "category" => "client_error" }
+      }
+    }
+  }
+
+  # Deep nesting with short circuits
+  if (
+    ("network" in [tags] or "timeout" in [tags]) and 
+    (
+      ([code] == "404" and [message] =~ /not found/i) or 
+      ([code] == "503" and "retry_attempted" in [tags])
+    )
+  ) {
+    mutate {
+      add_field => { "action" => "escalate" }
+    }
+  } else if ([action] != "escalate" and "requires_attention" in [tags]) {
+    # Implicit dependency on previous if block
+    mutate {
+      add_field => { "action" => "investigate" }
+    }
+  }
+}

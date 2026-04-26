@@ -1,0 +1,19 @@
+# EXPECTATION:
+# The `kv` filter often has options like `allow_duplicate_values` and `recursive`.
+# The parser must understand that allowing duplicates means fields might turn into arrays
+# instead of just overwriting the previous value.
+filter {
+  kv {
+    source => "url_query"
+    target => "query_params"
+    field_split => "&"
+    value_split => "="
+    allow_duplicate_values => true
+  }
+
+  if [query_params][id][1] {
+    mutate {
+      add_tag => ["multiple_ids_detected"]
+    }
+  }
+}

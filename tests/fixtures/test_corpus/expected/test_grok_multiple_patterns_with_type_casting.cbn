@@ -1,0 +1,14 @@
+# test_grok_multiple_patterns_with_type_casting.cbn
+# EXPECTED BEHAVIOR:
+# Tests multiple grok patterns where different patterns capture the same field name but with different type casts (e.g., int vs string).
+# The parser should ensure the type cast of the *matching* pattern is applied, and recognize potential downstream type ambiguity.
+filter {
+  grok {
+    match => {
+      "message" => [
+        "%{NUMBER:status:int} %{GREEDYDATA:msg}",
+        "%{WORD:status:string} %{GREEDYDATA:msg}"
+      ]
+    }
+  }
+}

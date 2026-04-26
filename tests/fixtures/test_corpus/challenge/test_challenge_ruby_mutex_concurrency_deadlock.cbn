@@ -1,0 +1,24 @@
+# CHALLENGE REPRODUCTION: Ruby Mutex Concurrency Deadlock Simulation
+# Validates the execution engine's resilience against frozen threads caused by poor
+# mutex locking logic inside inline ruby initialization blocks.
+# EXPECTED BEHAVIOR:
+# - If an exception is raised inside a Mutex lock, the `ensure` block must execute to unlock it.
+# - A deadlocked thread must eventually be killed or timed out by the pipeline watchdog.
+filter {
+  ruby {
+    init => "
+      @mutex = Mutex.new
+      @shared_counter = 0
+    "
+    code => "
+      @mutex.lock
+      begin
+        @shared_counter += 1
+        # Simulating an unexpected exception before unlock
+        raise 'Simulated exception' if @shared_counter % 2 == 0
+      ensure
+        @mutex.unlock if @mutex.owned?
+      end
+    "
+  }
+}

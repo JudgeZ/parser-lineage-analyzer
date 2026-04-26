@@ -1,0 +1,21 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must recognize the use of Ruby instance variables (`@shared_cache`) as state that persists across `ruby` plugin invocations within the same pipeline worker.
+# 2. Lineage tracking should ideally flag `ruby` blocks using `@` or `$` variables as having global or out-of-band state dependencies.
+# 3. The `event.set` in the second ruby block relies on data that didn't come from the event itself, but from the first block's out-of-band mutation.
+
+filter {
+  ruby {
+    init => "@shared_cache = {}"
+    code => "
+      @shared_cache[event.get('source_ip')] ||= 0
+      @shared_cache[event.get('source_ip')] += 1
+    "
+  }
+
+  ruby {
+    code => "
+      count = @shared_cache[event.get('source_ip')]
+      event.set('ip_seen_count', count) if count
+    "
+  }
+}

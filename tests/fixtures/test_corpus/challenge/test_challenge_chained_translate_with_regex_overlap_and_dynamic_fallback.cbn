@@ -1,0 +1,33 @@
+# TEST OBJECTIVE: Simulate multiple chained translate filters where dictionaries overlap with regexes and dynamic fallbacks.
+# EXPECTED BEHAVIOR:
+# 1. The parser MUST analyze the first translate block and its regex dictionary mapping.
+# 2. It MUST handle the fallback to "%{default_severity}".
+# 3. It MUST analyze the second translate block, which takes the output of the first as its input.
+# 4. It MUST track the possible values propagating through these translations.
+
+filter {
+  translate {
+    field => "event_code"
+    destination => "severity"
+    dictionary => {
+      "^1\d{3}$" => "INFO"
+      "^2\d{3}$" => "WARN"
+      "^3\d{3}$" => "ERROR"
+    }
+    regex => true
+    exact => false
+    fallback => "%{default_severity}"
+  }
+
+  translate {
+    field => "severity"
+    destination => "action_required"
+    dictionary => {
+      "INFO" => "none"
+      "WARN" => "investigate"
+      "ERROR" => "alert"
+      "CRITICAL" => "page_on_call"
+    }
+    fallback => "unknown"
+  }
+}

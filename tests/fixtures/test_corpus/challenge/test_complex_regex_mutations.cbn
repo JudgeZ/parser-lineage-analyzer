@@ -1,0 +1,47 @@
+/*
+ * TEST CORPUS: Complex Regex and String Manipulation
+ * 
+ * CHALLENGE:
+ * Parser configurations heavily rely on regular expressions for unstructured logs. These regexes often
+ * use complex lookaheads, lookbehinds, non-capturing groups, and named capture groups. Furthermore,
+ * the extracted strings are frequently subjected to multiple subsequent mutations (gsub, split, lowercase).
+ * 
+ * EXPECTED BEHAVIOR:
+ * 1. The parser should recognize named capture groups in the grok/regex pattern and track them as newly created variables.
+ * 2. It must handle escaped characters within the regex string correctly without prematurely terminating the string.
+ * 3. Subsequent mutations (`gsub`, `split`) on the extracted variables must be tracked as state mutations.
+ * 4. The parser must understand variable dependencies: `domain` and `tld` are derived from `extracted_url`.
+ */
+
+filter {
+  grok {
+    match => {
+      "message" => [
+        "(?i)user=(?<username>[a-z0-9_.-]+) .*? url=(?<extracted_url>https?://(?:www\.)?(?<domain>[^/]+)\.(?<tld>[a-z]{2,})(?:/[^\s]*)?)",
+        "failed login for (?<username>[^\s]+) from (?<src_ip>\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})"
+      ]
+    }
+  }
+
+  if [extracted_url] {
+    mutate {
+      # Remove query parameters
+      gsub => [
+        "extracted_url", "\?.*$", ""
+      ]
+      lowercase => [ "domain", "username" ]
+    }
+    
+    # Split domain into subdomains
+    mutate {
+      split => { "domain" => "." }
+    }
+  }
+
+  # Ambiguous state mutation - if src_ip matched the second grok, add a tag
+  if [src_ip] =~ /^192\.168\./ {
+    mutate {
+      add_tag => [ "internal_network_failure" ]
+    }
+  }
+}

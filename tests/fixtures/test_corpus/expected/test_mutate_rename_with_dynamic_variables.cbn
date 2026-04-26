@@ -1,0 +1,11 @@
+# EXPECTED BEHAVIOR:
+# Mutate rename can use dynamic variables (string interpolation) for BOTH source and target fields.
+# This is extremely difficult to track statically but is used in massive dynamic routing parsers.
+filter {
+  mutate {
+    rename => {
+      "[%{log_type}]_timestamp" => "event_timestamp"
+      "user_data" => "app_%{app_id}_user"
+    }
+  }
+}

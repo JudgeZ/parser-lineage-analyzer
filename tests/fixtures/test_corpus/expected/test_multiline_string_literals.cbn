@@ -1,0 +1,18 @@
+# EXPECTED BEHAVIOR:
+# 1. Parsing of multi-line string literals inside configuration blocks (e.g., `add_field`).
+# 2. Lexer must correctly capture the entire string including newlines without 
+#    interpreting them as structural breaks.
+# 3. The resulting string should be tracked correctly in lineage.
+
+filter {
+  if [action] == "alert" {
+    mutate {
+      add_field => { 
+        "alert_message" => "Alert triggered for user: %{user}
+Time: %{@timestamp}
+Action: %{action}
+Please investigate immediately." 
+      }
+    }
+  }
+}

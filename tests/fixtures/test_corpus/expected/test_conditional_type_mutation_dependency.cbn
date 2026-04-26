@@ -1,0 +1,29 @@
+# EXPECTED BEHAVIOR:
+# 1. A field might start as a string, be converted to an integer in a conditional block,
+#    and then a subsequent conditional might rely on it being an integer (e.g., `< 100`).
+# 2. The parser should properly track these state changes across branches without 
+#    flagging false type mismatches.
+
+filter {
+  grok {
+    match => { "message" => "status=%{WORD:status} code=%{NUMBER:code}" }
+  }
+
+  # Initially, code is a string from grok
+  if [code] {
+    mutate {
+      convert => { "code" => "integer" }
+    }
+  }
+
+  # Now code is an integer, so numeric comparison is valid
+  if [code] >= 400 and [code] < 500 {
+    mutate {
+      add_tag => [ "client_error" ]
+    }
+  } else if [code] >= 500 {
+    mutate {
+      add_tag => [ "server_error" ]
+    }
+  }
+}

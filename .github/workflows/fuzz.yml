@@ -1,0 +1,71 @@
+name: fuzz
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly, Monday 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: 'Per-harness fuzz duration (seconds; total runtime ≈ 3 × duration + ~5 min setup, must fit timeout-minutes below)'
+        default: '120'
+
+permissions:
+  contents: read
+
+jobs:
+  atheris:
+    name: Atheris coverage-guided fuzz
+    runs-on: ubuntu-22.04
+    # Three harnesses run sequentially at $DURATION each plus dependency
+    # install and corpus staging. 60 min comfortably fits the default 120s
+    # and a manual dispatch up to ~900s per harness.
+    timeout-minutes: 60
+    env:
+      PARSER_LINEAGE_ANALYZER_NO_EXT: '1'
+      DURATION: ${{ github.event.inputs.duration || '120' }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
+        with:
+          python-version: '3.10'
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev]"
+      # Atheris 3.x requires dis.Positions (Python 3.11+); pin to 2.x for the
+      # 3.10 runner.
+      - run: python -m pip install 'atheris<3'
+      # libFuzzer treats positional corpus directories as read-write — it
+      # writes new "interesting" inputs back to the dir. Copy fixtures into
+      # a working dir so the atheris run does not mutate checked-in tests.
+      - name: Stage seed corpus
+        run: |
+          mkdir -p fuzz/corpus_parse_code fuzz/corpus_analyzer
+          cp tests/fixtures/test_corpus/baseline/*.cbn fuzz/corpus_parse_code/
+          cp tests/fixtures/test_corpus/baseline/*.cbn fuzz/corpus_analyzer/
+      - name: Fuzz parse_code
+        run: |
+          mkdir -p fuzz/findings_parse_code
+          python fuzz/fuzz_parse_code.py \
+            -max_total_time=${DURATION} \
+            -artifact_prefix=fuzz/findings_parse_code/ \
+            fuzz/corpus_parse_code
+      - name: Fuzz parse_config
+        run: |
+          mkdir -p fuzz/findings_parse_config
+          python fuzz/fuzz_parse_config.py \
+            -max_total_time=${DURATION} \
+            -artifact_prefix=fuzz/findings_parse_config/
+      - name: Fuzz analyzer
+        run: |
+          mkdir -p fuzz/findings_analyzer
+          python fuzz/fuzz_analyzer.py \
+            -max_total_time=${DURATION} \
+            -artifact_prefix=fuzz/findings_analyzer/ \
+            fuzz/corpus_analyzer
+      - name: Upload crash artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
+        with:
+          name: atheris-crashes
+          path: fuzz/findings_*/
+          if-no-files-found: ignore
+          retention-days: 30

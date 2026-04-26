@@ -1,0 +1,25 @@
+# EXPECTED BEHAVIOR:
+# Evaluates how the parser handles ruby blocks that attempt to require external libraries
+# or define classes/modules within the init block. The analyzer should safely ignore or 
+# flag these without crashing, as it cannot execute arbitrary external ruby code.
+filter {
+  ruby {
+    init => "
+      require 'base64'
+      require 'json'
+      class CustomHelper
+        def self.process(event)
+           # complex logic
+        end
+      end
+    "
+    code => "
+      begin
+        event.set('decoded', Base64.decode64(event.get('payload')))
+        CustomHelper.process(event)
+      rescue => e
+        event.tag('_rubyexception')
+      end
+    "
+  }
+}

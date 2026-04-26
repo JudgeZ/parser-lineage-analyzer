@@ -1,0 +1,29 @@
+filter {
+  # TRIPWIRE 1: C-style comments (//). 
+  # The parser explicitly ignores // to avoid breaking XPaths and regexes.
+  # But if a // comment contains an unmatched brace, it destroys the AST brace counter!
+  // This comment breaks the AST {
+  
+  if [test] == "1" {
+    mutate { replace => { "event.idm.read_only_udm.target.hostname" => "host1" } }
+  }
+
+  # TRIPWIRE 2: The "drop" plugin.
+  # The analyzer records a warning, but it conceptually FAILS to stop execution on this branch!
+  # It will still record target.ip = 2.2.2.2 as a valid lineage path.
+  if [malicious] == "true" {
+    drop { }
+    mutate { replace => { "event.idm.read_only_udm.target.ip" => "2.2.2.2" } }
+  }
+
+  # TRIPWIRE 3: Nested interpolation references.
+  # The _TOKEN_REF_RE regex is r"%\{([^}]+)\}". It stops at the FIRST closing brace.
+  # It will evaluate this as %{parent_field_%{child_field} and a dangling }
+  mutate {
+    replace => {
+      "event.idm.read_only_udm.target.mac" => "%{parent_field_%{child_field}}"
+    }
+  }
+
+  mutate { merge => { "@output" => "event" } }
+}

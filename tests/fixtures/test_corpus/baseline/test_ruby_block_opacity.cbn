@@ -1,0 +1,18 @@
+# BASELINE REPRODUCTION: Ruby Block Opacity
+# Validates that inline ruby code blocks do not crash the configuration parser.
+# Ruby code strings often contain braces, brackets, and interpolation that could confuse naive parsers.
+# The tool MUST treat the value of `code` or `init` as an opaque string literal.
+# EXPECTED BEHAVIOR: The ruby block is safely parsed as a generic block, with `code` being a string literal.
+filter {
+  ruby {
+    init => "
+      @@map = {}
+    "
+    code => "
+      event.set('computed_value', event.get('a').to_i + event.get('b').to_i)
+      if event.get('status') == 'error'
+        event.tag('ruby_error')
+      end
+    "
+  }
+}

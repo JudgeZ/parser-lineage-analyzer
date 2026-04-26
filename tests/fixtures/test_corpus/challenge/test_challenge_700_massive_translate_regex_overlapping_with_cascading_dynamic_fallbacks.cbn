@@ -1,0 +1,40 @@
+# EXPECTED BEHAVIOR:
+# 1. Translate plugin with regex keys needs to evaluate patterns in order or handle overlap.
+# 2. `fallback => "%{dynamic_default}"` means the fallback itself is dynamic and must be resolved from the event.
+# 3. Chained translates where the destination of one is the source of the next.
+# 4. If `dynamic_default` is missing, translation should handle null safely without crashing.
+
+filter {
+  translate {
+    field => "status_code"
+    destination => "status_message"
+    regex => true
+    exact => true
+    dictionary => {
+      "^20\d$" => "Success"
+      "^40\d$" => "Client Error"
+      "^50\d$" => "Server Error"
+      "404"    => "Not Found Overlap"
+    }
+    fallback => "%{default_status}"
+  }
+
+  if [status_message] {
+    translate {
+      field => "status_message"
+      destination => "action_required"
+      dictionary => {
+        "Server Error" => "true"
+        "Client Error" => "false"
+        "Success"      => "false"
+      }
+      fallback => "investigate"
+    }
+    
+    mutate {
+      convert => {
+        "action_required" => "boolean"
+      }
+    }
+  }
+}

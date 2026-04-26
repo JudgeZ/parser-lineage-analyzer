@@ -1,0 +1,47 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must handle the `date` plugin with multiple possible string formats.
+# 2. It must recognize the `locale` and `timezone` settings, especially when they use string interpolation to derive dynamic values from the event.
+# 3. It must process the `target` parameter which overwrites the default `@timestamp`.
+# 4. It should trace the cascading fallback where multiple `date` plugins are used sequentially if the first one fails.
+# 5. It should identify the data lineage where the extracted dynamic timezone influences the final parsed date value.
+
+filter {
+  mutate {
+    add_field => {
+      "raw_date" => "25/Apr/2026:14:02:01 -0400"
+      "user_locale" => "en_US"
+      "user_timezone" => "America/New_York"
+    }
+  }
+
+  # Attempt 1: Standard parsing with dynamic timezone and locale
+  date {
+    match => [ "raw_date", "dd/MMM/yyyy:HH:mm:ss Z", "ISO8601" ]
+    target => "@timestamp"
+    locale => "%{[user_locale]}"
+    timezone => "%{[user_timezone]}"
+    tag_on_failure => ["_dateparsefailure_1"]
+  }
+
+  # Attempt 2: Fallback if the first fails, using a different field and static timezone
+  if "_dateparsefailure_1" in [tags] {
+    date {
+      match => [ "backup_date", "yyyy-MM-dd HH:mm:ss", "UNIX" ]
+      target => "@timestamp"
+      timezone => "UTC"
+      tag_on_failure => ["_dateparsefailure_2"]
+    }
+  }
+
+  # Clean up and finalize
+  if "_dateparsefailure_1" not in [tags] or "_dateparsefailure_2" not in [tags] {
+    mutate {
+      add_field => { "timestamp_parsed_successfully" => "true" }
+      remove_tag => ["_dateparsefailure_1", "_dateparsefailure_2"]
+    }
+  } else {
+    mutate {
+      add_field => { "timestamp_parsed_successfully" => "false" }
+    }
+  }
+}

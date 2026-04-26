@@ -1,0 +1,29 @@
+# BASELINE REPRODUCTION: Multiline String Escape & Interpolation
+# Validates the lexer and parser's ability to handle deeply complex string literals.
+#
+# Production parsers often contain enormous grok patterns or multiline strings
+# with escaped quotes, bracketed interpolations, and newlines that confuse
+# naïve tokenizers.
+#
+# EXPECTED BEHAVIOR: The parser must correctly identify the boundaries of the string,
+# capturing the embedded newlines, escaped quotes (\"), and string interpolations 
+# without truncating or failing on unexpected tokens.
+filter {
+  mutate {
+    add_field => {
+      "complex_multiline_field" => "This is a multiline string
+with embedded \"escaped quotes\" and a dynamic field interpolation:
+Value is [%{nested}[field]] and %{other_field}.
+End of string."
+    }
+  }
+
+  grok {
+    match => {
+      "message" => "First line of a complex regex match pattern
+with another line and literal brackets \[ \]
+and a capture group (?<my_capture>.*)
+terminating quote on next line"
+    }
+  }
+}

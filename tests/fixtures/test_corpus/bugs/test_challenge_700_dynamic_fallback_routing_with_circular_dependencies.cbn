@@ -1,0 +1,68 @@
+# TEST BEHAVIOR:
+# Simulates a common pattern in a massive 700+ parser corpus: dynamic fallback routing
+# where a parsing failure in one format (e.g., JSON) sets a flag that routes the event
+# to another parser (e.g., KV or Grok), which might itself fail and route back to a
+# different segment of the first parser, creating circular dependencies or deep cascading failures.
+# The reverse parser must properly trace the `_jsonparsefailure` or `_grokparsefailure` tags
+# and correctly model the event flow without getting stuck in infinite loops or misinterpreting
+# the terminal state of the event.
+filter {
+  # Attempt JSON parsing first
+  json {
+    source => "message"
+    target => "parsed_data"
+  }
+
+  # If JSON fails, it gets a _jsonparsefailure tag
+  if "_jsonparsefailure" in [tags] {
+    mutate {
+      remove_tag => [ "_jsonparsefailure" ]
+      add_tag => [ "fallback_to_kv" ]
+    }
+    
+    kv {
+      source => "message"
+      field_split => ","
+      value_split => "="
+      target => "parsed_data"
+    }
+
+    # If KV fails or produces nothing, fallback to grok
+    if !([parsed_data]) {
+      mutate {
+        add_tag => [ "fallback_to_grok" ]
+      }
+      grok {
+        match => { "message" => "%{SYSLOGBASE} %{GREEDYDATA:parsed_data}" }
+      }
+      
+      # If Grok fails, it gets _grokparsefailure
+      if "_grokparsefailure" in [tags] {
+        # Desperation fallback: maybe it's just plain text we shove into a specific field
+        mutate {
+          add_field => { "[parsed_data][raw_text]" => "%{message}" }
+          remove_tag => [ "_grokparsefailure" ]
+          add_tag => [ "terminal_fallback" ]
+        }
+      }
+    }
+  } else {
+    # JSON succeeded, but we need to check if a specific key exists to validate it
+    if !([parsed_data][event_type]) {
+       # Valid JSON but missing required schema. Route to the KV parser anyway
+       mutate {
+         add_tag => [ "fallback_to_kv" ]
+       }
+       # But KV won't run because it's chronologically above? Wait, in Logstash it runs top to bottom.
+       # In this file, KV is skipped because it was inside the `if "_jsonparsefailure" in [tags]` block.
+       # This represents a logic bug in the configuration that the reverse parser should accurately model.
+    }
+  }
+
+  # Final cleanup based on tags
+  if "fallback_to_kv" in [tags] and !("terminal_fallback" in [tags]) {
+    mutate {
+      add_field => { "processing_path" => "kv_fallback" }
+    }
+  }
+}

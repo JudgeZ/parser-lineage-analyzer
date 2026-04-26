@@ -1,0 +1,37 @@
+# Test: Challenge Deeply Nested JSON XML CSV Hybrid
+# Description: Real world parsers often handle wrappers around wrappers (e.g. Syslog wraps JSON which wraps XML which wraps CSV). The parser must track the lineage of fields extracted sequentially through multiple format plugins, ensuring variables instantiated in one plugin are available to the next, and handling fallbacks when inner payloads fail to parse. It must map the deep nested dependencies perfectly.
+
+filter {
+  grok {
+    match => { "message" => "%{SYSLOGBASE} %{GREEDYDATA:syslog_payload}" }
+  }
+  
+  if [syslog_payload] =~ /^\{/ {
+    json {
+      source => "syslog_payload"
+      target => "json_payload"
+    }
+    
+    if [json_payload][xml_data] {
+      xml {
+        source => "[json_payload][xml_data]"
+        target => "xml_parsed"
+        force_array => false
+      }
+      
+      if [xml_parsed][csv_record] {
+        csv {
+          source => "[xml_parsed][csv_record]"
+          columns => ["id", "action", "status"]
+          target => "csv_data"
+        }
+      } else {
+        mutate { add_tag => ["missing_csv_in_xml"] }
+      }
+    } else {
+      mutate { add_tag => ["missing_xml_in_json"] }
+    }
+  } else {
+    mutate { add_tag => ["not_json_payload"] }
+  }
+}

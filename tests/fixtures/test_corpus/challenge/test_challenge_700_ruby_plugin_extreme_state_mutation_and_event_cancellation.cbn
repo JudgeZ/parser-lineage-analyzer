@@ -1,0 +1,39 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must analyze the Ruby block's interaction with the event API (`event.get`, `event.set`, `event.cancel`).
+# 2. Inside the Ruby block, it retrieves an array `[items]`.
+# 3. It iterates over the array, calculating a sum.
+# 4. If the sum exceeds 10000, it calls `event.cancel`. The parser must recognize `event.cancel` 
+#    as semantically equivalent to the `drop` filter, halting all further pipeline execution for this event.
+# 5. If it doesn't cancel, it sets `[calculated_sum]` on the event.
+# 6. The parser must understand that any downstream logic relying on `calculated_sum` is only 
+#    reachable if the event was NOT canceled.
+# 7. It also tests if the parser can safely abstract arbitrary Ruby code without executing it,
+#    identifying key API calls and potential side-effects on the event graph.
+
+filter {
+  ruby {
+    code => "
+      items = event.get('items')
+      if items.is_a?(Array)
+        sum = 0
+        items.each do |item|
+          val = item['value'].to_i
+          sum += val
+        end
+        
+        if sum > 10000
+          event.cancel
+        else
+          event.set('calculated_sum', sum)
+        end
+      end
+    "
+    tag_on_exception => "_rubyexception_sum_calc"
+  }
+
+  if [calculated_sum] and [calculated_sum] > 5000 {
+    mutate {
+      add_tag => ["high_value_transaction"]
+    }
+  }
+}

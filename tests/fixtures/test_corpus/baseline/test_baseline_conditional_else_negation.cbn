@@ -1,0 +1,11 @@
+# BASELINE REPRODUCTION: Conditional Else Negation
+# Validates that the analyzer correctly tracks logical negations for `elif` and `else` branches.
+# The tool MUST continue to ensure that the `else` block carries the condition `NOT(user == "Alice")`.
+# EXPECTED BEHAVIOR: `user.role` is marked as conditional with `NOT([user] == "Alice")`.
+filter {
+  if [user] == "Alice" {
+    mutate { replace => { "user.type" => "Admin" } }
+  } else {
+    mutate { replace => { "user.role" => "Guest" } }
+  }
+}

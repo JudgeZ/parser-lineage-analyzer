@@ -1,0 +1,25 @@
+/*
+ * EXPECTED BEHAVIOR:
+ * The parser must accurately evaluate complex boolean logic with mixed operators 
+ * (`==`, `=~`, `in`, `!`, `and`, `or`, `nand`) without explicit parentheses. 
+ * It must follow standard operator precedence rules and not crash or misinterpret 
+ * the boundaries of the conditional expression.
+ * The lineage should correctly map branches of logic.
+ */
+filter {
+  if [action] == "block" and [source][ip] =~ /^10\./ or ![user][name] and "malicious" in [tags] {
+    mutate {
+      add_tag => ["complex_logic_matched_1"]
+    }
+  } else if [status] >= 400 and [status] < 500 and "error" not in [tags] or [message] =~ /fail|err|warn/ {
+    mutate {
+      add_tag => ["complex_logic_matched_2"]
+    }
+  }
+
+  if !([a] == "b") and [c] in [d] or [e] =~ /f/ and !([g] < 10) {
+    mutate {
+      add_tag => ["complex_logic_matched_3"]
+    }
+  }
+}

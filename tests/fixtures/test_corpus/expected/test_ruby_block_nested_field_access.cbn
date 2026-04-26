@@ -1,0 +1,23 @@
+# EXPECTED BEHAVIOR:
+# 1. Ruby blocks often use `event.get('[nested][field]')` and `event.set('[nested][field]', val)`.
+# 2. The parser should be able to heuristically extract these field references from the ruby 
+#    code to build lineage, even if it's imperfect.
+# 3. Should not fail parsing if the ruby code contains complex syntax.
+
+filter {
+  ruby {
+    code => "
+      user_agent = event.get('[http][request][user_agent]')
+      if user_agent && user_agent.include?('curl')
+        event.set('[threat][indicator]', 'automated_tool')
+        event.tag('suspicious_user_agent')
+      end
+    "
+  }
+
+  if "suspicious_user_agent" in [tags] {
+    mutate {
+      add_field => { "action" => "block" }
+    }
+  }
+}

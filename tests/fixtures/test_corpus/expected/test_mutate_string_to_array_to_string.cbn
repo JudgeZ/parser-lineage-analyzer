@@ -1,0 +1,16 @@
+# EXPECTED BEHAVIOR:
+# The parser must correctly track the type evolution of `my_field`.
+# It starts as a string, is merged with another field (coercing it to an array),
+# and is then joined back into a string. The parser should infer its final type as string.
+filter {
+  mutate {
+    add_field => { "my_field" => "initial" }
+    add_field => { "other_field" => "appended" }
+  }
+  mutate {
+    merge => { "my_field" => "other_field" }
+  }
+  mutate {
+    join => { "my_field" => "," }
+  }
+}

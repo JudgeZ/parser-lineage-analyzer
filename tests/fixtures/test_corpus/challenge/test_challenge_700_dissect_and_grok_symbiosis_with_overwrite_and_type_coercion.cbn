@@ -1,0 +1,26 @@
+# EXPECTED BEHAVIOR:
+# 1. Dissect creates fields `[data][0]`, `[data][1]`.
+# 2. Grok targets `[data][0]` and extracts variables into `[data][1]`, overwriting it (since overwrite => true).
+# 3. Mutate then converts `[data][1]` to integer.
+# 4. The parser must correctly map dissect's output to grok's input, handle the overwrite flag, and track the type of `[data][1]` changing from string to int.
+
+filter {
+  dissect {
+    mapping => {
+      "message" => "%{[data][0]} - %{[data][1]} - %{rest}"
+    }
+  }
+
+  if [data][0] =~ /complex/ {
+    grok {
+      match => { "[data][0]" => "id:%{NUMBER:[data][1]}" }
+      overwrite => [ "[data][1]" ]
+    }
+    
+    mutate {
+      convert => {
+        "[data][1]" => "integer"
+      }
+    }
+  }
+}

@@ -1,0 +1,38 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must detect the `ruby` block that interacts with the `LogStash::Event` API directly (`event.clone`).
+# 2. It must identify that the script attempts to mutate a shared global state (`@@event_counter`) and yields a new event.
+# 3. It must recognize the race condition: if `event.cancel` is called on the original event based on a state modified by the clone process, the order of execution matters significantly.
+# 4. In a 700+ parser corpus, multiple such global state variables could conflict. The parser should flag `@@event_counter` as a high-risk global variable pollution across events.
+# 5. It must trace the implicit flow where a yielded event bypasses some previous parsers but might hit subsequent parsers.
+
+filter {
+  if [type] == "complex_stream" {
+    ruby {
+      init => "@@event_counter = 0"
+      code => "
+        @@event_counter += 1
+        if @@event_counter % 10 == 0
+          new_event = event.clone
+          new_event.set('is_clone', true)
+          new_event.set('clone_id', @@event_counter)
+          yield new_event
+          
+          # Race condition / unsafe state logic
+          if event.get('should_cancel_original') == 'true'
+            event.cancel
+          end
+        end
+      "
+    }
+
+    if [is_clone] == true {
+      mutate {
+        add_tag => ["was_cloned", "id_%{clone_id}"]
+      }
+    } else {
+      mutate {
+        add_tag => ["original_event"]
+      }
+    }
+  }
+}

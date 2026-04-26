@@ -1,0 +1,13 @@
+# EXPECTED BEHAVIOR:
+# 1. Transform plugins should assign derived lineage from source to target.
+
+filter {
+  math {
+    calculate => [ "add", "field1", "field2", "math_target" ]
+  }
+  
+  cipher {
+    source => "plain"
+    target => "encrypted"
+  }
+}

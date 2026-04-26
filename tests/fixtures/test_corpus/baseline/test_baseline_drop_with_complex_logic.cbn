@@ -1,0 +1,16 @@
+# BASELINE REPRODUCTION: Drop Action Inside Complex Logic
+# Validates that a 'drop {}' action buried deep within nested logical conditions
+# is accurately identified as a potential terminal node for the event path.
+# The tool MUST recognize 'drop' inside the massive if-else chain.
+# EXPECTED BEHAVIOR: AST formed, drop action localized within the specific true branch.
+filter {
+  if [log_type] == "noise" {
+    drop { }
+  } else if [log_type] == "audit" {
+    if [user] == "system" or [user] == "admin" {
+      if [action] == "ping" {
+        drop { }
+      }
+    }
+  }
+}

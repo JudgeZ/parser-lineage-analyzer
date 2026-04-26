@@ -1,0 +1,15 @@
+# BASELINE REPRODUCTION: Dissect Dynamic Field Parsing
+# Validates that the analyzer successfully parses Logstash `dissect` mapping strings
+# (e.g., `%{a} %{b}`) and dynamically creates extraction tokens for each matched field.
+# The tool MUST continue to support string-based dissect extraction inference.
+# EXPECTED BEHAVIOR: Both `field_a` and `field_b` should be exact matches linked to dissect.
+filter {
+  dissect {
+    mapping => {
+      "message" => "%{field_a} - %{field_b}"
+    }
+  }
+  
+  mutate { replace => { "target1" => "%{field_a}" } }
+  mutate { replace => { "target2" => "%{field_b}" } }
+}

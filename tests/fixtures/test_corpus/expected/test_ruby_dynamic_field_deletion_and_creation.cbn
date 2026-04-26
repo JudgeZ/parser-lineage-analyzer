@@ -1,0 +1,18 @@
+# EXPECTED BEHAVIOR:
+# Ruby blocks are often used as a catch-all for complex logic, including conditionally
+# creating and deleting fields based on their values.
+# The parser must understand that fields might be created or destroyed within this block.
+filter {
+  ruby {
+    code => "
+      event.to_hash.keys.each do |k|
+        if k.start_with?('tmp_')
+          event.remove(k)
+        elsif event.get(k) == '-'
+          event.remove(k)
+          event.set(\"missing_#{k}\", true)
+        end
+      end
+    "
+  }
+}

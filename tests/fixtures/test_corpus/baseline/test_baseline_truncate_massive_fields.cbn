@@ -1,0 +1,12 @@
+# BASELINE REPRODUCTION: Truncate Plugin
+# Validates the truncation of fields to prevent payload size explosion.
+# EXPECTED BEHAVIOR:
+# - The `raw_message` field should be strictly truncated at 1024 bytes.
+# - Multi-byte characters (e.g. UTF-8 emojis) should not be split in half, 
+#   or if they are, it must not crash the parser.
+filter {
+  truncate {
+    length_bytes => 1024
+    fields => [ "raw_message", "error_trace" ]
+  }
+}

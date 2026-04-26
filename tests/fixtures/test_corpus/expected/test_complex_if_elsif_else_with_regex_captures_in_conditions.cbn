@@ -1,0 +1,18 @@
+# EXPECTED BEHAVIOR:
+# The parser must parse conditional blocks where the condition itself uses
+# regex matches, and the subsequent blocks might reference those implicit
+# regex captures. It should correctly maintain the structure of the if-elsif-else
+# tree and not fail on complex boolean logic.
+filter {
+  if [message] =~ /(?i)error/ and [status] == 500 {
+    mutate { add_tag => ["server_error"] }
+  } else if [message] =~ /user (?<username>\w+) logged in/ {
+    mutate {
+      add_field => { "login_user" => "%{username}" }
+    }
+  } else if !([action] in ["allow", "deny"]) or [action] == "unknown" {
+    drop { }
+  } else {
+    mutate { add_tag => ["processed"] }
+  }
+}

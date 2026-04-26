@@ -1,0 +1,32 @@
+# EXPECTED BEHAVIOR:
+# The parser must successfully extract the entire block of Ruby code associated with the `code` parameter.
+# The presence of Ruby flow control keywords (next, break, yield, return), exception handling (rescue, ensure),
+# and deeply nested structures (blocks, hashes, arrays) within the ruby code string must not prematurely
+# terminate the block parsing or confuse the parser's bracket/brace counting logic.
+filter {
+  ruby {
+    code => "
+      event.get('some_array').each do |item|
+        begin
+          if item == 'skip'
+            next
+          elsif item == 'stop'
+            break
+          else
+            event.set('status', 'processing')
+            begin
+              # Do something risky
+              val = item / 0
+            rescue ZeroDivisionError => e
+              event.set('error', e.message)
+            ensure
+              event.set('cleanup_done', true)
+            end
+          end
+        rescue => e
+          # outer rescue
+        end
+      end
+    "
+  }
+}

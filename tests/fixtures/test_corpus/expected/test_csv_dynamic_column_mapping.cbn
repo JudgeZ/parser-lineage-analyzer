@@ -1,0 +1,19 @@
+# EXPECTED BEHAVIOR:
+# This test evaluates how the parser handles CSV parsing when columns
+# are dynamically defined or map to complex nested fields.
+# The parser must correctly associate each column from the CSV source
+# to the array of column names provided, tracking the lineage of each.
+
+filter {
+  csv {
+    source => "csv_payload"
+    columns => [ "header[id]", "header[timestamp]", "body[content]", "metadata[source_ip]" ]
+    separator => ","
+    skip_header => "true"
+  }
+  mutate {
+    convert => {
+      "header[id]" => "integer"
+    }
+  }
+}

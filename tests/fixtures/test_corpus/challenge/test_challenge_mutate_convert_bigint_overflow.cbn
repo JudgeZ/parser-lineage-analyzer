@@ -1,0 +1,14 @@
+# CHALLENGE REPRODUCTION: Mutate Convert BigInt Overflow and NaN Handling
+# Validates type coercion on numeric values that exceed 64-bit integer limits or are invalid.
+# EXPECTED BEHAVIOR:
+# - Converting `999999999999999999999999` to `integer` should cap at max/min int or gracefully fail.
+# - Converting `"not_a_number"` to `float` should return 0.0 or fail cleanly.
+filter {
+  mutate {
+    convert => {
+      "massive_number" => "integer"
+      "invalid_string" => "float"
+      "boolean_string" => "boolean"
+    }
+  }
+}

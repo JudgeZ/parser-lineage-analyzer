@@ -1,0 +1,42 @@
+# TEST BEHAVIOR:
+# In large monolithic configs, the same event might pass through dozens of
+# independent rules, many of which append or merge into a common array field
+# like `threat_categories` or `observables`.
+# The tool needs to track the state of this array as it mutates across multiple conditional blocks,
+# recognizing that its size and contents are highly variable and path-dependent.
+filter {
+  mutate {
+    add_field => { "threat_categories" => [] }
+  }
+
+  if "malware" in [message] {
+    mutate { merge => { "threat_categories" => "malware" } }
+  }
+
+  if [ip] == "1.2.3.4" {
+    mutate { merge => { "threat_categories" => "known_c2" } }
+  }
+
+  if [user] == "admin" {
+    mutate { merge => { "threat_categories" => "privileged_account_activity" } }
+  }
+
+  # Simulating dozens of these...
+  if [action] == "delete" {
+    mutate { merge => { "threat_categories" => "destructive_action" } }
+  }
+
+  # Later in the pipeline, a decision is made based on the array contents
+  if "known_c2" in [threat_categories] and "destructive_action" in [threat_categories] {
+    mutate {
+      add_tag => [ "critical_incident" ]
+    }
+  }
+
+  # Or joining the massive array
+  if [threat_categories] {
+    mutate {
+      join => { "threat_categories" => " | " }
+    }
+  }
+}

@@ -1,0 +1,9 @@
+# BUG REPRODUCTION: Object Rename Data Loss
+# This file tests the `_exec_rename_mutate_op` plugin handler on objects.
+# Renaming `user` to `target.user` correctly deletes `user.name` (because it is a descendant),
+# but fails to project `user.name` onto `target.user.name`, dropping the data completely.
+# EXPECTED FIX: `target.user.name` should evaluate to "Alice". Currently evaluates to unresolved.
+filter {
+  mutate { replace => { "user.name" => "Alice" } }
+  mutate { rename => { "user" => "target.user" } }
+}

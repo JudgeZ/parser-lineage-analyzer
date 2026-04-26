@@ -1,0 +1,14 @@
+# EXPECTED BEHAVIOR:
+# Mutate gsub with advanced regex features like lookarounds.
+# The parser must capture the regex exactly as written and understand that the replacement
+# might be conditionally applied based on the lookaround logic, affecting the string's structure.
+filter {
+  mutate {
+    gsub => [
+      # Replace 'foo' with 'bar' only if followed by 'baz'
+      "message", "foo(?=baz)", "bar",
+      # Replace 'qux' with 'quux' only if preceded by 'corge'
+      "message", "(?<=corge)qux", "quux"
+    ]
+  }
+}

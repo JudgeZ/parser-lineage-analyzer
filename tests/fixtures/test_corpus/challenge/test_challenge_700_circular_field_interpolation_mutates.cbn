@@ -1,0 +1,28 @@
+# EXPECTED BEHAVIOR:
+# The parser must detect and handle potential infinite loops or self-referential
+# loops during string interpolation in `mutate` plugins. If `nested_field` expands
+# to `%{[nested_field]}` or if there is a chain `a -> b -> a`, the analyzer should
+# cap the expansion depth and avoid an infinite loop while correctly identifying
+# the resulting string literal logic.
+filter {
+  mutate {
+    add_field => {
+      "field_a" => "value_from_%{[field_b]}"
+      "field_b" => "derived_from_%{[field_a]}"
+      "self_ref" => "%{[self_ref]}_suffix"
+    }
+  }
+
+  mutate {
+    gsub => [
+      "field_a", "value_from_", "%{[field_b]}_",
+      "field_b", "derived_from_", "%{[field_a]}_"
+    ]
+  }
+  
+  if [field_a] =~ /.*derived_from.*/ {
+    mutate {
+      add_tag => ["circular_detected"]
+    }
+  }
+}

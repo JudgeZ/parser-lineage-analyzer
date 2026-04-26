@@ -1,0 +1,12 @@
+# EXPECTED BEHAVIOR:
+# This test evaluates how the parser tracks lineage when a field is split
+# into an array, and then a specific index of that array is referenced later.
+# The lineage of 'extracted_value' should correctly point back to 'raw_path'
+# via the split array 'path_parts'.
+
+filter {
+  mutate {
+    split => { "raw_path" => "/" }
+    add_field => { "extracted_value" => "%{[raw_path][2]}" }
+  }
+}

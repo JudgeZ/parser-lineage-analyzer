@@ -1,0 +1,14 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must understand dissect modifiers: `?` (ignore), `+` (append), and `&` (indirect/reference).
+# 2. `?ignored_field` should NOT be added to the field lineage as an extracted target.
+# 3. `+combined_field` should be treated as a concatenation operation; the lineage should reflect that multiple parts contribute to `combined_field`.
+# 4. `&reference_field` should be parsed correctly as an indirect key (rare but part of dissect spec).
+# 5. `%{}` empty curlies should be treated as pure skips and ignored.
+
+filter {
+  dissect {
+    mapping => {
+      "message" => "%{?ignored_field} %{+combined_field} %{} %{+combined_field} %{&reference_field}"
+    }
+  }
+}

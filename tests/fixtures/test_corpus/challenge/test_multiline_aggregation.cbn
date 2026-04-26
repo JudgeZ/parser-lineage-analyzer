@@ -1,0 +1,49 @@
+/*
+ * TEST CORPUS: Multi-line and Aggregation
+ * 
+ * CHALLENGE:
+ * Many real-world systems output multi-line logs (like Java stack traces). While codecs handle
+ * some of this, `aggregate` filters or conditional tracking are sometimes used in parser configs
+ * to stitch events together. Analyzing state across multiple events is complex.
+ * 
+ * EXPECTED BEHAVIOR:
+ * 1. The parser should recognize the use of the `aggregate` block.
+ * 2. It must track the `task_id` as the correlation key.
+ * 3. The `map` variables within the aggregate block (`map['sql_duration']`, `map['queries']`)
+ *    should be recognized as stateful variables tied to the `task_id`.
+ * 4. The `end_of_task` tag logic must be parsed as the trigger to flush the aggregated state.
+ */
+
+filter {
+  grok {
+    match => { "message" => "\[%{TIMESTAMP_ISO8601:timestamp}\] \[%{DATA:thread}\] \[%{WORD:log_level}\] %{DATA:class} - TASK_ID:%{NUMBER:task_id} %{GREEDYDATA:task_message}" }
+  }
+
+  if "START" in [task_message] {
+    aggregate {
+      task_id => "%{task_id}"
+      code => "map['queries'] = 0; map['sql_duration'] = 0"
+      map_action => "create"
+    }
+  } else if "SQL_EXECUTED" in [task_message] {
+    grok {
+      match => { "task_message" => "SQL_EXECUTED duration=%{NUMBER:duration_ms}ms" }
+    }
+    aggregate {
+      task_id => "%{task_id}"
+      code => "map['queries'] += 1; map['sql_duration'] += event.get('duration_ms').to_i"
+      map_action => "update"
+    }
+  } else if "END" in [task_message] {
+    aggregate {
+      task_id => "%{task_id}"
+      code => "event.set('total_queries', map['queries']); event.set('total_sql_duration', map['sql_duration'])"
+      map_action => "update"
+      end_of_task => true
+      timeout => 120
+    }
+    mutate {
+      add_tag => [ "task_completed" ]
+    }
+  }
+}

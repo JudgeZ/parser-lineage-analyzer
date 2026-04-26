@@ -1,0 +1,16 @@
+// EXPECTED BEHAVIOR:
+// When `break_on_match` is false, grok tries ALL patterns and accumulates the captures.
+// The parser must recognize that both patterns could contribute fields, rather than just the first successful one.
+// Both `[first_part]` and `[second_part]` may be populated.
+
+filter {
+  grok {
+    match => {
+      "message" => [
+        "(?<first_part>^[a-zA-Z]+)",
+        "(?<second_part>\d+$)"
+      ]
+    }
+    break_on_match => false
+  }
+}

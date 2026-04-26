@@ -1,0 +1,38 @@
+# EXPECTED BEHAVIOR:
+# This test verifies that the parser can track state mutations across alternating DSL and Ruby block boundaries.
+# 1. Grok extracts an initial payload.
+# 2. Ruby block modifies the payload, explicitly setting a new field `[ruby_parsed_data]`.
+# 3. A subsequent Grok block relies on `[ruby_parsed_data]`.
+# 4. Another Ruby block checks the result of the second Grok and conditionally cancels the event.
+# The parser must establish a clear dependency graph linking the output of the first Grok, the Ruby block's manual event API manipulations,
+# the input of the second Grok, and the final control flow decision in the second Ruby block.
+
+filter {
+  grok {
+    match => { "message" => "%{WORD:command} %{GREEDYDATA:raw_payload}" }
+  }
+
+  ruby {
+    code => "
+      payload = event.get('raw_payload')
+      if payload
+        event.set('ruby_parsed_data', payload.reverse)
+      end
+    "
+  }
+
+  if [ruby_parsed_data] {
+    grok {
+      match => { "ruby_parsed_data" => "%{INT:reversed_id}-%{WORD:status}" }
+      tag_on_failure => ["_grokparsefailure_stage2"]
+    }
+  }
+
+  ruby {
+    code => "
+      if event.get('tags') && event.get('tags').include?('_grokparsefailure_stage2')
+        event.cancel
+      end
+    "
+  }
+}

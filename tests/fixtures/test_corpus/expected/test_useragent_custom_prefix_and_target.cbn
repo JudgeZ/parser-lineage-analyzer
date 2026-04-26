@@ -1,0 +1,18 @@
+# EXPECTED BEHAVIOR:
+# 1. The `useragent` plugin dynamically creates several fields (name, os, device, etc.).
+# 2. The parser must deduce that these fields are created under the `[ua]` object because of the `target` parameter, and prepended with `custom_` because of the `prefix` parameter.
+# 3. Subsequent reads like `[ua][custom_os]` should be linked back to the `useragent` plugin.
+
+filter {
+  useragent {
+    source => "http_user_agent"
+    target => "ua"
+    prefix => "custom_"
+  }
+
+  if [ua][custom_os] == "Windows" {
+    mutate {
+      add_tag => ["windows_client"]
+    }
+  }
+}

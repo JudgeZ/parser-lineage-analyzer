@@ -1,0 +1,12 @@
+# BASELINE REPRODUCTION: UserAgent Plugin
+# Validates that the `useragent` plugin is recognized and its implicit field creation
+# is mapped.
+# The tool MUST recognize that by default fields like `[user_agent][os]`, 
+# `[user_agent][name]`, etc. are created from the source string.
+# EXPECTED BEHAVIOR: `[user_agent][os]` lineage points to `agent`.
+filter {
+  useragent {
+    source => "agent"
+    target => "user_agent"
+  }
+}

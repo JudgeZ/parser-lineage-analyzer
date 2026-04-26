@@ -1,0 +1,14 @@
+# BASELINE REPRODUCTION: Mutate Chained Renames
+# Validates how the parser handles multiple rename operations in the same block.
+# In logstash, operations in the same `mutate` block are processed in a specific
+# internal order, but sequential renames often have surprising lineage.
+# EXPECTED BEHAVIOR: The parser MUST correctly track the lineage and final field
+# names, handling the sequential renaming without losing the source token.
+filter {
+  mutate {
+    rename => { 
+      "field_a" => "field_b" 
+      "field_b" => "field_c" 
+    }
+  }
+}

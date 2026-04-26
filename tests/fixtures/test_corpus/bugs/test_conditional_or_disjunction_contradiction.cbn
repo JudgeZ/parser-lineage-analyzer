@@ -1,0 +1,14 @@
+# BUG REPRODUCTION: OR-disjunction contradictions not detected
+# Before Phase 3D, the contradiction detector flattened only `and`
+# conjunctions. A condition like `[a] == "x" or [a] == "y"` was treated as
+# opaque, so an enclosed `if [a] == "z"` inside that branch was never
+# recognized as unreachable.
+# EXPECTED FIX: when every disjunct of the prior contradicts the child,
+# the analyzer emits `unreachable_branch` for the child.
+filter {
+  if [a] == "x" or [a] == "y" {
+    if [a] == "z" {
+      mutate { replace => { "f" => "v" } }
+    }
+  }
+}

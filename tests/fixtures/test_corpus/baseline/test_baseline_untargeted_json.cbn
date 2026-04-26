@@ -1,0 +1,13 @@
+# BASELINE REPRODUCTION: Untargeted JSON Late Binding
+# Validates that the `json` extractor supports "untargeted" extraction (where `target` is omitted).
+# Because untargeted JSON merges fields directly into the root event, the analyzer must wait
+# until a field is requested downstream to bind it to the JSON extraction.
+# The tool MUST continue to support this "late binding" inference.
+# EXPECTED BEHAVIOR: `root_field` should be linked to the JSON extraction of `message`.
+filter {
+  json {
+    source => "message"
+  }
+  
+  mutate { replace => { "user" => "%{root_field}" } }
+}

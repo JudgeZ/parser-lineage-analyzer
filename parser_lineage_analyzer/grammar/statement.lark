@@ -1,0 +1,18 @@
+start: statement*
+
+?statement: filter_block
+          | if_block
+          | for_block
+          | plugin
+          | unknown
+
+filter_block: FILTER block
+if_block: IF HEADER block elif_clause* else_clause?
+elif_clause: ELSE IF HEADER block
+else_clause: ELSE block
+for_block: FOR HEADER block
+plugin: IDENT CONFIG
+unknown: UNKNOWN
+block: LBRACE statement* RBRACE
+
+%declare FILTER IF ELSE FOR LBRACE RBRACE HEADER IDENT CONFIG UNKNOWN

@@ -1,0 +1,17 @@
+# EXPECTED BEHAVIOR:
+# 1. The split plugin should extract a dynamic lineage from the field.
+# 2. The decorators should be conditionally applied on success.
+
+filter {
+  split {
+    field => "[input_array]"
+    target => "[split_item]"
+    add_tag => ["split_success"]
+  }
+  
+  if "split_success" in [tags] {
+    mutate {
+      add_field => { "was_split" => "yes" }
+    }
+  }
+}

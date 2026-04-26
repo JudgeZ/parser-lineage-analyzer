@@ -1,0 +1,14 @@
+# CHALLENGE REPRODUCTION: Decorator Ordering Conflict
+# Validates the execution order of universal plugin decorators (add_field, remove_field).
+# EXPECTED BEHAVIOR:
+# - `remove_field` MUST execute after `add_field`. If a plugin successfully parses,
+#   adds a field, and then `remove_field` targets that exact field, the field MUST NOT exist.
+# - Validates race conditions in the decorator lifecycle.
+filter {
+  grok {
+    match => { "message" => "%{WORD:action} %{WORD:target}" }
+    add_field => { "temp_status" => "processed_%{action}" }
+    remove_field => [ "temp_status", "message" ]
+    add_tag => [ "success" ]
+  }
+}

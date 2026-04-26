@@ -1,0 +1,44 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must correctly interpret the Ruby block, identifying the use of class/global variables (`@@state`, `$global_state`) which represent state leakage across events (concurrency risk).
+# 2. It must track the `event.cancel` behavior which halts the pipeline for the current event, acting as a complex drop mechanism.
+# 3. It should recognize `event.get` and `event.set` to map dependencies and field mutations accurately.
+# 4. It should handle the nested conditionals within the ruby code.
+# 5. It should warn about the implicit dependency on event ordering and concurrency issues inherent in `@@counter`.
+
+filter {
+  ruby {
+    init => "
+      @@counter = 0
+      @@last_seen_user = nil
+      $global_error_threshold = 50
+    "
+    code => "
+      @@counter += 1
+      current_user = event.get('[user][name]')
+      error_count = event.get('[error][count]') || 0
+
+      if current_user == @@last_seen_user
+        event.set('[user][repeated_login]', true)
+      else
+        event.set('[user][repeated_login]', false)
+        @@last_seen_user = current_user
+      end
+
+      event.set('[system][global_counter]', @@counter)
+
+      if error_count.to_i > $global_error_threshold
+        event.tag('_global_error_threshold_exceeded')
+      end
+
+      if event.get('[action]') == 'DROP_ALL'
+        event.cancel
+      end
+    "
+  }
+
+  if "_global_error_threshold_exceeded" in [tags] {
+    mutate {
+      add_field => { "alert" => "High error rate detected for %{[user][name]}" }
+    }
+  }
+}

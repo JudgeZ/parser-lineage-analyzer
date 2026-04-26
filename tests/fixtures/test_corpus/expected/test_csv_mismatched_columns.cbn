@@ -1,0 +1,11 @@
+# test_csv_mismatched_columns.cbn
+# EXPECTED BEHAVIOR:
+# Tests CSV parsing where the defined columns exceed the actual columns present in the source string.
+# The parser should either fill missing columns with nulls/empty strings or fail with a _csvparsefailure depending on strictness settings, but not crash.
+filter {
+  csv {
+    source => "message"
+    columns => ["col1", "col2", "col3", "col4", "col5"]
+    separator => ","
+  }
+}

@@ -1,0 +1,14 @@
+# EXPECTED BEHAVIOR:
+# Custom pattern definitions in Grok can be complex or reference other custom patterns.
+# The analyzer must correctly resolve these local definitions and trace the regex capture groups
+# to the resulting fields, even when the pattern definitions use lookarounds or nested references.
+filter {
+  grok {
+    pattern_definitions => {
+      "CUSTOM_USER" => "[a-zA-Z0-9_-]+"
+      "CUSTOM_DOMAIN" => "[a-zA-Z0-9.-]+"
+      "CUSTOM_EMAIL" => "%{CUSTOM_USER}@%{CUSTOM_DOMAIN}"
+    }
+    match => { "message" => "Sender: %{CUSTOM_EMAIL:sender_email}" }
+  }
+}

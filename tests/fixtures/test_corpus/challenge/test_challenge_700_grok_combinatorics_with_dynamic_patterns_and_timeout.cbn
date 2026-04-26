@@ -1,0 +1,36 @@
+# TEST BEHAVIOR:
+# Simulates a scenario where a parser uses a highly complex or poorly optimized grok
+# expression (catastrophic backtracking risk) combined with dynamic pattern matching.
+# In a massive 700+ parser environment, generic catch-all patterns often suffer from timeouts.
+# The parser MUST parse the pattern correctly and ideally identify the potential for
+# exponential backtracking. It must also correctly route the _groktimeout tag to the fallback logic.
+
+filter {
+  grok {
+    match => {
+      "message" => [
+        # Catastrophic backtracking potential: (a+)+
+        "^(%{WORD:prefix}\s+)+(?<greedy_capture>.*)\[%{DATA:optional_data}\]$",
+        # Dynamic pattern reference
+        "%{[@metadata][dynamic_pattern_name]}"
+      ]
+    }
+    timeout_millis => 100
+    tag_on_timeout => "_groktimeout_critical"
+    tag_on_failure => "_grokparsefailure_critical"
+  }
+
+  if "_groktimeout_critical" in [tags] {
+    # Fallback to dissect
+    dissect {
+      mapping => {
+        "message" => "%{prefix} %{rest}"
+      }
+    }
+    mutate {
+      add_tag => ["recovered_from_timeout"]
+    }
+  } else if "_grokparsefailure_critical" in [tags] {
+    mutate { add_field => { "status" => "unparsed" } }
+  }
+}

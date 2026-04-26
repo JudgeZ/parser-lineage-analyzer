@@ -1,0 +1,12 @@
+# EXPECTED BEHAVIOR:
+# 1. Prune filter should taint existing tokens with prune_risk but not completely drop them statically.
+
+filter {
+  mutate {
+    add_field => { "keep_me" => "safe" }
+  }
+  
+  prune {
+    whitelist_names => [ "^keep_" ]
+  }
+}

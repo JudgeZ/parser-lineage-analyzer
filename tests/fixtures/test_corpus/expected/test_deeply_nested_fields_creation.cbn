@@ -1,0 +1,20 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must handle the creation of deeply nested fields where intermediate 
+#    objects do not explicitly exist prior to this statement.
+# 2. Must parse syntax like `[a][b][c][d]` correctly without breaking tokenization.
+# 3. Lineage tracking should handle the implicit creation of objects `a`, `b`, and `c`.
+
+filter {
+  mutate {
+    add_field => {
+      "[event][context][user][identity][uuid]" => "%{user_id}"
+      "[event][context][system][os][version]" => "10.15.7"
+    }
+  }
+
+  if [event][context][user][identity][uuid] == "admin" {
+    mutate {
+      add_tag => [ "admin_action" ]
+    }
+  }
+}

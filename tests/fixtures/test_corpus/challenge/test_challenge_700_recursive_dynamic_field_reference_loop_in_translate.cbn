@@ -1,0 +1,33 @@
+# EXPECTED BEHAVIOR:
+# 1. Tests dynamic field referencing within translate dictionaries and targets.
+# 2. Field `target_field` specifies where the translate should land.
+# 3. Ensures no infinite loops occur if dynamic references accidentally self-refer in a complex chain.
+
+filter {
+  mutate {
+    add_field => {
+      "target_field" => "dynamic_dest"
+      "lookup_key" => "status"
+    }
+  }
+
+  translate {
+    field => "%{lookup_key}"
+    destination => "[%{target_field}]"
+    dictionary => {
+      "200" => "success_state"
+      "404" => "error_state"
+    }
+    fallback => "unknown_state"
+  }
+
+  if [dynamic_dest] == "error_state" {
+    translate {
+      field => "dynamic_dest"
+      destination => "action"
+      dictionary => {
+        "error_state" => "block"
+      }
+    }
+  }
+}

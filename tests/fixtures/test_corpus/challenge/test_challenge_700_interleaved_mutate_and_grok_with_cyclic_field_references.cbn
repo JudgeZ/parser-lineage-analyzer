@@ -1,0 +1,26 @@
+# EXPECTED BEHAVIOR:
+# 1. Grok extracts `A` and `B`. Mutate renames `A` to `B` and `B` to `C`. Grok extracts from `C` back into `A`.
+# 2. Ensures the parser's dependency graph or variable state tracks the value of each field precisely at each step.
+# 3. Tests if overwrite => true in grok handles renaming chains correctly.
+
+filter {
+  grok {
+    match => { "message" => "start %{WORD:field_a} %{WORD:field_b}" }
+  }
+
+  mutate {
+    rename => {
+      "field_a" => "field_b"
+      "field_b" => "field_c"
+    }
+  }
+
+  grok {
+    match => { "field_c" => "end %{WORD:field_a}" }
+    overwrite => ["field_a"]
+  }
+
+  if [field_a] == [field_c] {
+    drop { }
+  }
+}

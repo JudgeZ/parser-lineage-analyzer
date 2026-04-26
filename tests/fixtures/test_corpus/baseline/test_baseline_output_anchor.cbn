@@ -1,0 +1,9 @@
+# BASELINE REPRODUCTION: Output Anchor Registration
+# Validates that merging into the special `@output` destination correctly registers
+# an OutputAnchor. The tool MUST continue to support this because SecOps parsers
+# rely on `@output` to designate fully formed event blocks for UDM ingestion.
+# EXPECTED BEHAVIOR: `event1` should be registered as an OutputAnchor.
+filter {
+  mutate { replace => { "event1.user" => "Alice" } }
+  mutate { merge => { "@output" => "event1" } }
+}

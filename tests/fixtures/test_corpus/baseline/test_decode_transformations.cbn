@@ -1,0 +1,18 @@
+# BASELINE REPRODUCTION: URL Decode and Base64 Decode
+# Validates that data transformation filters like `urldecode` or similar
+# custom decodings are appropriately tracked as mutating the data source.
+# The tool MUST track lineage through these specific transformation plugins.
+# EXPECTED BEHAVIOR: `decoded_url` and `decoded_b64` trace back to their respective sources.
+filter {
+  urldecode {
+    field => "encoded_url"
+  }
+  mutate {
+    rename => { "encoded_url" => "decoded_url" }
+  }
+  # Hypothetical base64 plugin common in some SecOps environments
+  base64 {
+    field => "encoded_b64"
+    target => "decoded_b64"
+  }
+}

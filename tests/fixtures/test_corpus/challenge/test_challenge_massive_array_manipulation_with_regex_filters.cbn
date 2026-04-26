@@ -1,0 +1,40 @@
+# Test: Challenge Massive Array Manipulation with Regex Filters
+# Description: In a 700+ parser corpus, log sources often produce messy arrays of data. This test mimics extracting multiple fields into an array, applying various gsub operations across the array elements, compacting it, and then dropping the event if the array becomes empty. The parser must track the state of the array through multiple mutate blocks, correctly applying regex replacements across all elements, and correctly resolving the conditional check on the final array state.
+
+filter {
+  mutate {
+    add_field => {
+      "tmp_array" => "%{field1}"
+    }
+  }
+  mutate {
+    merge => { "tmp_array" => "field2" }
+    merge => { "tmp_array" => "field3" }
+  }
+  mutate {
+    gsub => [
+      # Remove non-alphanumeric characters from all array elements
+      "tmp_array", "[^a-zA-Z0-9]+", "",
+      # Replace empty strings with a specific placeholder, though logstash gsub might behave weirdly with empty matches
+      "tmp_array", "^$", "EMPTY"
+    ]
+  }
+  
+  # Remove the placeholder, making them effectively empty
+  mutate {
+    gsub => [
+      "tmp_array", "EMPTY", ""
+    ]
+  }
+
+  # If array was reduced to empty strings, drop it
+  if "" in [tmp_array] {
+    mutate {
+      remove_field => ["tmp_array"]
+    }
+  }
+
+  if ![tmp_array] {
+    drop { }
+  }
+}

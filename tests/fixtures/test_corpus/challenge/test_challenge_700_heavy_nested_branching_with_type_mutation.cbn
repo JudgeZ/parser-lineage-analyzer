@@ -1,0 +1,57 @@
+# TEST BEHAVIOR:
+# Simulates a large corpus where an extremely deep and wide conditional branching structure
+# evaluates many different fields, performing type mutations (string to integer, integer to array)
+# deep within the branches. The challenge is correctly tracking the type of a field
+# as it flows through the complex nested logic. If the reverse parser fails to track the
+# type mutations along specific execution paths, it might erroneously flag type mismatches
+# or fail to analyze downstream dependencies correctly.
+filter {
+  if [event_source] == "firewall" {
+    if [action] == "deny" {
+      if [port] {
+        # port could be string initially
+        mutate {
+          convert => { "port" => "integer" }
+        }
+        if [port] < 1024 {
+          mutate {
+            add_tag => [ "privileged_port" ]
+          }
+        }
+      }
+    } else if [action] == "allow" {
+      # In allow branch, port is converted to string for some logging reason
+      mutate {
+        convert => { "port" => "string" }
+      }
+      if [port] =~ /^80/ {
+        mutate {
+          add_tag => [ "http_traffic" ]
+        }
+      }
+    }
+  } else if [event_source] == "proxy" {
+    # In proxy, port might be an array of ports
+    mutate {
+      split => { "port" => "," }
+    }
+    if "80" in [port] {
+      mutate {
+        add_tag => [ "proxy_http" ]
+      }
+    }
+  }
+
+  # Global rule checking port later on.
+  # The parser must understand that [port] could be an integer, a string, or an array of strings
+  # depending on the path taken above.
+  if [port] {
+    if [port] == 80 {
+       # This is valid only if port is integer. For string/array it evaluates to false in LS.
+       mutate { add_tag => [ "exact_80_int" ] }
+    } else if [port] == "80" {
+       # Valid if string, or if array contains "80"
+       mutate { add_tag => [ "exact_80_str" ] }
+    }
+  }
+}

@@ -1,0 +1,27 @@
+# EXPECTED BEHAVIOR:
+# The lexer and parser must correctly handle complex combinations of escaped quotes,
+# backslashes, and special characters inside string and regex literals.
+# It must not prematurely terminate strings or regexes due to escaped delimiters.
+# The AST must capture the literal values exactly as intended by the configuration.
+
+filter {
+  if [message] =~ /C:\\Windows\\System32\\(?:cmd|powershell)\.exe\s+\/c\s+\"echo.*\"/ {
+    mutate {
+      add_tag => ["suspicious_windows_cmd"]
+    }
+  }
+
+  mutate {
+    add_field => {
+      # Escaped double quotes inside a double quoted string
+      "quote_string" => "He said, \"Hello, World!\" and then exited."
+      # Escaped backslashes
+      "path_string" => "C:\\Program Files\\Application\\"
+      # Quotes inside a bracket field reference inside interpolation
+      "dynamic_string" => "%{[syslog][msg][\"quoted_key\"]}"
+    }
+    gsub => [
+      "message", "\[\"'\{\}\]", "_"
+    ]
+  }
+}

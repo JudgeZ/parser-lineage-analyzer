@@ -1,0 +1,197 @@
+name: wheels
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build_wheels:
+    name: Build wheels (${{ matrix.os }} / ${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-22.04,  arch: x86_64}
+          - {os: ubuntu-22.04,  arch: aarch64}
+          - {os: macos-15,      arch: arm64}
+          - {os: macos-26,      arch: arm64}
+          - {os: windows-2022,  arch: AMD64}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+
+      - name: Set up QEMU (Linux aarch64 only)
+        if: matrix.os == 'ubuntu-22.04' && matrix.arch == 'aarch64'
+        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a  # v4
+        with:
+          platforms: arm64
+
+      - name: Build abi3 wheels
+        uses: pypa/cibuildwheel@8d2b08b68458a16aeb24b64e68a09ab1c8e82084  # v3.4.1
+        env:
+          CIBW_ARCHS: ${{ matrix.arch }}
+
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
+        with:
+          name: wheels-${{ matrix.os }}-${{ matrix.arch }}
+          path: ./wheelhouse/*.whl
+
+  build_sdist:
+    name: Build sdist
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
+        with:
+          python-version: '3.10'
+      - run: python -m pip install --upgrade pip build
+      - run: python -m build --sdist
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
+        with:
+          name: sdist
+          path: ./dist/*.tar.gz
+
+  pure_python_tests:
+    name: Pure-Python tests (${{ matrix.os }} / py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-15, macos-26, windows-2022]
+        python: ['3.10', '3.11', '3.12', '3.13', '3.14']
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev]"
+        env:
+          PARSER_LINEAGE_ANALYZER_NO_EXT: '1'
+      - run: python -m pytest tests/
+        env:
+          PARSER_LINEAGE_ANALYZER_NO_EXT: '1'
+
+  lint_and_typecheck:
+    name: Lint and type-check
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
+        with:
+          python-version: '3.10'
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev]"
+        env:
+          PARSER_LINEAGE_ANALYZER_NO_EXT: '1'
+      - run: ruff format --check parser_lineage_analyzer scripts tests fuzz setup.py
+      - run: ruff check parser_lineage_analyzer scripts tests fuzz setup.py
+      - run: mypy parser_lineage_analyzer
+      - name: Bandit (Python SAST, fail on medium+)
+        run: bandit -c pyproject.toml -r parser_lineage_analyzer scripts -ll
+
+  security_audit:
+    name: pip-audit (dependency vulnerabilities)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
+        with:
+          python-version: '3.10'
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev]"
+        env:
+          PARSER_LINEAGE_ANALYZER_NO_EXT: '1'
+      - run: python -m pip install pip-audit
+      - name: Audit installed dependencies
+        # Ignore list: vulnerabilities we have intentionally accepted.
+        # - CVE-2026-3219: pip tar+ZIP archive-type confusion. Affects `pip install`
+        #   of attacker-supplied hybrid archives only, not package runtime or normal
+        #   PyPI installs. No patched pip released as of 2026-04. Remove this entry
+        #   once a fixed pip ships and the CI runner image picks it up.
+        run: pip-audit --progress-spinner off --desc --ignore-vuln CVE-2026-3219
+
+  abi3_wheel_tests:
+    name: abi3 wheel (${{ matrix.os }} / py${{ matrix.python }} / ${{ matrix.mode }})
+    needs: build_wheels
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-22.04,  artifact: wheels-ubuntu-22.04-x86_64,  python: '3.10', mode: default}
+          - {os: ubuntu-22.04,  artifact: wheels-ubuntu-22.04-x86_64,  python: '3.11', mode: default}
+          - {os: ubuntu-22.04,  artifact: wheels-ubuntu-22.04-x86_64,  python: '3.12', mode: default}
+          - {os: ubuntu-22.04,  artifact: wheels-ubuntu-22.04-x86_64,  python: '3.13', mode: default}
+          - {os: ubuntu-22.04,  artifact: wheels-ubuntu-22.04-x86_64,  python: '3.14', mode: default}
+          - {os: ubuntu-22.04,  artifact: wheels-ubuntu-22.04-x86_64,  python: '3.10', mode: no-ext}
+          - {os: ubuntu-22.04,  artifact: wheels-ubuntu-22.04-x86_64,  python: '3.13', mode: no-ext}
+          - {os: ubuntu-22.04,  artifact: wheels-ubuntu-22.04-x86_64,  python: '3.10', mode: no-native-dedupe}
+          - {os: ubuntu-22.04,  artifact: wheels-ubuntu-22.04-x86_64,  python: '3.13', mode: no-native-dedupe}
+          - {os: ubuntu-22.04,  artifact: wheels-ubuntu-22.04-x86_64,  python: '3.10', mode: no-native-branch-merge}
+          - {os: ubuntu-22.04,  artifact: wheels-ubuntu-22.04-x86_64,  python: '3.13', mode: no-native-branch-merge}
+          - {os: macos-15,      artifact: wheels-macos-15-arm64,       python: '3.10', mode: default}
+          - {os: macos-15,      artifact: wheels-macos-15-arm64,       python: '3.13', mode: default}
+          - {os: macos-15,      artifact: wheels-macos-15-arm64,       python: '3.14', mode: default}
+          - {os: macos-15,      artifact: wheels-macos-15-arm64,       python: '3.13', mode: no-ext}
+          - {os: macos-26,      artifact: wheels-macos-26-arm64,       python: '3.10', mode: default}
+          - {os: macos-26,      artifact: wheels-macos-26-arm64,       python: '3.13', mode: default}
+          - {os: macos-26,      artifact: wheels-macos-26-arm64,       python: '3.14', mode: default}
+          - {os: macos-26,      artifact: wheels-macos-26-arm64,       python: '3.13', mode: no-ext}
+          - {os: windows-2022,  artifact: wheels-windows-2022-AMD64,   python: '3.10', mode: default}
+          - {os: windows-2022,  artifact: wheels-windows-2022-AMD64,   python: '3.13', mode: default}
+          - {os: windows-2022,  artifact: wheels-windows-2022-AMD64,   python: '3.14', mode: default}
+          - {os: windows-2022,  artifact: wheels-windows-2022-AMD64,   python: '3.13', mode: no-ext}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53  # v6
+        with:
+          name: ${{ matrix.artifact }}
+          path: wheelhouse
+      - name: Install wheel + test deps
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          # hypothesis is required for tests/test_property_parser_invariants.py
+          # collection; without it pytest errors out before any test runs.
+          python -m pip install pytest pytest-timeout hypothesis
+          # Pre-install runtime deps from PyPI so the local-wheel install
+          # below can use --no-deps and stay pinned to the wheel we built.
+          python -m pip install "lark>=1.1,<2" "pydantic>=2,<3"
+          python -m pip install --no-index --no-deps --find-links=wheelhouse parser_lineage_analyzer
+      - name: Run tests
+        shell: bash
+        env:
+          PYTHONUTF8: '1'
+          PARSER_LINEAGE_ANALYZER_NO_EXT: ${{ matrix.mode == 'no-ext' && '1' || '' }}
+          PARSER_LINEAGE_ANALYZER_USE_NATIVE_DEDUPE: ${{ matrix.mode == 'no-native-dedupe' && '0' || '' }}
+          PARSER_LINEAGE_ANALYZER_USE_NATIVE_BRANCH_MERGE: ${{ matrix.mode == 'no-native-branch-merge' && '0' || '' }}
+        run: python -m pytest tests/
+
+  release:
+    name: Publish to GitHub Releases
+    needs: [build_wheels, build_sdist, abi3_wheel_tests, pure_python_tests, lint_and_typecheck, security_audit]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53  # v6
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Upload artifacts to the GitHub release
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3
+        with:
+          files: dist/*

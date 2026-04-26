@@ -1,0 +1,14 @@
+# EXPECTED BEHAVIOR:
+# The parser must recognize regular expression capture groups in `gsub` replacements.
+# Here, `\1` and `\2` are backreferences to the capture groups in the regex.
+# Lineage for `my_field` must show a mutation based on its previous value, with the regex operations properly logged.
+# The tool must not misinterpret the backreferences as escape sequences that break the string literal parser.
+
+filter {
+  mutate {
+    gsub => [
+      "my_field", "(\w+)\s+(\w+)", "\2 \1",
+      "another_field", "^(\d{3})-(\d{2})-(\d{4})$", "XXX-XX-\3"
+    ]
+  }
+}

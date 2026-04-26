@@ -1,0 +1,22 @@
+# EXPECTED BEHAVIOR:
+# Evaluates how the parser handles multiple grok statements targeting the same field
+# where some have `overwrite => true` and others do not.
+# It should correctly model the state of the target field as potentially being an array
+# (if appended) or a single value (if overwritten), and understand the precedence.
+filter {
+  grok {
+    match => { "message" => "%{WORD:target_field}" }
+  }
+  grok {
+    match => { "message" => "%{NUMBER:target_field}" }
+    # no overwrite, so if first grok succeeds, this appends to target_field making it an array
+  }
+  if [target_field][1] {
+    mutate { add_tag => ["is_array"] }
+  }
+  grok {
+    match => { "other_field" => "%{GREEDYDATA:target_field}" }
+    overwrite => [ "target_field" ]
+    # This overwrites target_field, turning it back into a string
+  }
+}

@@ -1,0 +1,26 @@
+/*
+ * EXPECTED BEHAVIOR:
+ * The parser must correctly parse regular expressions inside conditional statements,
+ * especially when the regex contains escaped characters like slashes (\/), braces (\{ \}),
+ * and characters that could be misinterpreted as comments (\#).
+ * It must not terminate the regex prematurely, misinterpret the end of the conditional block,
+ * or incorrectly parse the rest of the file due to these characters.
+ * The lineage should show tags added conditionally based on complex pattern matches.
+ */
+filter {
+  if [raw_message] =~ /start_\{.*?\}\/end\s+\#\s+comment/ {
+    mutate {
+      add_tag => ["matched_complex_regex"]
+    }
+  } else if [raw_message] !~ /^[A-Z]{3,5}\s+\d{1,3}\/\d{1,3}\/\d{4}$/ {
+    mutate {
+      add_tag => ["invalid_format"]
+    }
+  }
+
+  if [path] =~ /C:\\Windows\\System32\\(?:cmd\.exe|powershell\.exe)/ {
+    mutate {
+      add_field => { "suspicious_process" => "true" }
+    }
+  }
+}

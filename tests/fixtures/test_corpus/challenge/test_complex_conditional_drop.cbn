@@ -1,0 +1,29 @@
+# CHALLENGE: Complex Conditional Drop with Negation and Regex
+# A common challenge in huge parsers is identifying exactly when and why an event is dropped.
+# This often involves deeply nested boolean logic, regular expression matches, array inclusion
+# checks, and negations, all compounded together.
+# EXPECTED BEHAVIOR:
+# The parser must build a comprehensive boolean AST for the `if` condition. It should track
+# that reaching the `drop {}` statement halts all further processing for events satisfying
+# this complex condition. Furthermore, the lineage for variables like `keep_reason` must
+# explicitly exclude any state that would satisfy the drop condition.
+
+filter {
+  if ([action] == "deny" and [src_ip] =~ /^10\./) or (!([dest_port] in [ "80", "443" ]) and [protocol] == "TCP") {
+    if "override_drop" not in [tags] {
+      drop {}
+    } else {
+      mutate {
+        add_tag => [ "bypassed_drop" ]
+      }
+    }
+  } else if [action] == "allow" {
+    mutate {
+      add_field => { "keep_reason" => "explicit_allow" }
+    }
+  } else {
+    mutate {
+      add_field => { "keep_reason" => "default_fallthrough" }
+    }
+  }
+}

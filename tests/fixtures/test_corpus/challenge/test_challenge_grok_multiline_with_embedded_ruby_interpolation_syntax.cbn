@@ -1,0 +1,15 @@
+# TEST BEHAVIOR:
+# This test verifies the parser's resilience against Grok patterns that 
+# span multiple lines and contain Ruby-style string interpolation `#{...}` 
+# inside the pattern string itself.
+# The parser must correctly interpret the pattern string boundaries and 
+# not get confused by `#` comments vs `#{}` interpolation inside double quotes.
+# It should trace the extraction of `field_a` and `field_b` correctly.
+filter {
+  grok {
+    match => {
+      "message" => "(?m)^Start of event\n(?:#%{DATA:field_a}#|#\{%{DATA:field_b}\})?.*\nEnd of event$"
+    }
+    tag_on_failure => ["_grok_multiline_fail"]
+  }
+}

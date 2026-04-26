@@ -1,0 +1,6 @@
+filter {
+  json {
+    source => "message"
+    target => [ "target1", "target2" ]
+  }
+}

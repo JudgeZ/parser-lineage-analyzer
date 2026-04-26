@@ -1,0 +1,20 @@
+# EXPECTATION:
+# The `date` filter can specify multiple match formats for a single field.
+# It attempts matches sequentially until one succeeds.
+# The parser must understand that `[target]` (defaulting to `@timestamp`) 
+# receives its value from the `match` array and that `locale` or `timezone` 
+# configurations affect the parsing behavior.
+filter {
+  date {
+    match => ["log_timestamp", "MMM dd HH:mm:ss", "MMM  d HH:mm:ss", "ISO8601"]
+    timezone => "UTC"
+    locale => "en"
+    target => "parsed_time"
+  }
+
+  if "_dateparsefailure" in [tags] {
+    mutate {
+      add_field => { "time_valid" => "false" }
+    }
+  }
+}

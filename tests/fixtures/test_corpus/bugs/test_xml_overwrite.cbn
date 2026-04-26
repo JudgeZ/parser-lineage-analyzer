@@ -1,0 +1,14 @@
+# BUG REPRODUCTION: Extractor Overwrite Lineage Eradication
+# Extractor plugins in SecOps default to appending when the target field already exists.
+# The analyzer's `_exec_xml`, `_exec_grok`, `_exec_csv`, etc. use `_assign()`, which
+# deletes all prior lineage and overwrites the field instead of using `_append()`.
+# EXPECTED FIX: The analyzer should use `_append()` for extractors unless explicitly instructed to overwrite.
+filter {
+  mutate { replace => { "user" => "Alice" } }
+  xml {
+    source => "message"
+    xpath => {
+      "//username" => "user"
+    }
+  }
+}

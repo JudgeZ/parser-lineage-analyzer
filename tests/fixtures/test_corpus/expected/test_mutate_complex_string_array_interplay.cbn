@@ -1,0 +1,33 @@
+# EXPECTED BEHAVIOR:
+# This test simulates a complex sequence of type mutations on a single field to ensure ordering 
+# and intermediate type state are accurately tracked.
+# The pipeline takes an array of strings, joins it into a single comma-separated string,
+# performs a regex substitution on that string, splits it back into an array,
+# and finally attempts to convert the elements of the new array into integers.
+# The parser must handle type coercion seamlessly and execute the mutates in the exact order specified.
+
+filter {
+  # Assume [raw_data] is initially an array like ["100", " 200 ", "300x"]
+  mutate {
+    join => { "raw_data" => "," }
+  }
+
+  mutate {
+    gsub => [
+      # Strip spaces and non-numeric characters except commas
+      "raw_data", "[a-zA-Z\s]", ""
+    ]
+  }
+
+  mutate {
+    split => { "raw_data" => "," }
+  }
+
+  mutate {
+    convert => {
+      "raw_data" => "integer"
+    }
+    # Should result in an array of integers: [100, 200, 300]
+    add_tag => ["mutation_chain_complete"]
+  }
+}

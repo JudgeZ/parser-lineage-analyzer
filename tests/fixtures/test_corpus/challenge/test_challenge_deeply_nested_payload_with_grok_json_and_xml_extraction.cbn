@@ -1,0 +1,47 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must trace the data lineage across multiple different format parsers (grok -> json -> xml).
+# 2. It must recognize that `grok` extracts a field `[raw_json]`, which is then fed into the `json` plugin.
+# 3. It must recognize that the `json` plugin creates `[parsed_json]`, which contains a field `[parsed_json][embedded_xml]`.
+# 4. It must then track that `[parsed_json][embedded_xml]` is fed into the `xml` plugin to extract XPath arrays.
+# 5. It should map the complete dependency chain from `message` to the final XPath extracted fields.
+
+filter {
+  grok {
+    match => {
+      "message" => "^%{TIMESTAMP_ISO8601:timestamp}\s+-\s+%{WORD:service}\s+-\s+PAYLOAD:\s+(?<raw_json>\{.*\})$"
+    }
+    on_error => "_grok_payload_failed"
+  }
+
+  if "_grok_payload_failed" not in [tags] {
+    json {
+      source => "raw_json"
+      target => "parsed_json"
+      skip_on_invalid_json => true
+    }
+  }
+
+  if [parsed_json][embedded_xml] {
+    xml {
+      source => "[parsed_json][embedded_xml]"
+      target => "parsed_xml"
+      xpath => {
+        "/Request/Header/UserAgent/text()" => "[request][user_agent]"
+        "/Request/Body/Items/Item/@id" => "[request][item_ids]"
+        "/Request/Body/Transaction/Amount/text()" => "[request][amount]"
+      }
+      force_array => false
+      remove_namespaces => true
+      on_error => "_xml_parse_failed"
+    }
+  }
+
+  if [request][amount] and [request][amount] != "" {
+    mutate {
+      convert => { "[request][amount]" => "float" }
+    }
+    if [request][amount] > 10000.0 {
+      mutate { add_tag => ["high_value_transaction"] }
+    }
+  }
+}

@@ -1,0 +1,31 @@
+# EXPECTED BEHAVIOR:
+# Tests the parser's ability to track field mutations caused implicitly by
+# named capture groups in conditional regex matches.
+# It should understand that if the first condition matches, `extracted_field`
+# is created and might overwrite an existing `extracted_field`.
+# If it fails, the `else if` might create a different `extracted_field`
+# or a different field entirely. It needs to handle the branching logic of
+# these implicit creations.
+
+filter {
+  mutate {
+    add_field => { "extracted_field" => "default_value" }
+  }
+
+  if [message] =~ /(?<extracted_field>error_code_\d+)/ {
+    mutate {
+      add_tag => ["matched_error"]
+      # The parser must know that `extracted_field` here is NOT 'default_value'
+      # but whatever the regex captured.
+    }
+  } else if [message] =~ /(?<extracted_field>warn_code_\d+)/(?<secondary_field>\w+)/ {
+    mutate {
+      add_tag => ["matched_warn"]
+    }
+  } else {
+    mutate {
+      # In this branch, `extracted_field` is still 'default_value'
+      add_tag => ["matched_none"]
+    }
+  }
+}

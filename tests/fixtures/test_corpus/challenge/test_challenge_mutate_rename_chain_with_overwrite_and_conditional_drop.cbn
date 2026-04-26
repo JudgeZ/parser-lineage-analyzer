@@ -1,0 +1,30 @@
+# TEST OBJECTIVE: Test complex mutate rename chains where multiple fields are renamed to the same target, potentially overwriting each other, followed by a conditional drop.
+# EXPECTED BEHAVIOR:
+# 1. The parser MUST track the sequential execution of rename operations.
+# 2. It MUST recognize that "secondary_id" overwrites "primary_id" when renamed to "event_id" if "secondary_id" exists.
+# 3. It MUST evaluate the conditional `if [event_id]` against the latest state.
+# 4. It MUST trace the drop action to the mutually exclusive branches.
+
+filter {
+  mutate {
+    rename => { "primary_id" => "event_id" }
+  }
+
+  mutate {
+    rename => { "secondary_id" => "event_id" }
+  }
+
+  if [event_id] == "ignore" {
+    drop {}
+  } else if ![event_id] {
+    mutate {
+      add_field => { "event_id" => "unknown" }
+    }
+  }
+
+  if [event_id] == "unknown" {
+    mutate {
+      add_tag => ["missing_id"]
+    }
+  }
+}

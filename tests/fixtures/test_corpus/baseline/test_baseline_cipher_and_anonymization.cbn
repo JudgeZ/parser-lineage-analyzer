@@ -1,0 +1,22 @@
+# BASELINE REPRODUCTION: Cipher and Anonymization
+# Validates encryption, hashing, and decryption of sensitive fields (PII/PHI).
+# EXPECTED BEHAVIOR:
+# - The `cipher` plugin should successfully AES-encrypt `user.ssn`.
+# - A separate ruby or anonymize block should hash `user.email` using SHA-256.
+filter {
+  cipher {
+    algorithm => "aes-256-cbc"
+    cipher_padding => 1
+    iv_random_length => 16
+    key => "12345678901234567890123456789012"
+    key_size => 32
+    mode => "encrypt"
+    source => "user.ssn"
+    target => "user.ssn_encrypted"
+  }
+  anonymize {
+    algorithm => "SHA256"
+    fields => [ "user.email", "source.ip" ]
+    key => "salt_key"
+  }
+}

@@ -1,0 +1,15 @@
+# EXPECTATION:
+# The `merge` operation in the `mutate` filter can combine fields of different types.
+# If `[destination]` is a string and `[source]` is an array, the result is an array.
+# The parser must infer that `[destination]` becomes an array type, and its lineage
+# includes both the original `[destination]` and the `[source]`.
+filter {
+  mutate {
+    add_field => { "destination" => "initial_string" }
+    add_field => { "source" => ["array_val1", "array_val2"] }
+  }
+  
+  mutate {
+    merge => { "destination" => "source" }
+  }
+}

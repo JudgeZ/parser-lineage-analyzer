@@ -1,0 +1,15 @@
+# BASELINE REPRODUCTION: KV Filter Whitespace and Wrappers
+# Validates that the `kv` filter is parsed accurately, especially when complex
+# `value_split`, `field_split`, `trim_value`, and `trim_key` options are present.
+# The tool MUST process the configuration without errors.
+# EXPECTED BEHAVIOR: The KV operation creates fields implicitly from `source_message`, acknowledging the trimming options.
+filter {
+  kv {
+    source => "source_message"
+    value_split => "="
+    field_split => "&?"
+    trim_key => "\s\"'"
+    trim_value => "\s\"'"
+    allow_duplicate_values => false
+  }
+}

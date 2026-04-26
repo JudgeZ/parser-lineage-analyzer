@@ -1,0 +1,20 @@
+/*
+ * EXPECTED BEHAVIOR:
+ * The parser must handle conditionals that compare fields where one side is a dynamic interpolation.
+ * Specifically, `[user][type]` vs `%{expected_type}`.
+ * Furthermore, nested conditionals use dynamic field references like `[config][%{env}]`.
+ * The data flow graph should link the referenced interpolation fields as dependencies for the conditional branches.
+ */
+filter {
+  if [user][type] == "%{expected_type}" {
+    mutate { add_tag => ["type_match"] }
+    
+    if [config][%{env}] == "production" {
+      mutate { add_tag => ["prod_config"] }
+    } else if [config][%{env}] =~ /^dev/ {
+      mutate { add_tag => ["dev_config"] }
+    } else {
+      mutate { add_tag => ["unknown_config"] }
+    }
+  }
+}

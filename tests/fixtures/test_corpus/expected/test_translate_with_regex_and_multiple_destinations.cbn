@@ -1,0 +1,26 @@
+# EXPECTED BEHAVIOR:
+# Translate filters often map to complex JSON objects (in the dictionary), and users
+# rely on subsequent processing to expand that JSON into multiple fields.
+# This tests the parser's handling of translate falling back to a structured object.
+filter {
+  translate {
+    field => "error_code"
+    destination => "error_details_json"
+    dictionary => {
+      "ERR1" => "{\"severity\":\"high\",\"action\":\"block\"}"
+      "ERR2" => "{\"severity\":\"low\",\"action\":\"allow\"}"
+    }
+    fallback => "{\"severity\":\"unknown\",\"action\":\"log\"}"
+  }
+
+  json {
+    source => "error_details_json"
+    target => "error_details"
+  }
+  
+  mutate {
+    add_field => {
+      "action_taken" => "%{[error_details][action]}"
+    }
+  }
+}

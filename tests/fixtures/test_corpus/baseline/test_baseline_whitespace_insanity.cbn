@@ -1,0 +1,15 @@
+# BASELINE REPRODUCTION: Erratic Whitespace and Formatting
+# Validates that the lexer and parser correctly handle varied and extreme whitespace,
+# including missing spaces between braces and keywords, multiple blank lines, and erratic indentation.
+# The tool MUST NOT crash due to token misalignment and should parse the AST correctly.
+# EXPECTED BEHAVIOR: Parsed identically to a cleanly formatted version.
+filter{
+if[field]=="value"{mutate{add_field=>{"foo"=>"bar"}}}
+else{
+    
+    
+    grok{match=>{"message"=>"%{DATA:data}"}
+    
+    }
+}
+}

@@ -1,0 +1,31 @@
+filter {
+  // Case 1: Multi-Event Output Anchors
+  // Logstash allows emitting multiple events at once via an array.
+  // `analyzer.py` calls `str()` on the Python array object, converting
+  // the anchor into `"['event1', 'event2']"`. This completely prevents
+  // the analyzer from properly recognizing the anchor during queries.
+  mutate {
+    merge => { "@output" => [ "event1", "event2" ] }
+  }
+
+  // Case 2: Array/List Merging
+  // When merging an array of tokens into a single field, calling `str()`
+  // on the array turns it into a Python string literal representation.
+  // The analyzer fails to trace lineage back to `ip1` and `ip2`.
+  mutate {
+    merge => { "event1.idm.read_only_udm.target.ip" => [ "%{ip1}", "%{ip2}" ] }
+  }
+
+  // Case 3: Deep Object Replacements (JSON Maps)
+  // When passing an entire object mapping to `replace`, the analyzer
+  // fails to traverse the map structure. It instead calls `str()` on
+  // the config array of tuples, assigning a literal python array string
+  // to the root `my_udm_object` rather than flattening the keys.
+  mutate {
+    replace => {
+      "event2.idm.read_only_udm.my_udm_object" => {
+        "child_key" => "nested_value"
+      }
+    }
+  }
+}

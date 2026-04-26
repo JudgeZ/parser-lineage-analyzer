@@ -1,0 +1,31 @@
+# CHALLENGE: JSON Parsing with Failure Handling and Tagging
+# The `json` filter in complex configs often has explicit failure handling using
+# `skip_on_invalid_json` and `tag_on_failure`. This allows the pipeline to continue
+# processing malformed data differently.
+# EXPECTED BEHAVIOR:
+# The parser must track the `tag_on_failure` state mutation (adding the specified tag)
+# and understand that fields from the `target` namespace will NOT exist if this tag is present.
+# It should construct an AST that correctly maps the conditional dependence of
+# subsequent logic on the success or failure of the JSON extraction.
+
+filter {
+  json {
+    source => "raw_payload"
+    target => "payload_data"
+    skip_on_invalid_json => true
+    tag_on_failure => [ "malformed_payload_json" ]
+  }
+
+  if "malformed_payload_json" in [tags] {
+    mutate {
+      add_field => { "processing_status" => "error" }
+      add_field => { "error_reason" => "invalid_json" }
+    }
+    drop {}
+  } else if [payload_data][action] {
+    mutate {
+      add_field => { "processing_status" => "success" }
+      rename => { "[payload_data][action]" => "user_action" }
+    }
+  }
+}

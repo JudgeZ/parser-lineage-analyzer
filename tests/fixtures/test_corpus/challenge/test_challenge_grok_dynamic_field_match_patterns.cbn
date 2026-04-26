@@ -1,0 +1,14 @@
+# EXPECTED BEHAVIOR:
+# This test verifies the parser's ability to handle grok `match` blocks where the pattern string
+# itself contains string interpolation referencing other fields in the event.
+# The parser must correctly recognize that the pattern is dynamic and cannot be statically analyzed
+# purely as a literal string. It must correctly trace the dependency of `grok` on the `[dynamic_pattern_key]` field.
+
+filter {
+  grok {
+    match => {
+      "message" => "^%{TIMESTAMP_ISO8601:timestamp} \[%{LOGLEVEL:level}\] %{[%{dynamic_pattern_key}]}: %{GREEDYDATA:rest}"
+    }
+    overwrite => [ "message" ]
+  }
+}

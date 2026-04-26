@@ -1,0 +1,13 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must handle complex Grok regexes that include logical ORs `|` and nested non-capturing groups `(?:...)`.
+# 2. The inline custom pattern `(?<custom_field>...)` must be correctly extracted as a target field.
+# 3. Escaped pipes `\|` within the regex must not be confused with logical ORs.
+# 4. The syntax `(?<field>a|b|c)` should correctly map to `field`.
+
+filter {
+  grok {
+    match => {
+      "message" => "^(?:%{SYSLOGTIMESTAMP:timestamp}|%{TIMESTAMP_ISO8601:timestamp}) (?:INFO|WARN|ERROR) (?<process_name>sshd|crond|sudo(?:_su)?) - %{GREEDYDATA:msg}(?:\|%{WORD:extra_tag})?$"
+    }
+  }
+}

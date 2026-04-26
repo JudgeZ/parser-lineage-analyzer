@@ -1,0 +1,17 @@
+# BASELINE REPRODUCTION: Embedded Comments Everywhere
+# Validates that comments placed at unusual syntactic boundaries 
+# (e.g., inside plugin parameter lists, inline after braces) 
+# do not disrupt tokenization or block the parsing of subsequent valid code.
+# The tool MUST correctly identify and skip comments while capturing the surrounding syntax.
+# EXPECTED BEHAVIOR: AST correctly formed, ignoring comments cleanly.
+filter {
+  if [field] == "value" { # comment after brace
+    mutate {
+      # comment inside plugin
+      add_field => {
+        "new_field" => "value" # inline comment
+      }
+      # another comment
+    }
+  }
+}

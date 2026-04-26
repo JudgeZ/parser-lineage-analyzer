@@ -1,0 +1,44 @@
+# TEST BEHAVIOR:
+# Simulates the "spaghetti" data flow in 700+ parser environments where Parser A creates
+# an intermediate field, Parser B transforms it, and Parser C routes based on it.
+# The tool must accurately track the lineage of fields. If the ordering of these blocks
+# changes (e.g. during a refactor), the pipeline breaks. The analyzer must model
+# this implicit dependency chain.
+filter {
+  # Block 1 (Parser A logic)
+  if [log_source] == "firewall" {
+    grok {
+      match => { "message" => "%{IP:src_ip} -> %{IP:dst_ip} port=%{NUMBER:dst_port}" }
+    }
+    # Creates an intermediate field
+    mutate {
+      add_field => { "[tmp][flow_direction]" => "outbound" }
+    }
+  }
+
+  # Block 2 (Parser B logic - written by a different team)
+  # It assumes [tmp][flow_direction] exists if the log is a firewall log.
+  if [tmp][flow_direction] == "outbound" {
+    geoip {
+      source => "dst_ip"
+      target => "geo_info"
+    }
+    # Mutates the intermediate field
+    mutate {
+      uppercase => [ "[tmp][flow_direction]" ]
+    }
+  }
+
+  # Block 3 (Parser C logic - routing)
+  # Depends on the exact state mutated by Block 2
+  if [tmp][flow_direction] == "OUTBOUND" and [geo_info][country_code2] == "RU" {
+    mutate {
+      add_tag => [ "suspicious_outbound" ]
+    }
+  }
+
+  # Cleanup block
+  mutate {
+    remove_field => [ "tmp" ]
+  }
+}

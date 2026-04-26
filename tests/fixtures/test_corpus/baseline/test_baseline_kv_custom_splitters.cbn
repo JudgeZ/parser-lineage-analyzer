@@ -1,0 +1,21 @@
+# TEST EXPECTATION:
+# The parser should recognize the 'kv' filter and how it generates dynamic fields.
+# With custom 'value_split' and 'field_split', the parser should understand that
+# arbitrary keys from the source field ('url_args') will be added to the target
+# object ('parsed_args').
+# The subsequent check for '[parsed_args][username]' should be valid and linked to the kv output.
+
+filter {
+  kv {
+    source => "url_args"
+    target => "parsed_args"
+    field_split => "&?"
+    value_split => "="
+  }
+
+  if [parsed_args][username] {
+    mutate {
+      add_field => { "user" => "%{[parsed_args][username]}" }
+    }
+  }
+}

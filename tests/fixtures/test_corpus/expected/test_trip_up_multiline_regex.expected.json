@@ -1,0 +1,15 @@
+{
+  "must_not_have_warning_codes": [
+    "malformed_config",
+    "parse_recovery"
+  ],
+  "must_have_warning_codes": [
+    "dissect_indirect",
+    "dynamic_destination",
+    "runtime_condition"
+  ],
+  "must_resolve_fields": [
+    "target.ip",
+    "target.file.full_path"
+  ]
+}

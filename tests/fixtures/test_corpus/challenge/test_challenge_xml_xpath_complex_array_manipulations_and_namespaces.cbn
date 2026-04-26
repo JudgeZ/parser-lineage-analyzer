@@ -1,0 +1,25 @@
+# EXPECTED BEHAVIOR:
+# Evaluates how the parser handles complex XML XPath extractions involving
+# namespaces, resulting in arrays of strings. It must then track how these
+# arrays are manipulated by subsequent plugins (e.g., joined by a mutate).
+
+filter {
+  xml {
+    source => "xml_payload"
+    store_xml => false
+    namespaces => {
+      "soapenv" => "http://schemas.xmlsoap.org/soap/envelope/"
+      "ns1" => "http://example.com/ns1"
+    }
+    xpath => {
+      "/soapenv:Envelope/soapenv:Body/ns1:Request/ns1:Items/ns1:Item/text()" => "extracted_items"
+      "count(/soapenv:Envelope/soapenv:Body/ns1:Request/ns1:Items/ns1:Item)" => "item_count"
+    }
+  }
+
+  mutate {
+    # extracted_items is an array from the xpath
+    join => { "extracted_items" => "," }
+    convert => { "item_count" => "integer" }
+  }
+}

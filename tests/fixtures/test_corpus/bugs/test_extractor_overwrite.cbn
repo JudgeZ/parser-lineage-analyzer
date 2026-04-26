@@ -1,0 +1,14 @@
+filter {
+  # Initialize the token with a constant value
+  mutate { replace => { "user" => "Alice" } }
+  
+  # Bug: The analyzer uses `_assign()` internally for XML, which overwrites "Alice".
+  # In actual Logstash/SecOps, it appends to the field, making `user` an array: ["Alice", "Bob"]
+  # EXPECTED FIX: The analyzer should use `_append()` for extractors unless explicitly instructed to overwrite.
+  xml {
+    source => "message"
+    xpath => {
+      "//username" => "user"
+    }
+  }
+}

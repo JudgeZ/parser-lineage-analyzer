@@ -1,0 +1,9 @@
+# BUG REPRODUCTION: Array Index Normalization Failure
+# Logstash arrays can be accessed using `field[0][name]`. The analyzer attempts
+# to normalize this to `field.0.name`, but the regex `^\[([^\]]+)\]$` fails because
+# `field` is outside the brackets. The string remains unnormalized, causing a
+# total disconnect in static queries for `field.0.name`.
+# EXPECTED FIX: `user[0][name]` should be normalized to `user.0.name`.
+filter {
+  mutate { replace => { "user[0][name]" => "Alice" } }
+}

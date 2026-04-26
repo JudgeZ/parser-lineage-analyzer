@@ -1,0 +1,28 @@
+# EXPECTED BEHAVIOR:
+# Tests the handling of conflicts when a JSON filter attempts to extract data
+# into a target that already contains conflicting data structures.
+# In 700+ line parsers, generic JSON extraction often clobbers existing fields.
+# - The target is 'parsed_data' which is initially set as a simple string.
+# - The JSON filter parses a JSON string into 'parsed_data', which would turn it into an object.
+# The analyzer should note the potential data coercion or overwrite of the scalar value.
+
+filter {
+  mutate {
+    add_field => { "parsed_data" => "uninitialized" }
+    add_field => { "raw_json" => '{"user": "admin", "id": 1234}' }
+  }
+
+  if [raw_json] {
+    json {
+      source => "raw_json"
+      target => "parsed_data"
+      skip_on_invalid_json => true
+    }
+  }
+
+  if [parsed_data][user] == "admin" {
+    mutate {
+      add_tag => [ "admin_action" ]
+    }
+  }
+}

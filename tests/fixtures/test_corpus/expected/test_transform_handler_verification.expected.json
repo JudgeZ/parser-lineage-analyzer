@@ -1,0 +1,6 @@
+{
+  "must_resolve_fields": [
+    "math_target",
+    "encrypted"
+  ]
+}

@@ -1,0 +1,16 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must understand the `in` operator when checking for inclusion in a literal array or a field that contains an array.
+# 2. Lineage tracking must identify `action` as a dependency for the conditional branch.
+# 3. The `not in` operator should be parsed as the negation of `in`.
+
+filter {
+  if [action] in ["drop", "deny", "block"] {
+    mutate {
+      add_tag => ["blocked_action"]
+    }
+  } else if "admin" not in [user_roles] {
+    mutate {
+      add_tag => ["unprivileged"]
+    }
+  }
+}

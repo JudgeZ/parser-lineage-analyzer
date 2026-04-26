@@ -1,0 +1,10 @@
+# BUG REPRODUCTION: Static Loop Variable Shadowing (Alternative Syntax)
+# Validates that shadowing deletion still occurs when using alternative loop syntaxes.
+# The `_exec_static_string_loop` optimization mutates the global state destructively,
+# losing track of any token that shares a name with the iteration variable.
+filter {
+  mutate { replace => { "user" => "Admin" } }
+  for user in [ "User" ] {
+    mutate { replace => { "target" => "%{user}" } }
+  }
+}

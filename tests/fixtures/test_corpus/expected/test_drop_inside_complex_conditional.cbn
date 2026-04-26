@@ -1,0 +1,16 @@
+# EXPECTED BEHAVIOR:
+# Tests the parser's control flow analysis when a drop event occurs deep
+# within a nested conditional hierarchy. The parser must recognize that any
+# operations following the drop (in the same execution path) are unreachable,
+# and overall event flow might terminate early.
+
+filter {
+  if [action] == "deny" {
+    if [src_ip] in ["10.0.0.1", "10.0.0.2"] {
+      mutate { add_tag => ["internal_deny"] }
+    } else {
+      drop { }
+      mutate { add_tag => ["unreachable"] } # Should be flagged as unreachable
+    }
+  }
+}

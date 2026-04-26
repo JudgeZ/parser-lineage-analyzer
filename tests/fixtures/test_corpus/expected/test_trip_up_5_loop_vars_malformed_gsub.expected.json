@@ -1,0 +1,10 @@
+{
+  "must_not_have_warning_codes": [
+    "malformed_config",
+    "parse_recovery"
+  ],
+  "must_have_warning_codes": [
+    "loop_variables",
+    "malformed_gsub"
+  ]
+}

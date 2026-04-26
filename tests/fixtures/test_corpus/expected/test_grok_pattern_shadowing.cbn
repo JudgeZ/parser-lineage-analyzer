@@ -1,0 +1,21 @@
+# EXPECTED BEHAVIOR:
+# Evaluates how the analyzer handles variable shadowing or overwriting via multiple grok patterns.
+# If a field like 'client_ip' is extracted in multiple places unconditionally, the later
+# extraction overwrites the former. The analyzer should potentially flag this as an inefficient
+# or redundant operation, typical of monolithic, unoptimized parsing scripts.
+
+filter {
+  # First extraction
+  grok {
+    match => { "message" => "ClientIP: %{IP:client_ip}" }
+    tag_on_failure => []
+  }
+
+  # Second extraction directly overwriting the first one without a condition
+  grok {
+    match => { "other_field" => "Source: %{IP:client_ip}" }
+    tag_on_failure => []
+  }
+  
+  # Analyzer should recognize that the first extraction's value is lost if the second succeeds.
+}

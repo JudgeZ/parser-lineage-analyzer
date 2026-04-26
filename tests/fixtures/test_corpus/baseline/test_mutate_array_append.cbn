@@ -1,0 +1,18 @@
+# BASELINE REPRODUCTION: Array Appending and Mutation
+# Validates that array-specific mutations like `merge` and appending via `add_field`
+# do not break the lineage tracer.
+# The tool MUST understand that `tags` array aggregates elements from `new_tag` and `other_tags`.
+# EXPECTED BEHAVIOR: `tags` lineage contains contributions from `new_tag` and `other_tags`.
+filter {
+  mutate {
+    add_field => { "tags" => "initial_tag" }
+  }
+  mutate {
+    merge => { "tags" => "other_tags" }
+  }
+  if [severity] == "high" {
+    mutate {
+      add_field => { "tags" => "high_severity_tag" }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+# test_date_timezone_lookup_failure.cbn
+# EXPECTED BEHAVIOR:
+# Tests a date filter where the timezone is interpolated from a field that might be missing or invalid.
+# The parser should evaluate if there is a fallback mechanism, and ensure the date parsing doesn't crash on invalid timezone strings.
+filter {
+  date {
+    match => ["timestamp", "ISO8601", "yyyy-MM-dd HH:mm:ss"]
+    timezone => "%{extracted_timezone}"
+    target => "@timestamp"
+  }
+}

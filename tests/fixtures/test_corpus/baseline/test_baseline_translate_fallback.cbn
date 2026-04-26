@@ -1,0 +1,24 @@
+# TEST EXPECTATION:
+# The parser should track the 'translate' filter on 'status_code' to 'status_msg'.
+# If the dictionary does not match, the 'fallback' value "UNKNOWN" is assigned.
+# The conditional 'if [status_msg] == "UNKNOWN"' should be recognized as a reachable state,
+# proving the parser understands the fallback mechanism.
+
+filter {
+  translate {
+    field => "status_code"
+    destination => "status_msg"
+    dictionary => {
+      "200" => "OK"
+      "404" => "Not Found"
+      "500" => "Server Error"
+    }
+    fallback => "UNKNOWN"
+  }
+
+  if [status_msg] == "UNKNOWN" {
+    mutate {
+      add_tag => [ "unmapped_status" ]
+    }
+  }
+}

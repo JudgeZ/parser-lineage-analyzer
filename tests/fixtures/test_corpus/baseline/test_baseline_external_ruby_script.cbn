@@ -1,0 +1,16 @@
+# BASELINE REPRODUCTION: External Ruby Script Loading
+# Validates the `ruby` plugin's ability to load and execute external `.rb` files
+# via the `path` directive, passing runtime arguments via `script_params`.
+# EXPECTED BEHAVIOR:
+# - The parser must locate the file and execute its `filter` method.
+# - If the file is missing, it must not crash the pipeline, but instead raise
+#   a configuration error or drop the block safely at runtime.
+filter {
+  ruby {
+    path => "/opt/parsers/scripts/custom_enrichment.rb"
+    script_params => {
+      "dictionary_path" => "/etc/dictionaries/threats.csv"
+      "strict_mode" => true
+    }
+  }
+}

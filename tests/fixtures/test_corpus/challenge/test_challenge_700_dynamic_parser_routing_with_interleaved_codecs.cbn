@@ -1,0 +1,55 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must trace dynamic field evaluation in the `if` condition: `if [event_type] == ...`.
+# 2. It must handle the nested JSON inside CSV inside KV structure. A payload might be a KV string where one value is a CSV, and one column of the CSV is a JSON string.
+# 3. The parser must track the creation and destruction of intermediate fields (like `_temp_csv`, `_temp_json`) and correctly map the final state of the event.
+# 4. In a 700+ parser corpus, dynamically routing parsers based on a field derived during runtime is a major source of dependency graphs that the parser must resolve to prevent infinite loops or undefined behavior.
+# 5. It must identify the risk of type collisions if the dynamic parsing extracts keys that already exist at the root level.
+
+filter {
+  kv {
+    source => "message"
+    field_split => "\|"
+    value_split => "="
+    target => "kv_data"
+  }
+
+  if [kv_data][payload_format] == "nested_csv_json" {
+    csv {
+      source => "[kv_data][raw_payload]"
+      separator => ","
+      columns => ["timestamp", "user_id", "json_blob", "status"]
+      target => "csv_data"
+    }
+
+    if [csv_data][json_blob] {
+      json {
+        source => "[csv_data][json_blob]"
+        target => "parsed_json"
+        skip_on_invalid_json => true
+      }
+    }
+
+    # Dynamic routing based on the deeply nested JSON value
+    if [parsed_json][action_type] == "login" {
+      mutate {
+        rename => { "[parsed_json][user]" => "user_name" }
+        add_tag => ["login_event"]
+      }
+    } else if [parsed_json][action_type] == "logout" {
+      mutate {
+        rename => { "[parsed_json][session_duration]" => "duration" }
+        add_tag => ["logout_event"]
+      }
+    }
+
+    # Cleanup intermediate structures to prevent massive index mapping explosion
+    mutate {
+      remove_field => ["kv_data", "csv_data", "parsed_json"]
+    }
+  } else if [kv_data][payload_format] == "xml_blob" {
+    # Parallel processing path 
+    mutate {
+      add_tag => ["unsupported_xml_format"]
+    }
+  }
+}

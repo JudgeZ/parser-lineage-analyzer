@@ -1,0 +1,12 @@
+# test_mutate_rename_tree.cbn
+# EXPECTED BEHAVIOR:
+# Tests behavior when renaming a parent object field to one of its children or vice versa, potentially causing circular references or dropping the rest of the tree.
+# The parser needs to handle tree manipulation carefully without losing sibling data or entering an infinite loop.
+filter {
+  mutate {
+    rename => {
+      "[parent][child]" => "[parent]"
+      "[other_parent]" => "[other_parent][child]"
+    }
+  }
+}

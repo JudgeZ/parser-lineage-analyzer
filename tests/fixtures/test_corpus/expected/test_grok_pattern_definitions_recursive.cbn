@@ -1,0 +1,16 @@
+# EXPECTED BEHAVIOR:
+# 1. Parser must be able to handle `pattern_definitions` inside a grok filter.
+# 2. The definitions might reference each other within the same `pattern_definitions` block.
+# 3. Lexer/Parser must not fail on complex regex literals within the definitions.
+# 4. Lineage must correctly map the usage of these custom patterns back to the source field.
+
+filter {
+  grok {
+    match => { "message" => "%{CUSTOM_APP_LOG}" }
+    pattern_definitions => {
+      "CUSTOM_DATE" => "%{YEAR}-%{MONTHNUM}-%{MONTHDAY}T%{TIME}Z"
+      "CUSTOM_APP_ID" => "[A-Z]{3}-[0-9]{4,8}"
+      "CUSTOM_APP_LOG" => "%{CUSTOM_DATE:timestamp}\s+\[%{CUSTOM_APP_ID:app_id}\]\s+%{GREEDYDATA:app_message}"
+    }
+  }
+}

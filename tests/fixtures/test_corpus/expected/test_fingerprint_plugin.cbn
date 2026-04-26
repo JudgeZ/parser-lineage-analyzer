@@ -1,0 +1,19 @@
+# EXPECTATION:
+# The `fingerprint` filter is used to create a consistent hash based on one or more fields.
+# If `source` is an array, the fingerprint combines them.
+# The parser must establish a lineage where the `target` field is a functional derivative
+# of all fields specified in the `source` array.
+filter {
+  fingerprint {
+    source => ["client_ip", "user_agent", "session_id"]
+    target => "event_fingerprint"
+    method => "SHA1"
+    key => "secret_salt"
+  }
+
+  if [event_fingerprint] {
+    mutate {
+      add_tag => ["fingerprinted"]
+    }
+  }
+}

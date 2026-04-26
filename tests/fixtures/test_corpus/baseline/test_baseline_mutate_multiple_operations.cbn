@@ -1,0 +1,14 @@
+# BASELINE: Mutate Plugin Multiple Operations Sequence
+# Validates that a single `mutate` block containing multiple different operations
+# (like gsub, split, add_field, remove_field) is parsed and tracked correctly.
+# The tool MUST parse all directives and establish the correct dependencies and mutations.
+# The `message` field is modified (gsub, split), `new_field` is added, and `temp_field` is removed.
+filter {
+  mutate {
+    gsub => [ "message", "\s+", "_" ]
+    split => { "message" => "_" }
+    add_field => { "new_field" => "processed" }
+    remove_field => [ "temp_field", "other_temp" ]
+    lowercase => [ "user_name", "email" ]
+  }
+}

@@ -1,0 +1,14 @@
+// EXPECTED BEHAVIOR:
+// Gsub requires an array of 3 elements: [field, regex, replacement].
+// Here `gsub` modifies multiple fields sequentially.
+// The parser must correctly map the modifications to `[url]` and `[user_agent]`.
+// It should not misinterpret the array arguments as field names.
+
+filter {
+  mutate {
+    gsub => [
+      "url", "\?.*$", "",
+      "user_agent", "MSIE \d+", "Internet Explorer"
+    ]
+  }
+}

@@ -1,0 +1,25 @@
+# BUG: T3.1 — for-loops inside input/output blocks were ignored, so
+# anchors for sinks/sources enumerated via `for x in [...] { ... }` never
+# appeared in `state.io_anchors`. Each iteration should now produce its
+# own IOAnchor with the per-iteration condition string attached.
+
+input {
+  for source in ["primary_kafka", "secondary_kafka"] {
+    kafka {
+      topics => ["events_%{source}"]
+    }
+  }
+}
+
+filter {
+  mutate { replace => { "noop" => "noop" } }
+}
+
+output {
+  for sink in ["es_hot", "es_warm", "es_cold"] {
+    elasticsearch {
+      hosts  => ["%{sink}.cluster.example.com"]
+      index  => "events-%{sink}"
+    }
+  }
+}

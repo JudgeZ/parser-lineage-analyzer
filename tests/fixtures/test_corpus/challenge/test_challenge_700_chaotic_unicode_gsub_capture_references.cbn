@@ -1,0 +1,13 @@
+# EXPECTED BEHAVIOR:
+# Tests handling of complex unicode characters, backreferences, and chaotic 
+# regex in gsub. The parser must not fail on unicode strings and should
+# correctly interpret the regex capture groups (\1, \2) in the replacement.
+filter {
+  mutate {
+    gsub => [
+      "message", "([A-Za-z]+)\s*(🔥|🚀)\s*([0-9]+)", "\1_parsed_\3_status_\2",
+      "path", "\\x[0-9A-Fa-f]{2}", "_esc_",
+      "user_agent", "(Mozilla)/([0-9.]+).*(Chrome)/([0-9.]+)", "\1 \2 / \3 \4"
+    ]
+  }
+}

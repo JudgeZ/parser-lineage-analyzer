@@ -1,0 +1,23 @@
+# EXPECTED BEHAVIOR:
+# The parser must preserve the exact sequential ordering of `gsub` operations within
+# a single mutate block. If multiple gsubs target the same field, the analyzer must
+# represent this as a sequence of mutations where each output depends on the previous
+# substitution. It must also correctly parse complex regex replacements containing quotes and escapes.
+
+filter {
+  mutate {
+    gsub => [
+      # First strip leading/trailing whitespace
+      "raw_message", "^\s+|\s+$", "",
+      # Then replace escaped quotes with single quotes
+      "raw_message", "\\\"", "'",
+      # Then remove multiple spaces
+      "raw_message", "\s+", " ",
+      # Then extract a specific token format and wrap it
+      "raw_message", "(?i)token=([a-f0-9]+)", "TOKEN{\1}",
+      # Multiple operations on different fields in the same array
+      "url", "https?://", "",
+      "url", "/+$", ""
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+# EXPECTED BEHAVIOR:
+# The parser must handle merging of a string field into an existing array field.
+# The lineage of `tags` should show it receives input from `additional_tag` and `status_tag`.
+# This tests the parser's ability to model an array structure mutating by accumulation over time.
+
+filter {
+  mutate {
+    add_field => { "tags" => ["initial_tag"] }
+  }
+  
+  if [status] == "error" {
+    mutate {
+      merge => { "tags" => "status_tag" }
+    }
+  }
+  
+  mutate {
+    merge => { "tags" => "additional_tag" }
+  }
+}

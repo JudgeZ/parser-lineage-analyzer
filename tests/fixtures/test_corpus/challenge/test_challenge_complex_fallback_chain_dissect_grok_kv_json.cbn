@@ -1,0 +1,37 @@
+# EXPECTED BEHAVIOR:
+# This test simulates a highly complex, multi-stage fallback chain common in massive parsers.
+# It attempts `dissect`, and if that fails, tries `grok`. If `grok` works, it runs `kv` on the remainder.
+# If `kv` parses a specific key that contains JSON, it parses that JSON.
+# The parser must correctly build the conditional dependency graph based on the `_dissectfailure`
+# and `_grokparsefailure` tags, tracking how the event structure evolves through each successful stage.
+
+filter {
+  dissect {
+    mapping => {
+      "message" => "%{ts} %{+ts} %{log_source} %{rest}"
+    }
+  }
+
+  if "_dissectfailure" in [tags] {
+    mutate { remove_tag => ["_dissectfailure"] }
+    grok {
+      match => { "message" => "%{SYSLOGTIMESTAMP:ts} %{HOSTNAME:log_source} %{GREEDYDATA:rest}" }
+    }
+  }
+
+  if "_grokparsefailure" not in [tags] and [rest] {
+    kv {
+      source => "rest"
+      target => "kv_data"
+      field_split => " "
+      value_split => "="
+    }
+
+    if [kv_data][json_payload] {
+      json {
+        source => "[kv_data][json_payload]"
+        target => "parsed_json"
+      }
+    }
+  }
+}

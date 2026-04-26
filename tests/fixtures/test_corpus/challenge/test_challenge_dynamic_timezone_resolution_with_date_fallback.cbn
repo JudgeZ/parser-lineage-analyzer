@@ -1,0 +1,43 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must trace the dynamic resolution of the timezone.
+# 2. The timezone is derived conditionally based on `device_location` or a default fallback.
+# 3. A translate block resolves the `device_location` to an actual IANA timezone string.
+# 4. A conditional checks if the `resolved_tz` exists; if not, it sets it to `UTC`.
+# 5. The `date` filter then uses the dynamically resolved `%{[resolved_tz]}` variable in the `timezone` parameter.
+# 6. Multiple date match formats are provided as fallbacks.
+# 7. The parser must identify the dependency between the translation, the mutation fallback, and the date parsing.
+
+filter {
+  grok {
+    match => { "message" => "%{TIMESTAMP_ISO8601:timestamp_raw} %{WORD:device_location} %{GREEDYDATA:msg}" }
+  }
+
+  translate {
+    field => "device_location"
+    destination => "resolved_tz"
+    dictionary => {
+      "NYC" => "America/New_York"
+      "LON" => "Europe/London"
+      "TOK" => "Asia/Tokyo"
+      "SYD" => "Australia/Sydney"
+    }
+    fallback => "UTC"
+  }
+
+  # In case translate fails to set it (e.g. if plugin behavior differs), explicit fallback
+  if ![resolved_tz] {
+    mutate {
+      add_field => { "resolved_tz" => "UTC" }
+    }
+  }
+
+  date {
+    match => [ "timestamp_raw", "ISO8601", "yyyy-MM-dd HH:mm:ss", "MMM dd HH:mm:ss" ]
+    timezone => "%{[resolved_tz]}"
+    target => "@timestamp"
+  }
+
+  mutate {
+    remove_field => ["resolved_tz", "timestamp_raw"]
+  }
+}

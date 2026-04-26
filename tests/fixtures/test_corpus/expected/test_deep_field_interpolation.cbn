@@ -1,0 +1,40 @@
+# EXPECTED BEHAVIOR:
+# Tests deep interpolation and formatting strings.
+# Combines multiple fields, static strings, and potentially undefined fields into a new string.
+# In large configurations, interpolations are heavily used to build unique IDs or format output.
+# The parser needs to correctly parse the literal `%{[field][subfield]}` syntax, handle deep nesting,
+# and potentially flag risks associated with interpolating undefined fields.
+
+filter {
+  mutate {
+    add_field => {
+      "nested_object" => {
+        "level1" => {
+          "level2" => {
+            "value" => "deep_secret"
+          }
+        }
+      }
+      "static_prefix" => "SYS_"
+    }
+  }
+
+  mutate {
+    add_field => {
+      # Complex interpolation combining static strings, root fields, and deeply nested fields
+      "generated_id" => "%{static_prefix}%{nested_object[level1][level2][value]}_%{@timestamp}"
+      
+      # Interpolation with a potentially missing field
+      "summary" => "Event from %{source_ip} to %{destination_ip}: %{[nested_object][level1][level2][value]}"
+      
+      # Array index interpolation (if supported by parser)
+      "first_tag" => "%{tags[0]}"
+    }
+  }
+
+  if [generated_id] =~ /^SYS_deep_secret/ {
+    mutate {
+      add_tag => [ "properly_interpolated" ]
+    }
+  }
+}

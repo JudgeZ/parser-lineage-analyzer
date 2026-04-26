@@ -1,0 +1,13 @@
+# BASELINE REPRODUCTION: Environment Variable Interpolation
+# Validates that interpolation syntaxes referencing environment variables or defaults
+# like `${ENV_VAR:default_value}` are handled as valid string tokens without breaking lexer.
+# The tool MUST accept `${...}` as a valid string component.
+# EXPECTED BEHAVIOR: `env_injected` is created, and the fallback default value is identified as a literal string source.
+filter {
+  mutate {
+    add_field => {
+      "env_injected" => "The value is ${MY_ENV_VAR:default_fallback_value}"
+      "pure_env" => "${ANOTHER_ENV}"
+    }
+  }
+}

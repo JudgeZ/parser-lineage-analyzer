@@ -1,0 +1,25 @@
+# CHALLENGE REPRODUCTION: Unsupported Custom Plugin Fallback
+# Validates the execution engine's resilience when encountering a proprietary or
+# missing custom plugin (e.g., an internal company plugin that isn't installed).
+# EXPECTED BEHAVIOR:
+# - The parser MUST NOT crash.
+# - It should skip the unsupported block and ideally tag the event or fall back
+#   to standard parsing logic in the `else` block.
+filter {
+  acme_threat_lookup {
+    source => "destination.ip"
+    target => "acme_intel"
+    timeout => 5
+  }
+  
+  if !([acme_intel]) {
+    mutate {
+      add_tag => [ "fallback_enrichment_used" ]
+    }
+    translate {
+      field => "destination.ip"
+      destination => "acme_intel"
+      dictionary => { "1.1.1.1" => "cloudflare" }
+    }
+  }
+}

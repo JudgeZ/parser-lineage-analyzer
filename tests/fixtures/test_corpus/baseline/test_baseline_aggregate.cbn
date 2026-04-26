@@ -1,0 +1,18 @@
+# Test: Aggregate Filter
+# Description: Tests the aggregate filter used to combine multiple events into one.
+# The parser must recognize `task_id`, `code` block, and `map_action`.
+# Future requirement: Track state across multiple events (map context) via the `task_id`.
+
+filter {
+  aggregate {
+    task_id => "%{session_id}"
+    code => "
+      map['clicks'] ||= 0
+      map['clicks'] += 1
+    "
+    push_map_as_event_on_timeout => true
+    timeout_task_id_field => "session_id"
+    timeout => 60
+    timeout_tags => ['_aggregatetimeout']
+  }
+}

@@ -1,0 +1,47 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must handle `grok` being applied to an array of strings (e.g., if `[message]` is an array).
+# 2. It must recognize the behavior of `break_on_match => true` vs `break_on_match => false` when multiple patterns are provided and the input is an array.
+# 3. It must correctly trace the types of the extracted fields. If a pattern matches multiple times across the array elements, the extracted fields become arrays themselves.
+# 4. In a 700+ parser corpus, applying grok to arrays is highly inefficient and prone to catastrophic backtracking if the array size is unbounded. The parser should flag this as a critical performance issue.
+# 5. It must trace the downstream conditionals that assume the extracted field is a scalar string but it might actually be an array due to multiple matches.
+
+filter {
+  # Assume [event_logs] is an array of strings created by a previous split or json parse
+  grok {
+    match => {
+      "event_logs" => [
+        "(?m)^ERROR: %{GREEDYDATA:error_msg}",
+        "(?m)^WARN: %{GREEDYDATA:warn_msg}",
+        "(?m)^INFO: %{GREEDYDATA:info_msg}"
+      ]
+    }
+    break_on_match => false
+    tag_on_failure => ["_grok_array_failure"]
+    timeout_millis => 2000
+  }
+
+  # Because break_on_match is false and the input is an array, error_msg could be an array of strings.
+  # The downstream logic assumes it's a string, which can cause type mismatch errors.
+  if [error_msg] {
+    if [error_msg] =~ /database/ {
+      mutate {
+        add_tag => ["db_error"]
+      }
+    }
+
+    # If error_msg is an array, this string concatenation might result in a weird JSON representation of the array
+    # or fail entirely depending on the Logstash version.
+    mutate {
+      add_field => { "escalation_summary" => "Critical error encountered: %{error_msg}" }
+    }
+  }
+
+  if [warn_msg] {
+    # Using 'in' is safer for arrays, but if it's a string, it checks for substring.
+    if "memory" in [warn_msg] {
+      mutate {
+        add_tag => ["memory_warning"]
+      }
+    }
+  }
+}

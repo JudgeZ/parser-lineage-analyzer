@@ -1,0 +1,64 @@
+# EXPECTED BEHAVIOR:
+# The parser must correctly trace the evolution of the `payload` field through
+# dissect, base64 decoding, JSON parsing, and finally a series of mutates.
+# Crucially, it must correctly track the types and existence of `nested_obj.status`
+# to accurately determine if the event is dropped in the deeply nested conditional.
+# This simulates a typical "700+ parser" chain where an event goes through
+# multiple stages of normalization before a security decision (drop) is made.
+filter {
+  dissect {
+    mapping => {
+      "message" => "%{timestamp} [%{loglevel}] %{hostname} - %{payload}"
+    }
+  }
+
+  if [loglevel] == "DEBUG" {
+    drop { }
+  }
+
+  ruby {
+    code => "
+      require 'base64'
+      begin
+        event.set('decoded_payload', Base64.decode64(event.get('payload')))
+      rescue
+        event.tag('_base64_decode_failure')
+      end
+    "
+  }
+
+  if !("_base64_decode_failure" in [tags]) {
+    json {
+      source => "decoded_payload"
+      target => "parsed_json"
+      fallback => ["payload"]
+    }
+  } else {
+    kv {
+      source => "payload"
+      target => "parsed_json"
+    }
+  }
+
+  mutate {
+    rename => { "[parsed_json][nested_obj]" => "nested_obj" }
+    lowercase => [ "[nested_obj][status]" ]
+    gsub => [
+      "[nested_obj][status]", "error", "critical",
+      "[nested_obj][status]", "warn", "warning"
+    ]
+  }
+
+  if [nested_obj][status] in ["critical", "fatal", "panic"] and ([hostname] =~ /^prod-.*$/ or [hostname] == "localhost") {
+    # It should trace that this condition is reachable if the JSON/KV extraction produced the right fields
+    mutate {
+      add_tag => ["high_severity_alert"]
+    }
+  } else if [nested_obj][status] == "ok" {
+    drop { }
+  } else {
+    mutate {
+      add_field => { "unhandled_status" => "%{[nested_obj][status]}" }
+    }
+  }
+}

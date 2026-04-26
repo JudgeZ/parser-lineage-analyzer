@@ -1,0 +1,22 @@
+# EXPECTED BEHAVIOR:
+# Syslog PRI values can sometimes be malformed or require dynamic assignment based on
+# other contextual clues before being parsed.
+# This test checks if the parser handles syslog_pri correctly when the syslog_pri field
+# itself is generated conditionally.
+filter {
+  if [raw_message] =~ /^<\d+>/ {
+    grok {
+      match => { "raw_message" => "^<(?<syslog_pri>\d+)>%{GREEDYDATA:rest}" }
+    }
+  } else {
+    mutate {
+      add_field => { "syslog_pri" => "13" } # Default PRI
+    }
+  }
+
+  syslog_pri {
+    syslog_pri_field_name => "syslog_pri"
+    severity_labels => ["Emergency", "Alert", "Critical", "Error", "Warning", "Notice", "Informational", "Debug"]
+    facility_labels => ["kernel", "user-level", "mail", "daemon", "security/authorization", "syslogd", "line printer", "network news", "UUCP", "clock", "security/authorization", "FTP", "NTP", "log audit", "log alert", "clock", "local0", "local1", "local2", "local3", "local4", "local5", "local6", "local7"]
+  }
+}

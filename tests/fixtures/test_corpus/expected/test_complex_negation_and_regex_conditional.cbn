@@ -1,0 +1,15 @@
+# EXPECTED BEHAVIOR:
+# The parser must handle deep logical negations, checking for non-existence,
+# non-matching regex, and combining them with AND/OR precedence correctly.
+# It should evaluate the truth table properly for field manipulation.
+filter {
+  if !([user_id]) and ([action] !~ /^admin_/ or !([is_internal] == "true")) {
+    mutate {
+      add_tag => ["unauthenticated_external"]
+    }
+  } else if [user_id] and !([action]) {
+    mutate {
+      add_tag => ["malformed_auth_request"]
+    }
+  }
+}

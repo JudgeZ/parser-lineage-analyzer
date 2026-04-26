@@ -1,0 +1,27 @@
+/*
+ * EXPECTED BEHAVIOR:
+ * The parser must handle ruby filters that cancel events using `event.cancel`.
+ * It needs to track this control flow interruption and understand that subsequent filters will not be executed for the canceled event.
+ * Also tests handling of complex inline code that iterates over event fields dynamically.
+ */
+filter {
+  ruby {
+    code => "
+      keys_to_remove = []
+      event.to_hash.each do |k,v|
+        if v.nil? || v == '-' || v == ''
+          keys_to_remove << k
+        end
+      end
+      keys_to_remove.each { |k| event.remove(k) }
+      
+      if event.get('action') == 'drop_silently'
+        event.cancel
+      end
+    "
+  }
+  
+  mutate {
+    add_tag => ["processed_by_ruby"]
+  }
+}

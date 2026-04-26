@@ -1,0 +1,19 @@
+filter {
+  # TRIPWIRE 6: Escaped Backslashes!
+  # The parser logic checks `text[i-1] == "\\"` to skip escaped characters.
+  # But if the backslash ITSELF is escaped (e.g. \\"), the logic gets confused!
+  # It will skip the closing quote thinking it was escaped by the backslash, 
+  # leaving the string open forever and eating the rest of the AST!
+  mutate {
+    replace => {
+      "event.idm.read_only_udm.target.ip" => "this string ends in a backslash \\"
+    }
+  }
+
+  mutate {
+    # This entire block will fail to parse because the config parser thinks we are STILL inside the string above!
+    replace => { "event.idm.read_only_udm.target.mac" => "00:00:00:00:00:00" }
+  }
+
+  mutate { merge => { "@output" => "event" } }
+}

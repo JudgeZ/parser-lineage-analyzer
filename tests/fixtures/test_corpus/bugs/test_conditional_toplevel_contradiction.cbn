@@ -1,0 +1,11 @@
+# BUG REPRODUCTION: Top-Level Condition Contradiction Success (Baseline)
+# This test demonstrates that the contradiction detector works perfectly for top-level
+# fields like `[user]`. The inner branch is correctly recognized as impossible because
+# Alice != Bob, and `user.role` remains unresolved.
+filter {
+  if [user] == "Alice" {
+    if [user] == "Bob" {
+      mutate { replace => { "user.role" => "Admin" } }
+    }
+  }
+}

@@ -1,0 +1,39 @@
+# EXPECTED BEHAVIOR:
+# 1. Attempts to convert a field to an integer. If it fails, logstash often leaves it as a string or creates a tag.
+# 2. Tests the parser's understanding of what happens when type casting is impossible (e.g., converting "abc" to float).
+# 3. The subsequent logic depends on whether the type conversion happened, using a ruby block to check the type.
+
+filter {
+  mutate {
+    add_field => { 
+      "potential_int_1" => "123"
+      "potential_int_2" => "abc" 
+    }
+  }
+
+  mutate {
+    convert => {
+      "potential_int_1" => "integer"
+      "potential_int_2" => "integer"
+    }
+  }
+
+  ruby {
+    code => "
+      if event.get('potential_int_2').is_a?(Integer)
+        event.tag('coercion_success')
+      else
+        event.tag('coercion_failed')
+      end
+    "
+  }
+
+  if "coercion_failed" in [tags] {
+    mutate {
+      replace => { "potential_int_2" => 0 }
+    }
+    mutate {
+      convert => { "potential_int_2" => "integer" }
+    }
+  }
+}

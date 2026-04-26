@@ -1,0 +1,15 @@
+# Test: Mutate Filter - Array Operations
+# Description: Tests complex mutate operations involving arrays.
+# It should handle merging multiple arrays/strings into a new array, and applying string transformations
+# to all elements of an array. The parser must trace `combined_tags` to `system_tags` and `user_tags`.
+
+filter {
+  mutate {
+    merge => { "combined_tags" => "system_tags" }
+    merge => { "combined_tags" => "user_tags" }
+    lowercase => [ "combined_tags" ]
+    gsub => [
+      "combined_tags", "\s+", "_"
+    ]
+  }
+}

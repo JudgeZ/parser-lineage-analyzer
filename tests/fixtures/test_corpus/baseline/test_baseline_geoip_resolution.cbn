@@ -1,0 +1,14 @@
+# Test: GeoIP Filter
+# Description: This tests the parser's ability to handle the geoip filter.
+# The tool should track that the source IP address is being resolved into a set of 
+# geographic fields (e.g., location, asn, country, city) and mapped to the target field `geoip_data`.
+# It should trace the lineage of `geoip_data.location` back to `source_ip`.
+
+filter {
+  geoip {
+    source => "source_ip"
+    target => "geoip_data"
+    fields => ["city_name", "country_name", "location", "asn"]
+    add_tag => [ "geoip_resolved" ]
+  }
+}

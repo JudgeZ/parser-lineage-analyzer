@@ -1,0 +1,37 @@
+/*
+ * EXPECTED BEHAVIOR:
+ * The parser must accurately parse inline ruby code, even when that code includes
+ * complex string literals like heredocs, or single/double quotes with unbalanced
+ * braces (`{`, `}`) and hash (`#`) symbols. 
+ * If the parser relies on simple brace counting, it will fail to determine the end 
+ * of the ruby block or `code` attribute.
+ * The parser must correctly identify the bounds of the ruby plugin block and 
+ * preserve the ruby code exactly as written for downstream processing or lineage tracking.
+ */
+filter {
+  ruby {
+    code => "
+      event.set('unbalanced_string', '{ [ }')
+      event.set('comment_string', '# this is not a comment')
+    "
+  }
+
+  ruby {
+    code => <<-EOF
+      # this is a real ruby comment
+      complex_json_like_string = '{ \"key\": \"value\", \"nested\": { \"arr\": [1,2,3] } }'
+      
+      if complex_json_like_string =~ /\{.*\}/
+        event.set('parsed_fake', true)
+      end
+      
+      heredoc_within = <<-INNER
+        {
+          unbalanced: '{{{'
+        }
+      INNER
+      
+      event.set('heredoc_data', heredoc_within)
+    EOF
+  }
+}

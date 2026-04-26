@@ -1,0 +1,52 @@
+# TEST BEHAVIOR:
+# Simulates a large parser configuration where an event is processed by a sequence of ruby blocks
+# that aggregate data or maintain shared state. In a multi-threaded execution environment,
+# assigning to global variables or class variables in Ruby causes race conditions.
+# Furthermore, if multiple parsers try to mutate the same event using `event.set` and `event.get`
+# asynchronously, or if there's a heavy dependency on a ruby block that might throw an exception.
+# The tool must accurately identify potential concurrency risks, global state pollution,
+# and correctly trace the mutations performed by the Ruby API calls.
+filter {
+  ruby {
+    init => "
+      @@global_event_counter ||= 0
+      @local_parser_state = {}
+    "
+    code => "
+      @@global_event_counter += 1
+      event.set('global_seq_num', @@global_event_counter)
+      
+      src_ip = event.get('source.ip')
+      if src_ip
+        @local_parser_state[src_ip] ||= 0
+        @local_parser_state[src_ip] += 1
+        event.set('ip_seen_count', @local_parser_state[src_ip])
+      end
+    "
+  }
+
+  # Downstream logic relying on the ruby block's output
+  if [ip_seen_count] {
+    # The value is an integer because it was set from a Ruby integer
+    if [ip_seen_count] > 100 {
+      mutate {
+        add_tag => [ "frequent_ip" ]
+      }
+    }
+  }
+
+  # Another Ruby block that might throw an error
+  ruby {
+    code => "
+      # Deliberate potential nil exception if raw_message is missing
+      msg = event.get('raw_message')
+      event.set('msg_length', msg.length)
+    "
+  }
+
+  if "_rubyexception" in [tags] {
+    mutate {
+      add_field => { "ruby_error_handled" => "true" }
+    }
+  }
+}

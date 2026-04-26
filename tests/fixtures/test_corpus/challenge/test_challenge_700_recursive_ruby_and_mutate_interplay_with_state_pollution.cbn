@@ -1,0 +1,53 @@
+# TEST BEHAVIOR:
+# Simulates a scenario common in large 700+ parser environments where Ruby blocks and mutate plugins
+# share state or heavily rely on implicit assumptions of each other's effects. 
+# Here, a mutate plugin conditionally creates arrays or strings, and a Ruby block attempts to
+# recursively process them. It involves global state pollution and implicit dependencies.
+# The reverse parser must correctly track the types and side effects, and appropriately
+# warn or handle state pollution across events and within the execution context.
+filter {
+  if [message] =~ /start_transaction/ {
+    mutate {
+      add_field => { "transaction_id" => "%{+YYYYMMdd}-%{host}-txn" }
+      add_tag => [ "transaction_start" ]
+    }
+  }
+
+  # Ruby block that maintains state across events using a class variable
+  ruby {
+    init => "
+      @@active_transactions ||= {}
+    "
+    code => "
+      if event.get('tags') && event.get('tags').include?('transaction_start')
+        @@active_transactions[event.get('transaction_id')] = Time.now
+      end
+      
+      # Attempt to attach active transactions to the event
+      event.set('active_transactions_count', @@active_transactions.size)
+    "
+  }
+
+  if [nested_data] {
+    # Mutate to convert to array, which might fail or behave unexpectedly if nested_data is an object
+    mutate {
+      split => { "nested_data" => "," }
+    }
+    
+    ruby {
+      code => "
+        data = event.get('nested_data')
+        if data.is_a?(Array)
+          # Recursively flatten or mutate, could crash if mixed types exist
+          processed = data.map { |i| i.to_s.upcase }
+          event.set('nested_data', processed)
+        end
+      "
+    }
+
+    # Re-join
+    mutate {
+      join => { "nested_data" => "|" }
+    }
+  }
+}

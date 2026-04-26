@@ -1,0 +1,24 @@
+# TEST BEHAVIOR:
+# Tests parser's modeling of type coercion and lineage when JSON is parsed 
+# directly into the root event namespace (no target).
+# If `source_ip` was previously a string, but the parsed JSON contains
+# `"source_ip": ["10.0.0.1", "10.0.0.2"]`, the parser must track the type
+# transition from String to Array of Strings, and trace the lineage of 
+# the new array elements to the JSON payload.
+filter {
+  grok {
+    match => { "message" => "%{IP:source_ip} %{GREEDYDATA:json_payload}" }
+  }
+  
+  json {
+    source => "json_payload"
+    # No target means parse to root. Conflict with source_ip is possible.
+    skip_on_invalid_json => true
+  }
+
+  if [source_ip][0] {
+    mutate {
+      add_tag => ["was_array"]
+    }
+  }
+}

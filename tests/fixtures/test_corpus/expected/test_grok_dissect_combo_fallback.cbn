@@ -1,0 +1,33 @@
+/*
+ * EXPECTED BEHAVIOR:
+ * This test simulates a complex fallback chain using both dissect and grok.
+ * The parser must understand the control flow: dissect -> grok (if dissect fails) -> grok (if first grok fails).
+ * Tags are manipulated along the way, and the parser must maintain the state of tags correctly to evaluate conditional blocks.
+ * Final output is a clean tag state regardless of the path taken, but specific data fields are extracted depending on the success path.
+ */
+filter {
+  dissect {
+    mapping => {
+      "message" => "%{timestamp} [%{level}] %{module}: %{details}"
+    }
+  }
+
+  if "_dissectfailure" in [tags] {
+    mutate { remove_tag => ["_dissectfailure"] }
+    grok {
+      match => { "message" => "^%{TIMESTAMP_ISO8601:timestamp}\s+<%{LOGLEVEL:level}>\s+-\s+%{GREEDYDATA:details}" }
+    }
+    
+    if "_grokparsefailure" in [tags] {
+      mutate { remove_tag => ["_grokparsefailure"] }
+      grok {
+        match => { "message" => "^%{SYSLOGTIMESTAMP:timestamp} %{SYSLOGHOST:host} %{SYSLOGPROG:prog}: %{GREEDYDATA:details}" }
+        add_tag => ["legacy_format"]
+      }
+    } else {
+      mutate { add_tag => ["standard_grok"] }
+    }
+  } else {
+    mutate { add_tag => ["dissect_success"] }
+  }
+}

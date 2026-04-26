@@ -1,0 +1,46 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must handle the `aggregate` filter simulating a multiline codec across discrete events.
+# 2. It must track the `map` variable across multiple events sharing the same `task_id` and recognize the `timeout` and `timeout_tags` fallback mechanisms.
+# 3. It must analyze the `map['message_payload']` concatenation, recognizing that it can grow unboundedly if not carefully managed.
+# 4. In a 700+ parser corpus, evaluating an unbounded concatenated string with a complex `grok` pattern (with multiple `(?<name>pattern)` custom captures) presents an extreme catastrophic backtracking risk.
+# 5. The parser should flag the combination of unbounded aggregation + regex as a critical performance vulnerability and trace the `timeout_tags` to alternative routing logic.
+
+filter {
+  if [log_type] == "fragmented_transaction" {
+    aggregate {
+      task_id => "%{transaction_id}"
+      code => "
+        map['message_payload'] ||= ''
+        map['message_payload'] += event.get('message') + '\n'
+        map['fragment_count'] ||= 0
+        map['fragment_count'] += 1
+      "
+      push_map_as_event_on_timeout => true
+      timeout_task_id_field => "transaction_id"
+      timeout => 120
+      timeout_tags => ["_aggregate_timeout_fragmented"]
+      timeout_code => "event.set('timed_out_payload', true)"
+    }
+
+    if "_aggregate_timeout_fragmented" not in [tags] {
+      drop {} # Drop fragments, keep only the aggregated event
+    }
+  }
+
+  if [timed_out_payload] or "_aggregate_timeout_fragmented" in [tags] {
+    # Extreme backtracking risk on an aggregated, multi-line string with variable length
+    grok {
+      match => { 
+        "message_payload" => "(?m)^START.*?transaction_id=%{UUID:tx_id}.*?(?<dynamic_body>(?:[a-zA-Z0-9]+[^a-zA-Z0-9]*)*)END" 
+      }
+      tag_on_failure => ["_grok_aggregate_failure"]
+      timeout_millis => 500
+    }
+
+    if "_grok_aggregate_failure" in [tags] {
+      mutate {
+        add_field => { "extraction_status" => "failed_due_to_timeout_or_nomatch" }
+      }
+    }
+  }
+}

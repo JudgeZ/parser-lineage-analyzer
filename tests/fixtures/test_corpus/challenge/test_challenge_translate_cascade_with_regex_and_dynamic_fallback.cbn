@@ -1,0 +1,28 @@
+# TEST BEHAVIOR:
+# Tests parser resilience against chained translations where the fallback
+# is dynamic. It ensures lineage is maintained from `raw_code` to `category`
+# and from `category` to `severity`, while accounting for the dynamic fallback
+# to `%{default_severity}`.
+filter {
+  translate {
+    field => "raw_code"
+    destination => "category"
+    dictionary => {
+      "ERR01" => "Network"
+      "ERR02" => "Database"
+    }
+    fallback => "Unknown"
+  }
+
+  translate {
+    field => "category"
+    destination => "severity"
+    exact => true
+    regex => true
+    dictionary => {
+      "^Network" => "High"
+      "^Database" => "Critical"
+    }
+    fallback => "%{default_severity}"
+  }
+}

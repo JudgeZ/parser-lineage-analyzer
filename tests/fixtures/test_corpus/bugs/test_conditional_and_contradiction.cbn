@@ -1,0 +1,9 @@
+# BUG REPRODUCTION: Compound Condition Contradiction Blindspot
+# The `_analysis_condition_facts` regex only matches simple conditions (`[field] == "value"`).
+# It fails completely if logical operators like `and` or `or` are used.
+# EXPECTED FIX: `user.role` should be unresolved because Alice != Bob.
+filter {
+  if [user] == "Alice" and [user] == "Bob" {
+    mutate { replace => { "user.role" => "Admin" } }
+  }
+}

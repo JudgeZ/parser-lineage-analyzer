@@ -1,0 +1,18 @@
+# EXPECTED BEHAVIOR:
+# The parser must handle a translate filter with a large inline dictionary where the keys contain
+# numerous special characters, spaces, and quotes. The parser must not break on these special chars
+# and should accurately map the translation pairs.
+filter {
+  translate {
+    field => "event_id"
+    destination => "event_description"
+    dictionary => {
+      "id-1: {complex} [string]!" => "Normal Login"
+      "id-2: \"quoted\" 'string'" => "Failed Login"
+      "id-3: (parentheses) & * # @" => "Logout"
+      "id-4: /slashes/ \backslashes\\" => "Timeout"
+      "id-5: 🚀 emojis 👍" => "Emoji Event"
+    }
+    fallback => "Unknown Event Type"
+  }
+}

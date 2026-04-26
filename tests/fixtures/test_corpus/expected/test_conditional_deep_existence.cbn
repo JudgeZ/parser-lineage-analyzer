@@ -1,0 +1,17 @@
+// EXPECTED BEHAVIOR:
+// The parser must infer the structure of `[app][context][user_id]`.
+// It should record a read dependency on `[app][context][user_id]`.
+// The nested block must only execute if the field exists, demonstrating control flow 
+// dependent on deep object paths.
+
+filter {
+  if [app][context][user_id] {
+    mutate {
+      add_field => { "has_user" => "true" }
+    }
+  } else {
+    mutate {
+      add_field => { "has_user" => "false" }
+    }
+  }
+}

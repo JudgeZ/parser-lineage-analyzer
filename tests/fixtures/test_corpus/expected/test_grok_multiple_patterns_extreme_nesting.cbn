@@ -1,0 +1,18 @@
+# EXPECTED BEHAVIOR:
+# The parser must handle deeply nested grok pattern definitions where patterns
+# reference other custom patterns within the same `pattern_definitions` block.
+# It should correctly resolve the dependency graph of these patterns and ensure
+# the final regex matches appropriately without timing out or failing on missing patterns.
+filter {
+  grok {
+    match => { "message" => "%{COMPLEX_LOG}" }
+    pattern_definitions => {
+      "WORD_P" => "\w+"
+      "NUMBER_P" => "\d+"
+      "ID_P" => "%{WORD_P}-%{NUMBER_P}"
+      "USER_P" => "user_%{ID_P}"
+      "ACTION_P" => "(login|logout|failed)"
+      "COMPLEX_LOG" => "%{USER_P} %{ACTION_P} from %{IP:src_ip}"
+    }
+  }
+}

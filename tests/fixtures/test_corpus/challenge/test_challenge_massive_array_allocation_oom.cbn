@@ -1,0 +1,19 @@
+# CHALLENGE REPRODUCTION: Massive Array Allocation (OOM Risk)
+# Validates the engine's memory management when a plugin attempts to instantiate
+# an extremely large array, potentially triggering an OutOfMemory error.
+# EXPECTED BEHAVIOR:
+# - A ruby block attempting to allocate 5,000,000 items MUST be caught by 
+#   the memory watchdog or pipeline limits before crashing the JVM.
+# - The event must be tagged with a failure or discarded safely.
+filter {
+  ruby {
+    code => "
+      begin
+        massive_array = Array.new(5000000) { 'A' * 100 }
+        event.set('bloated_field', massive_array)
+      rescue NoMemoryError, Exception => e
+        event.tag('_ruby_oom_aborted')
+      end
+    "
+  }
+}

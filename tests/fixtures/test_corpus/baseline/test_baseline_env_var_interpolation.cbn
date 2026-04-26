@@ -1,0 +1,14 @@
+# Test: Environment Variable Interpolation
+# Description: Tests the parser's ability to handle environment variable substitutions
+# in string values, including fallback defaults `${VAR:default}`.
+# The parser should understand that `sys_env` depends on the external environment
+# or the default value provided.
+
+filter {
+  mutate {
+    add_field => {
+      "deployment_region" => "${REGION:us-east-1}"
+      "cluster_name" => "${CLUSTER_NAME}"
+    }
+  }
+}

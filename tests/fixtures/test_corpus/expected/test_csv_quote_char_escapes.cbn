@@ -1,0 +1,18 @@
+# EXPECTATION:
+# The CSV filter allows for configuration of `quote_char`, `separator`, and nested escapes.
+# Parsing can mutate an event with many implicit columns if `columns` is specified,
+# but it must also handle cases where quotes and separators are customized.
+# The parser needs to understand that fields created by the CSV filter originate
+# from the `source` field, even with exotic configurations.
+filter {
+  csv {
+    source => "raw_csv_line"
+    separator => "|"
+    quote_char => "'"
+    columns => ["col1", "col2", "col3"]
+  }
+
+  if [col1] == "header" {
+    drop {}
+  }
+}

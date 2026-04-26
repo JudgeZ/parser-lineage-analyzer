@@ -1,0 +1,43 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must trace fields extracted from deeply nested formats: CSV containing JSON containing KV.
+# 2. A `csv` filter splits the original message. Column 4 is named `json_payload`.
+# 3. A `json` filter parses `json_payload` into a target object `parsed_json`.
+# 4. An `if` checks if `[parsed_json][extensions]` exists. If so, it implies it's a string containing KV pairs.
+# 5. A `kv` filter parses `[parsed_json][extensions]` into `parsed_kv`.
+# 6. Finally, a `mutate` renames `[parsed_kv][src_ip]` to a top-level field `source_ip`.
+# 7. The parser must construct a data flow graph that explicitly maps `source_ip` all the way back
+#    to its origin in the 4th column of the initial `message` CSV. 
+# 8. If the CSV parsing fails, or the JSON is invalid, the entire chain collapses, and the parser 
+#    should correctly identify the dependencies that prevent `source_ip` from being created.
+
+filter {
+  csv {
+    source => "message"
+    columns => ["timestamp", "host", "level", "json_payload"]
+    separator => ","
+    skip_empty_columns => true
+  }
+
+  if [json_payload] {
+    json {
+      source => "json_payload"
+      target => "parsed_json"
+      skip_on_invalid_json => true
+    }
+  }
+
+  if [parsed_json][extensions] {
+    kv {
+      source => "[parsed_json][extensions]"
+      target => "parsed_kv"
+      field_split => ";"
+      value_split => "="
+    }
+  }
+
+  if [parsed_kv][src_ip] {
+    mutate {
+      rename => { "[parsed_kv][src_ip]" => "source_ip" }
+    }
+  }
+}

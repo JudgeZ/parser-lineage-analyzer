@@ -1,0 +1,34 @@
+# EXPECTED BEHAVIOR:
+# This test verifies that the parser can handle embedded payloads of different formats.
+# The initial filter parses JSON, extracting a field called 'xml_payload' which is a string.
+# A subsequent filter must then parse this 'xml_payload' field as XML, properly namespacing it,
+# and finally performing mutation operations on the extracted XML elements.
+# The parser must maintain the context and correct field referencing across these nested parsing boundaries.
+
+filter {
+  json {
+    source => "message"
+    target => "parsed_json"
+    add_tag => ["json_parsed"]
+  }
+
+  if "json_parsed" in [tags] and [parsed_json][xml_payload] {
+    xml {
+      source => "[parsed_json][xml_payload]"
+      target => "parsed_xml"
+      store_xml => true
+      force_array => false
+      xpath => [
+        "/root/data/text()", "xml_data_extracted"
+      ]
+      remove_field => ["[parsed_json][xml_payload]"]
+    }
+  }
+
+  if [parsed_xml] {
+    mutate {
+      rename => { "[parsed_xml][transaction_id]" => "txn_id" }
+      uppercase => [ "txn_id" ]
+    }
+  }
+}

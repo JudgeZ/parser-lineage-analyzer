@@ -1,0 +1,28 @@
+# EXPECTED BEHAVIOR:
+# This test verifies that the parser handles highly inefficient regex patterns that can cause 
+# catastrophic backtracking (e.g., repeating groups of repeating characters).
+# The parser should detect potential regex performance issues or enforce a timeout/circuit breaker.
+# It should appropriately tag the event with _grokparsefailure instead of hanging indefinitely.
+# In a 700+ parser corpus, rogue regexes are common and must be handled safely.
+
+filter {
+  grok {
+    match => {
+      # The target string is expected to be something like "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab"
+      # The pattern uses catastrophic backtracking logic: (a+)+
+      "message" => "^(?<bad_pattern>(a+)+c)$"
+    }
+    tag_on_failure => ["_grokparsefailure", "catastrophic_backtracking_detected"]
+    timeout_millis => 500
+  }
+
+  if "_grokparsefailure" in [tags] {
+    mutate {
+      replace => { "message" => "Regex timeout or failure on message" }
+    }
+  } else {
+    mutate {
+      add_field => { "parsed_successfully" => "true" }
+    }
+  }
+}

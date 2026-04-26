@@ -1,0 +1,12 @@
+# BASELINE REPRODUCTION: Grok Named Regex Support
+# Validates that `grok` extractor natively understands both Logstash `%{PATTERN:field}`
+# and standard `(?<field>...)` named capture syntax.
+# The tool MUST continue to capture both types of groups seamlessly.
+# EXPECTED BEHAVIOR: `user1` and `user2` should be mapped to the `grok` extractor.
+filter {
+  grok {
+    match => {
+      "message" => "%{WORD:user1} - (?<user2>[a-z]+)"
+    }
+  }
+}

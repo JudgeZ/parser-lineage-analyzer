@@ -1,0 +1,11 @@
+filter {
+  # Bug: The analyzer's condition fact extraction regex `^\[([^\]]+)\]\s*==` 
+  # only matches top-level fields like `[user]`. It fails to parse nested fields like `[user][name]`.
+  # This causes the contradiction detector to silently ignore nested field contradictions!
+  # EXPECTED FIX: `user.role` should be dropped/unresolved because Alice != Bob.
+  if [user][name] == "Alice" {
+    if [user][name] == "Bob" {
+      mutate { replace => { "user.role" => "Admin" } }
+    }
+  }
+}

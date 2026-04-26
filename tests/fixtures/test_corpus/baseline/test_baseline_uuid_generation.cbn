@@ -1,0 +1,11 @@
+# BASELINE REPRODUCTION: UUID Generation
+# Validates the inline generation of unique identifiers for events.
+# EXPECTED BEHAVIOR:
+# - A valid UUIDv4 must be injected into `event.id`.
+# - Multiple runs on the same event should produce different UUIDs.
+filter {
+  uuid {
+    target => "event.id"
+    overwrite => true
+  }
+}

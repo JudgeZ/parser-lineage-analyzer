@@ -1,0 +1,6 @@
+{
+  "must_resolve_fields": [
+    "es_results",
+    "has_es_results"
+  ]
+}

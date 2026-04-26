@@ -1,0 +1,18 @@
+# EXPECTED BEHAVIOR:
+# Ruby blocks can share state across events using class variables (`@@var`) or global variables (`$var`).
+# The analyzer should flag this as a critical state mutation that breaks event independence,
+# potentially causing non-deterministic parsing if events arrive out of order.
+filter {
+  ruby {
+    init => "
+      @@event_count = 0
+    "
+    code => "
+      @@event_count += 1
+      event.set('event_sequence', @@event_count)
+    "
+  }
+  if [event_sequence] > 100 {
+    mutate { add_tag => ["high_volume"] }
+  }
+}

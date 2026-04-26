@@ -1,0 +1,20 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must correctly parse a multi-line `if` statement without failing on newline characters between logical operators.
+# 2. Inline comments `#` between conditions (e.g., after `or`, before `and`) must be safely ignored and not break the conditional AST.
+# 3. The logical precedence of `and` and `or` spanning multiple lines with comments should be preserved.
+
+filter {
+  if [action] == "deny" 
+     # Ignore internal traffic
+     and [source_ip] !~ /^10\./ 
+     and (
+       [dest_port] == 22 or 
+       # Also check RDP
+       [dest_port] == 3389
+     ) {
+    
+    mutate {
+      add_tag => ["suspicious_drop"]
+    }
+  }
+}

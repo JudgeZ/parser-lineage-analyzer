@@ -1,0 +1,52 @@
+# TEST FIXTURE: Massive Boolean Precedence with 'in' Operator and Regex
+# PURPOSE: To stress-test the parser's AST generation for complex, massive boolean logic expressions 
+# involving mixed operators (and, or, xor, not, in, =~, ==), grouped by deep parentheses.
+# This simulates 700+ parser logic where dozens of conditions determine event routing.
+#
+# EXPECTED BEHAVIOR:
+# 1. The parser MUST correctly evaluate operator precedence (e.g. `and` before `or`, `in` evaluation).
+# 2. Parentheses MUST correctly isolate logical groups.
+# 3. Regular expressions and `in` array literal checks MUST NOT confuse the tokenizer.
+# 4. Implicit type conversions (null/existence checks) MUST be evaluated properly within the chain.
+
+filter {
+  if (
+      (
+        ([network][direction] == "inbound" or [network][direction] == "internal") and
+        ([destination][port] in [80, 443, 8080, 8443] or [destination][port] =~ /^8\d{3}$/)
+      )
+      or
+      (
+        [tags] and "external_proxy" in [tags] and not ("trusted_source" in [tags] or [source][ip] =~ /^10\./)
+      )
+    ) and (
+      [http][request][method] in ["POST", "PUT", "DELETE", "PATCH"] or
+      (
+        [http][request][method] == "GET" and 
+        ([http][request][uri] =~ /(?i)(select|drop|insert|union|script|eval)/ or [http][request][body][bytes] > 10000)
+      )
+    ) {
+
+    mutate {
+      add_tag => [ "suspicious_inbound_web_traffic" ]
+      add_field => { "threat_level" => "high" }
+    }
+
+    if [threat_level] == "high" and ([source][ip] in ["192.168.1.1", "10.0.0.1"] or [source][user] == "admin") {
+      mutate {
+        replace => { "threat_level" => "critical" }
+      }
+    } else if !([source][ip]) {
+       # Checking for NOT existence
+       mutate { add_tag => ["missing_source_ip"] }
+    }
+
+  } else if [network][direction] == "outbound" and ([destination][ip] =~ /^192\.168\./ xor [destination][ip] =~ /^10\./) {
+    # Validating XOR precedence
+    mutate {
+      add_tag => [ "internal_outbound_routing" ]
+    }
+  } else {
+    drop {}
+  }
+}

@@ -1,0 +1,4 @@
+{
+  "must_have_warning_codes": ["unknown_config_key", "unreachable_branch"],
+  "must_resolve_fields": ["tags", "@timestamp"]
+}

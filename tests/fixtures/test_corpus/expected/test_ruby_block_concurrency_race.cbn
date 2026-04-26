@@ -1,0 +1,13 @@
+# test_ruby_block_concurrency_race.cbn
+# EXPECTED BEHAVIOR:
+# Mimics a scenario where a Ruby block uses global or class variables, risking race conditions in concurrent execution.
+# The parser analysis should ideally flag this shared state access as a potential concurrency hazard.
+filter {
+  ruby {
+    init => "@@shared_counter = 0"
+    code => "
+      @@shared_counter += 1
+      event.set('event_id', @@shared_counter)
+    "
+  }
+}

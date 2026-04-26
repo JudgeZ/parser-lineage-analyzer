@@ -1,0 +1,11 @@
+# EXPECTED BEHAVIOR:
+# The parser must support dynamic timezone resolution in date filters where the timezone is specified
+# via a field reference (e.g., "%{[metadata][tz_info]}"). The parser needs to resolve this as a dependency
+# on the specified field and understand that the date parsing outcome is conditional on that field's value.
+filter {
+  date {
+    match => [ "log_timestamp", "ISO8601", "yyyy-MM-dd HH:mm:ss.SSS" ]
+    timezone => "%{[event][timezone]}"
+    target => "@timestamp"
+  }
+}

@@ -1,0 +1,30 @@
+# TEST BEHAVIOR:
+# Simulates a scenario where poorly written regexes combined with large payloads
+# cause catastrophic backtracking and timeouts. This is a critical failure mode in 700+ parser setups.
+# The parser tool must identify risky regexes (e.g., nested quantifiers `(a+)+`, overlapping alternations)
+# and handle the timeout logic (adding the _groktimeout tag).
+filter {
+  # A classic vulnerable regex: (.*[a-zA-Z]+)*
+  if [message] =~ /(.*[a-zA-Z]+)*/ {
+    mutate { add_tag => ["matched_risky_regex_in_condition"] }
+  }
+
+  grok {
+    # Risky pattern: repeated optional groups followed by a greedy match
+    match => { 
+      "payload" => "^(%{WORD} )+%{GREEDYDATA:rest}$" 
+    }
+    timeout_millis => 500
+    tag_on_timeout => "_groktimeout_app_x"
+  }
+
+  if "_groktimeout_app_x" in [tags] {
+    mutate {
+      replace => { "payload_status" => "unparsed_due_to_timeout" }
+    }
+    # Fallback parsing
+    kv {
+      source => "payload"
+    }
+  }
+}

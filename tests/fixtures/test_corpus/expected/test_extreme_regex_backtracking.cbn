@@ -1,0 +1,12 @@
+# EXPECTED BEHAVIOR:
+# The parser should successfully parse (lex/parse) the literal strings containing
+# potentially catastrophic backtracking regexes without hanging. The static analyzer
+# should ideally warn about the regex complexity.
+filter {
+  grok {
+    match => { "message" => "^(a+)+$" }
+  }
+  if [message] =~ /(a+)+b/ {
+    mutate { add_tag => [ "evil_regex_matched" ] }
+  }
+}

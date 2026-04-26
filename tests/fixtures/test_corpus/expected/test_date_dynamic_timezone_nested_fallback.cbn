@@ -1,0 +1,25 @@
+/*
+ * EXPECTED BEHAVIOR:
+ * The parser must handle the date plugin when the timezone is defined dynamically
+ * via string interpolation of a deeply nested field, and multiple target/fallback 
+ * fields are specified.
+ * The lineage should correctly map the parsed date from the source field to the target,
+ * and track the dependency on the timezone field.
+ */
+filter {
+  date {
+    match => [ "[event][timestamp][raw]", "ISO8601", "yyyy-MM-dd HH:mm:ss.SSS", "UNIX_MS" ]
+    timezone => "%{[metadata][context][env][timezone]}"
+    target => "@timestamp"
+    tag_on_failure => ["_dateparsefailure", "_bad_date_format"]
+  }
+
+  # If primary fails, try a fallback with a hardcoded timezone
+  if "_dateparsefailure" in [tags] {
+    date {
+      match => [ "[fallback][timestamp]", "MMM dd HH:mm:ss" ]
+      timezone => "UTC"
+      target => "@timestamp"
+    }
+  }
+}

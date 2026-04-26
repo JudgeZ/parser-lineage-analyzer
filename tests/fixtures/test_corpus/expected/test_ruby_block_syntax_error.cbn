@@ -1,0 +1,12 @@
+# test_ruby_block_syntax_error.cbn
+# EXPECTED BEHAVIOR:
+# Contains intentional syntax errors or invalid Ruby code inside the code block.
+# The parser analysis should catch the syntax error during initialization and report it rather than crashing the whole pipeline.
+filter {
+  ruby {
+    code => "
+      event.set('status', 'processing'
+      # missing closing parenthesis
+    "
+  }
+}

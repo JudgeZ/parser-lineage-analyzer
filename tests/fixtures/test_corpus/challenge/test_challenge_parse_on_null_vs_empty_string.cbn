@@ -1,0 +1,17 @@
+# CHALLENGE REPRODUCTION: Null vs Empty String Parsing Conflicts
+# Validates how extraction plugins behave when the target field exists but is explicitly null or empty.
+# EXPECTED BEHAVIOR:
+# - Grok/Dissect/JSON hitting a literal `null` value should fail quickly.
+# - Hitting `""` (empty string) should fail gracefully without generating erroneous empty structures.
+filter {
+  grok {
+    match => { "explicit_null_field" => "%{WORD:test}" }
+  }
+  json {
+    source => "empty_string_field"
+    target => "json_out"
+  }
+  kv {
+    source => "explicit_null_field"
+  }
+}

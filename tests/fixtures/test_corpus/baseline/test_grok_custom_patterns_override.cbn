@@ -1,0 +1,16 @@
+# BASELINE REPRODUCTION: Grok with Inline Custom Patterns
+# Validates that the parser correctly extracts named captures even when using
+# inline `pattern_definitions` in the `grok` filter.
+# The tool MUST parse the `pattern_definitions` dictionary and successfully
+# link the capture group `my_custom_value` back to `message`.
+# EXPECTED BEHAVIOR: `my_custom_value` is recognized as a created field with lineage from `message`.
+filter {
+  grok {
+    match => {
+      "message" => "START %{MY_COMPLEX_PATTERN:my_custom_value} END"
+    }
+    pattern_definitions => {
+      "MY_COMPLEX_PATTERN" => "(?:[a-zA-Z0-9_-]+)"
+    }
+  }
+}

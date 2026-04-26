@@ -1,0 +1,20 @@
+# EXPECTED BEHAVIOR:
+# Evaluates the parser's ability to handle complex type coercion when using mutate
+# merge and array append operations. It should track that `my_field` starts as a string,
+# becomes an array when another string is merged into it, and then has elements appended.
+# This tests the lineage analyzer's type tracking engine for dynamic fields.
+filter {
+  mutate {
+    add_field => { "my_field" => "initial_string" }
+    add_field => { "other_field" => "second_string" }
+  }
+  mutate {
+    merge => { "my_field" => "other_field" }
+  }
+  # my_field is now ["initial_string", "second_string"]
+  if "second_string" in [my_field] {
+     mutate {
+       add_field => { "[my_field][]" => "third_string" }
+     }
+  }
+}

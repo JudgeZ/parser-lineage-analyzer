@@ -1,0 +1,16 @@
+# EXPECTED BEHAVIOR:
+# This tests the parser's ability to handle conditionals where the right-hand side of a regex match operator (`=~`)
+# contains string interpolation. The parser must identify that the regex pattern is dynamic and depends on
+# the `[regex_pattern]` field, preventing pure static regex analysis and requiring runtime or symbolic evaluation.
+
+filter {
+  if [message] =~ /(?i)%{regex_pattern}/ {
+    mutate {
+      add_tag => [ "matched_dynamic_regex" ]
+    }
+  } else if [message] !~ /^%{prefix_pattern}/ {
+    mutate {
+      add_tag => [ "failed_dynamic_prefix" ]
+    }
+  }
+}

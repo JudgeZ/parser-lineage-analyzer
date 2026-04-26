@@ -1,0 +1,118 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "parser-lineage-analyzer"
+version = "0.1.0"
+description = "Static Parser Lineage Analyzer for Google SecOps / Chronicle parser code"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "Parser Lineage Analyzer contributors"}]
+keywords = ["udm", "parser", "lineage", "static-analysis", "log-analysis"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "License :: OSI Approved :: MIT License",
+]
+
+dependencies = ["lark>=1.1,<2", "pydantic>=2,<3"]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7",
+  "pytest-timeout>=2.3",
+  "ruff>=0.4",
+  "mypy>=1.8",
+  "Cython>=3,<4",
+  "cibuildwheel>=2.16",
+  "bandit[toml]>=1.7",
+  "hypothesis>=6.100",
+]
+
+[project.scripts]
+parser-lineage-analyzer = "parser_lineage_analyzer.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["parser_lineage_analyzer*"]
+
+[tool.setuptools.package-data]
+parser_lineage_analyzer = ["grammar/*.lark", "py.typed"]
+
+[tool.setuptools.exclude-package-data]
+"parser_lineage_analyzer._native" = ["*.c", "*.pyx"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+timeout_method = "thread"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+  "E",   # pycodestyle errors
+  "W",   # pycodestyle warnings
+  "F",   # pyflakes
+  "B",   # flake8-bugbear (real-bug catchers: mutable defaults, blind except, etc.)
+  "SIM", # flake8-simplify (readability + occasional logic-error finds)
+  "UP",  # pyupgrade (modernise syntax for py3.10 baseline)
+  "I",   # isort (import sorting)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Test files commonly contain long literal fixtures (parser source lines,
+# expected output strings) that don't wrap meaningfully.
+"tests/**" = ["E501"]
+
+[tool.ruff.lint.isort]
+# Without this, isort splits each `from foo import X as X` re-export into
+# its own block, producing ugly walls of single-import statements in
+# __init__.py / parser.py. With it, they collapse into one parenthesised
+# import per source module.
+combine-as-imports = true
+
+[tool.ruff.format]
+# Inherits line-length = 120 from [tool.ruff]. Defaults otherwise:
+# double-quote strings, space indentation, magic trailing comma honoured,
+# docstring code blocks left untouched.
+
+[tool.bandit]
+exclude_dirs = ["tests", "venv", "build", "dist", ".git"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["parser_lineage_analyzer", "tests"]
+explicit_package_bases = true
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_return_any = true
+disallow_any_explicit = true
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = [
+  "conftest",
+  "tests.*",
+]
+check_untyped_defs = false
+disallow_untyped_defs = false
+
+[tool.cibuildwheel]
+build = "cp310-*"
+skip = "*-musllinux_*"
+test-requires = ["pytest>=7", "pytest-timeout>=2.3"]
+test-command = "python -c \"import parser_lineage_analyzer._native._scanner_ext; import parser_lineage_analyzer._native._config_fast_ext; import parser_lineage_analyzer._native._dedupe_ext; import parser_lineage_analyzer._native._template_ext; import parser_lineage_analyzer._native._branch_merge_ext\" && python -m pytest {project}/tests/test_parser_frontend.py {project}/tests/test_native_acceleration.py {project}/tests/test_native_differential_fuzz.py && parser-lineage-analyzer --help"
+
+[tool.cibuildwheel.linux]
+archs = ["x86_64", "aarch64"]
+
+[tool.cibuildwheel.macos]
+archs = ["x86_64", "arm64"]
+
+[tool.cibuildwheel.windows]
+archs = ["AMD64"]
+environment = "PYTHONUTF8=1"

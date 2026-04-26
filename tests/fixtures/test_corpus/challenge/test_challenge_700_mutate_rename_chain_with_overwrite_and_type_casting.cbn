@@ -1,0 +1,42 @@
+# TEST BEHAVIOR:
+# This test reproduces a "variable abuse" anti-pattern common in massive configurations,
+# where a single field acts as a temporary variable undergoing numerous type transformations.
+# The parser MUST track the type state of the field accurately through string -> array ->
+# joined string -> split array -> integer coercion -> string conversion, applying the operations
+# in the EXACT order defined in the mutation block (or respecting plugin-specific implicit ordering if applicable).
+
+filter {
+  mutate {
+    # 1. Start as string
+    add_field => { "temp_var" => "1,2,3,4,5" }
+    
+    # 2. Split into array of strings
+    split => { "temp_var" => "," }
+    
+    # 3. Add more elements
+    merge => { "temp_var" => "other_array_field" }
+    
+    # 4. Join back to string with different delimiter
+    join => { "temp_var" => "|" }
+    
+    # 5. Gsub replace on the string
+    gsub => [
+      "temp_var", "\|3\|", "|THREE|"
+    ]
+    
+    # 6. Split again
+    split => { "temp_var" => "|" }
+    
+    # 7. Convert array elements to integers (where possible)
+    convert => { "temp_var" => "integer" }
+  }
+
+  # 8. Conditional check on the final type
+  if 1 in [temp_var] {
+    mutate {
+      # 9. Coerce back to string array
+      convert => { "temp_var" => "string" }
+      rename => { "temp_var" => "final_var" }
+    }
+  }
+}

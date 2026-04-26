@@ -1,0 +1,41 @@
+# EXPECTED BEHAVIOR:
+# 1. Parse a JSON payload that contains deeply nested objects with conflicting key names across different levels.
+# 2. Extract nested keys into target fields.
+# 3. Handle cases where the parsed values are arrays but the subsequent operations expect a string.
+# 4. Mutate block must successfully coerce the array into a string and perform a gsub regex replacement without erroring.
+# 5. This simulates a common challenge in large parsers where JSON schema drift causes type mismatches in downstream mutations.
+
+filter {
+  json {
+    source => "message"
+    target => "parsed_json"
+    skip_on_invalid_json => true
+  }
+
+  if [parsed_json][data][info][status] {
+    mutate {
+      # The value might be a string or an array of strings due to upstream changes
+      # Coerce to string first
+      convert => {
+        "[parsed_json][data][info][status]" => "string"
+      }
+      # Then perform string replacement
+      gsub => [
+        "[parsed_json][data][info][status]", "[\\[\\]\"]", "",
+        "[parsed_json][data][info][status]", "error", "critical"
+      ]
+    }
+  }
+
+  if [parsed_json][metadata][tags] {
+    # Nested key collision with top-level or other nested level 'tags'
+    mutate {
+      rename => {
+        "[parsed_json][metadata][tags]" => "event_tags"
+      }
+      split => {
+        "event_tags" => ","
+      }
+    }
+  }
+}

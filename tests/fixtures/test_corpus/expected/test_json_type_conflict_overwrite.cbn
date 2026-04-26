@@ -1,0 +1,19 @@
+# EXPECTED BEHAVIOR:
+# This test simulates a scenario where a JSON plugin parses a string into a target field
+# that already exists as a scalar. Logstash behavior usually involves overwriting or
+# creating an array, depending on the exact context.
+# The parser should track the state mutation of 'parsed_data' and recognize
+# that it transitions from a string to a parsed object.
+
+filter {
+  mutate {
+    add_field => { "parsed_data" => "initial string" }
+  }
+  json {
+    source => "raw_json"
+    target => "parsed_data"
+  }
+  if [parsed_data][status] == "ok" {
+    mutate { add_tag => ["success"] }
+  }
+}

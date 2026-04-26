@@ -1,0 +1,13 @@
+# BASELINE: Regex Conditionals and Lexer Stability
+# Validates that regex matching operators `=~` and `!~` are correctly parsed,
+# and that complex regex literals (containing slashes, quotes, brackets, and braces)
+# do not break the lexical scanner.
+# The tool MUST accurately represent the conditional block without dropping tokens
+# and without misinterpreting regex content as control flow syntax.
+filter {
+  if [request_uri] =~ /^\/api\/v[1-9]\/user\/[a-zA-Z0-9]+$/ or [agent] !~ /(?i)mozilla/ {
+    mutate {
+      add_tag => [ "api_request", "regex_matched" ]
+    }
+  }
+}

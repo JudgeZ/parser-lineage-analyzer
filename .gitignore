@@ -1,0 +1,53 @@
+.DS_Store
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+mypy_out.txt
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Compiled Cython/native extension artifacts
+parser_lineage_analyzer/_native/*.so
+parser_lineage_analyzer/_native/*.pyd
+parser_lineage_analyzer/_native/*.dll
+parser_lineage_analyzer/_native/*.dylib
+
+# Local editor and tool state
+.idea/
+.vscode/
+.claude/
+
+# Local adversarial scratch probes
+test_redos*.py
+
+# Fuzzer outputs (atheris findings, crashes, corpus)
+fuzz/findings_*/
+fuzz/corpus_*/
+crash-*
+leak-*
+oom-*
+timeout-*
+
+# Local example scratch/performance parsers
+examples/90s_complex_parser.cbn
+examples/real_slow_*.cbn
+examples/slow.cbn
+examples/unsupported_and_warnings.cbn
+examples/over_aggressive_taint.cbn
+examples/lexer_complexity_plugin.cbn

@@ -1,0 +1,18 @@
+# TEST BEHAVIOR:
+# Tests parser's ability to handle advanced Dissect modifiers:
+# - Greedy modifiers (`->`)
+# - Skip modifiers (`?`)
+# - Append modifiers (`+`)
+# The parser must resolve the final field structures correctly, tracking
+# the appended data lineage, while skipping the ignored elements.
+filter {
+  dissect {
+    mapping => {
+      "message" => "%{?ignored_start} %{+my_field} %{->my_field} %{final_part}"
+    }
+  }
+
+  if [my_field] {
+    mutate { add_tag => ["has_my_field"] }
+  }
+}

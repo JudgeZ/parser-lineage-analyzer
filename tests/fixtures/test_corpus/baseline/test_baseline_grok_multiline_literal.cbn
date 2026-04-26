@@ -1,0 +1,18 @@
+# TEST EXPECTATION:
+# The parser needs to gracefully handle multiline string literals in grok match blocks.
+# Sometimes users break long grok patterns across multiple lines for readability
+# or due to matching actual multiline logs. The lexer should not break on newlines inside quotes.
+
+filter {
+  grok {
+    match => {
+      "message" => "(?m)^%{TIMESTAMP_ISO8601:timestamp}\n%{LOGLEVEL:level}\n%{GREEDYDATA:stacktrace}"
+    }
+  }
+
+  if [stacktrace] {
+    mutate {
+      add_tag => ["has_stacktrace"]
+    }
+  }
+}

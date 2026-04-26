@@ -1,0 +1,44 @@
+# TEST BEHAVIOR:
+# Simulates a deeply nested encapsulation chain common in enterprise logs:
+# The payload is XML containing namespaced nodes. One of the nodes contains a CDATA JSON payload.
+# One of the fields inside the JSON is a raw KV string.
+# The parser MUST correctly orchestrate the xml -> json -> kv plugins in sequence,
+# ensuring that failure at any stage routes to the appropriate fallback tags,
+# and that target overwrites do not inadvertently destroy parent context.
+
+filter {
+  xml {
+    source => "raw_message"
+    target => "parsed_xml"
+    remove_namespaces => false
+    namespaces => {
+      "soapenv" => "http://schemas.xmlsoap.org/soap/envelope/"
+      "sec" => "http://security.company.com/v1"
+    }
+    xpath => [
+      "/soapenv:Envelope/soapenv:Body/sec:EventData/sec:Payload/text()", "extracted_json_payload",
+      "/soapenv:Envelope/soapenv:Header/sec:Token/@id", "auth_token"
+    ]
+    tag_on_failure => ["_xmlparsefailure"]
+  }
+
+  if !("_xmlparsefailure" in [tags]) and [extracted_json_payload][0] {
+    json {
+      source => "extracted_json_payload"
+      target => "parsed_json"
+      tag_on_failure => ["_jsonparsefailure"]
+    }
+
+    if !("_jsonparsefailure" in [tags]) and [parsed_json][raw_kv_metrics] {
+      kv {
+        source => "[parsed_json][raw_kv_metrics]"
+        target => "final_metrics"
+        field_split => ";"
+        value_split => "="
+        trim_key => " \t"
+        trim_value => " \t\"'"
+        tag_on_failure => ["_kvparsefailure"]
+      }
+    }
+  }
+}

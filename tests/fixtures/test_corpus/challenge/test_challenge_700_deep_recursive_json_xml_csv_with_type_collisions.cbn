@@ -1,0 +1,71 @@
+# TEST FIXTURE: Deep Recursive JSON/XML/CSV with Type Collisions
+# PURPOSE: To simulate a massive, nested payload extraction sequence common in large scale 
+# integrations where a payload might be CSV embedded in JSON embedded in XML, and where the 
+# target fields from each extraction step collide with existing types (e.g. string vs object vs array).
+# 
+# EXPECTED BEHAVIOR:
+# 1. Parser MUST maintain correct scope and target for each extraction plugin.
+# 2. Type collisions (e.g., trying to write an object into a field that is already a string) MUST 
+#    be handled gracefully (either overwrite, array coerce, or error tag, depending on standard behavior).
+# 3. The control flow MUST execute sequentially, applying the if conditions correctly after each parse step.
+# 4. It MUST NOT crash from deep nesting or conflicting targets.
+
+filter {
+  if [message] =~ /^</ {
+    xml {
+      source => "message"
+      target => "parsed_xml"
+      force_array => false
+      xpath => [
+        "/event/data/payload/text()", "inner_payload",
+        "/event/metadata/type/text()", "event_type"
+      ]
+    }
+
+    if [inner_payload] {
+      # The inner payload might be JSON
+      json {
+        source => "inner_payload"
+        target => "parsed_xml" # INTENTIONAL TYPE COLLISION OR MERGE (parsed_xml is already an object)
+        skip_on_invalid_json => true
+      }
+      
+      # The JSON might have contained a CSV string inside parsed_xml.csv_data
+      if [parsed_xml][csv_data] {
+        csv {
+          source => "[parsed_xml][csv_data]"
+          columns => ["col1", "col2", "col3", "event_type"] # COLLISION WITH ROOT event_type
+          target => "csv_parsed"
+          autogenerate_column_names => true
+        }
+
+        # Mutate based on the innermost extraction
+        if [csv_parsed][event_type] == "critical" {
+          mutate {
+            # Overwriting a root field with a nested field value
+            replace => { "event_type" => "%{[csv_parsed][event_type]}_elevated" }
+            # Appending to an array that might not exist or might be a string
+            merge => { "tags" => "[csv_parsed][col1]" }
+          }
+        }
+      } else if [parsed_xml][nested_xml] {
+        # Recursive XML extraction into the same target
+        xml {
+          source => "[parsed_xml][nested_xml]"
+          target => "parsed_xml" # Merge or overwrite depending on engine
+          force_array => true
+        }
+      }
+    }
+  }
+
+  # Final cleanup and type coercion check
+  if [event_type] == "critical_elevated" {
+    mutate {
+      convert => {
+        "event_type" => "string"
+        "tags" => "string" # Force array to string representation
+      }
+    }
+  }
+}

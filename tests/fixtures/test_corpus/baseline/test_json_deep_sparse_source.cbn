@@ -1,0 +1,25 @@
+# BASELINE REPRODUCTION: Deeply Nested Sparse JSON Parsing
+# Validates the handling of JSON plugins where the source field is deeply nested
+# and may or may not exist (sparse source). Also tests the target parameter.
+#
+# In large scale configurations, parsing is often chained and conditional,
+# meaning the source JSON string could reside in `[data][payload][raw_json]`.
+#
+# EXPECTED BEHAVIOR: The parser must identify the source path `[data][payload][raw_json]`
+# correctly and trace the extraction of fields into `[data][extracted]`.
+# It must handle cases where the target or source uses deep bracket notation.
+filter {
+  if [data][payload][raw_json] {
+    json {
+      source => "[data][payload][raw_json]"
+      target => "[data][extracted]"
+      skip_on_invalid_json => true
+    }
+    
+    if [data][extracted][status] == "success" {
+      mutate {
+        add_field => { "success_flag" => "true" }
+      }
+    }
+  }
+}

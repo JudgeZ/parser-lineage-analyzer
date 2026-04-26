@@ -1,0 +1,41 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must trace a field (`suspicious_url`) as it undergoes multiple sequential
+#    mutations simulating de-obfuscation techniques (gsubs, urldecodes).
+# 2. First, `gsub` replaces backslashes with forward slashes.
+# 3. Then, an `urldecode` plugin processes it.
+# 4. A subsequent `gsub` looks for null bytes (`%00` or `\x00`) or directory traversal (`../`).
+# 5. The parser graph must accurately represent the state of `suspicious_url` at each stage.
+# 6. If an `if` block checks `suspicious_url`, it must be linked to the latest version of the string
+#    after all prior mutates in the execution path.
+# 7. It should flag if there's an infinite loop risk if an engine implements recursive decoding 
+#    incorrectly, or simply map the linear dependency correctly.
+
+filter {
+  mutate {
+    gsub => [
+      "suspicious_url", "\\\\", "/",
+      "suspicious_url", "\s+", "%20"
+    ]
+  }
+
+  urldecode {
+    field => "suspicious_url"
+  }
+
+  mutate {
+    gsub => [
+      "suspicious_url", "\.\./", "",
+      "suspicious_url", "%00", ""
+    ]
+  }
+
+  if [suspicious_url] =~ /etc\/passwd/ {
+    mutate {
+      add_tag => ["path_traversal_attempt"]
+    }
+  } else if [suspicious_url] =~ /cmd\.exe/ {
+    mutate {
+      add_tag => ["command_injection_attempt"]
+    }
+  }
+}

@@ -1,0 +1,63 @@
+# TEST FIXTURE: Dynamic JSON Key Overwrite with Deep Coercion and Loops
+# PURPOSE: Simulate an extremely aggressive JSON parsing scenario where dynamic keys from 
+# the payload overwrite system fields, and where loops/shadow variables try to access them.
+# 
+# EXPECTED BEHAVIOR:
+# 1. The parser MUST NOT fail when a JSON payload attempts to overwrite standard reserved fields
+#    like `@timestamp` or `host` unless explicitly restricted by the engine.
+# 2. It MUST handle the scenario where the target of a JSON parse is explicitly set to a field
+#    that is heavily nested and part of a subsequent translation map.
+# 3. Dynamic lookup of keys via string interpolation MUST be parsed safely.
+
+filter {
+  # Base extraction
+  grok {
+    match => { "message" => "%{WORD:tenant_id} %{GREEDYDATA:json_payload}" }
+  }
+
+  if [json_payload] {
+    json {
+      source => "json_payload"
+      target => "tenant_%{tenant_id}_data" # Dynamic target using string interpolation!
+      skip_on_invalid_json => true
+    }
+    
+    # Now we have a dynamically named root field. 
+    # This tests the parser's ability to model unknown field structures.
+    mutate {
+      # Attempt to copy a dynamically named field into a static one for processing
+      copy => { "tenant_%{tenant_id}_data" => "processing_payload" }
+    }
+
+    if [processing_payload][action] {
+      translate {
+        field => "[processing_payload][action]"
+        destination => "[processing_payload][action_code]"
+        dictionary => {
+          "login" => "100"
+          "logout" => "101"
+          "update" => "200"
+          "delete" => "300"
+        }
+        fallback => "999"
+      }
+      
+      mutate {
+        convert => { "[processing_payload][action_code]" => "integer" }
+      }
+      
+      if [processing_payload][action_code] > 200 {
+        mutate {
+          add_tag => ["high_risk_action"]
+          # Rename the dynamic field based on risk
+          rename => { "tenant_%{tenant_id}_data" => "high_risk_tenant_%{tenant_id}_data" }
+        }
+      }
+    }
+  }
+
+  # Clean up temporary field
+  mutate {
+    remove_field => [ "processing_payload", "json_payload" ]
+  }
+}

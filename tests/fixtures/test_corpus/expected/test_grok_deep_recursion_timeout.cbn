@@ -1,0 +1,14 @@
+# test_grok_deep_recursion_timeout.cbn
+# EXPECTED BEHAVIOR:
+# Tests handling of recursive or highly interdependent Grok patterns that could lead to regex backtracking or deep recursion.
+# The parser should limit execution depth, timeout gracefully, and apply the `_grokparsefailure` tag instead of crashing.
+filter {
+  grok {
+    match => {
+      "message" => "%{SYSLOGBASE} %{GREEDYDATA:greedy_msg}"
+    }
+    pattern_definitions => {
+      "RECURSIVE_PATTERN" => "(?:%{RECURSIVE_PATTERN}|%{WORD})"
+    }
+  }
+}

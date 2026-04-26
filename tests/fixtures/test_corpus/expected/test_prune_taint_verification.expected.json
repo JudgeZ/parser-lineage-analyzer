@@ -1,0 +1,5 @@
+{
+  "must_have_warning_codes": [
+    "dynamic_prune"
+  ]
+}

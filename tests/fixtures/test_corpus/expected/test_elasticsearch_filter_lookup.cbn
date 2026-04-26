@@ -1,0 +1,14 @@
+# EXPECTED BEHAVIOR:
+# The parser must recognize the `elasticsearch` filter as an enrichment step,
+# simulating an external lookup. It must parse the query string and correctly
+# map the results into the specified fields based on the `fields` array.
+filter {
+  elasticsearch {
+    hosts => ["es-server"]
+    query => "type:user AND id:%{[user_id]}"
+    fields => {
+      "user_name" => "enriched_user_name"
+      "user_role" => "enriched_user_role"
+    }
+  }
+}

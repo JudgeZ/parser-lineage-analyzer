@@ -1,0 +1,13 @@
+# BASELINE REPRODUCTION: Bare Regex Literal in Mutate GSUB
+# Validates that the parser can correctly identify and parse bare regular expression literals
+# inside the `gsub` function array of the `mutate` plugin, instead of confusing them with division operators.
+# The tool MUST parse the regex literal `/some_regex/` without throwing a syntax error.
+# EXPECTED BEHAVIOR: `gsub` argument is captured correctly as a regex token, not math.
+filter {
+  mutate {
+    gsub => [
+      "message", /some[ \t]+regex/, "replacement",
+      "other_field", "string_regex", "replacement2"
+    ]
+  }
+}

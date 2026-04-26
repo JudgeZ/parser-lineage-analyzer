@@ -1,0 +1,31 @@
+# EXPECTED BEHAVIOR:
+# Evaluates the analyzer's ability to trace control flow through cascading date parsing 
+# attempts. In massive parse sets, multiple date formats are often tried sequentially. 
+# The analyzer should map this as a series of fallback paths, ensuring that at least 
+# one format succeeds or a final default/error state is reached.
+
+filter {
+  date {
+    match => [ "timestamp_string", "ISO8601" ]
+    target => "@timestamp"
+    tag_on_failure => [ "_dateparsefailure_step1" ]
+  }
+
+  if "_dateparsefailure_step1" in [tags] {
+    mutate {
+      remove_tag => [ "_dateparsefailure_step1" ]
+    }
+    date {
+      match => [ "timestamp_string", "MMM dd yyyy HH:mm:ss", "MMM  d yyyy HH:mm:ss" ]
+      target => "@timestamp"
+      tag_on_failure => [ "_dateparsefailure_step2" ]
+    }
+  }
+
+  if "_dateparsefailure_step2" in [tags] {
+     # Final fallback
+     mutate {
+       add_tag => [ "_unparseable_date" ]
+     }
+  }
+}

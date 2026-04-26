@@ -1,0 +1,37 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must track the dynamic key names being generated and used in subsequent lookups.
+# 2. When `[dynamic_target]` evaluates to `[parsed_data]`, the subsequent grok must write to `[parsed_data]`.
+# 3. If a grok fails, the fallback `on_error` or subsequent `if !_[tags] contains "_grokparsefailure"` must correctly route the control flow.
+# 4. Type casting must be respected even when the target field is dynamic and part of a fallback chain.
+
+filter {
+  mutate {
+    add_field => {
+      "dynamic_target" => "%{source_field_name}"
+      "dynamic_fallback" => "%{fallback_field_name}"
+    }
+  }
+
+  grok {
+    match => { "message" => "%{WORD:action} %{NUMBER:[%{dynamic_target}]:int}" }
+    tag_on_failure => ["_grokparsefailure_1"]
+  }
+
+  if "_grokparsefailure_1" in [tags] {
+    grok {
+      match => { "message" => "%{WORD:action} %{WORD:[%{dynamic_target}]} fallback %{NUMBER:[%{dynamic_fallback}]:float}" }
+      remove_tag => ["_grokparsefailure_1"]
+      tag_on_failure => ["_grokparsefailure_2"]
+    }
+  }
+
+  if "_grokparsefailure_2" not in [tags] {
+    mutate {
+      convert => {
+        "[%{dynamic_target}]" => "string"
+      }
+    }
+  } else {
+    drop { }
+  }
+}

@@ -1,0 +1,17 @@
+# EXPECTED BEHAVIOR:
+# This test checks how the parser models dependencies within a single mutate
+# block that has multiple rename operations. Logstash executes renames in the
+# order they are defined. If a field is renamed, and then that *new* name
+# is used as the source for another rename in the same block, the parser
+# must correctly sequence the operations to resolve the final lineage.
+# Expected output: 'final_field' depends on 'original_field'.
+
+filter {
+  mutate {
+    rename => {
+      "original_field" => "intermediate_field1"
+      "intermediate_field1" => "intermediate_field2"
+      "intermediate_field2" => "final_field"
+    }
+  }
+}

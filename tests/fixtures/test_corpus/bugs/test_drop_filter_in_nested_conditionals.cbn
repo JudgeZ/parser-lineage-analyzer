@@ -1,0 +1,18 @@
+# EXPECTED BEHAVIOR:
+# A `drop {}` filter terminates the pipeline for a given event.
+# When nested deeply in conditionals, the analyzer must branch the lineage graph correctly,
+# marking one execution path as completely halted, while the other continues.
+filter {
+  if [log_type] == "debug" {
+    if [user_id] == "test_account" {
+      drop {}
+    } else {
+      mutate { add_tag => ["debug_kept"] }
+    }
+  } else if [log_type] == "trace" {
+    drop {}
+  }
+  mutate {
+    add_tag => ["processed"]
+  }
+}

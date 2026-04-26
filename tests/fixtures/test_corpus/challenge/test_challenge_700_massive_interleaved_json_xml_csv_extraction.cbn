@@ -1,0 +1,32 @@
+# TEST OBJECTIVE: Test parsing behavior when JSON, XML, and CSV parsing are interleaved conditionally with shared target roots.
+# EXPECTED BEHAVIOR:
+# 1. The parser MUST track potential target overwrites when JSON, XML, and CSV write to the same `parsed_data` root.
+# 2. It MUST handle the fallback logic.
+
+filter {
+  if [payload_type] == "json" {
+    json {
+      source => "raw_payload"
+      target => "parsed_data"
+    }
+  } else if [payload_type] == "xml" {
+    xml {
+      source => "raw_payload"
+      target => "parsed_data"
+      force_array => false
+    }
+  } else if [payload_type] == "csv" {
+    csv {
+      source => "raw_payload"
+      target => "parsed_data"
+      separator => ","
+      autogenerate_column_names => true
+    }
+  }
+
+  if [parsed_data][error] {
+    mutate {
+      add_tag => ["payload_error"]
+    }
+  }
+}

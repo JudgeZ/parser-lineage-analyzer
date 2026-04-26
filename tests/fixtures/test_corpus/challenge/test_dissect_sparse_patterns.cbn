@@ -1,0 +1,14 @@
+# CHALLENGE: Dissect Sparse Patterns
+# Validates the `dissect` plugin handling of sparse patterns, specifically the use of
+# empty mapping brackets `%{}` which tell the plugin to skip that portion of the string.
+# In production configs, logs with variable padding or unneeded sections frequently use `%{}`.
+# The tool MUST NOT crash on empty string keys in the pattern and should correctly identify
+# only the named variables (`key1` and `key2`) as newly created fields.
+# EXPECTED BEHAVIOR: Lineage tracks `key1` and `key2`, ignoring the skipped fields `%{}`.
+filter {
+  dissect {
+    mapping => {
+      "message" => "%{key1} %{} %{} %{key2} %{+key2}"
+    }
+  }
+}

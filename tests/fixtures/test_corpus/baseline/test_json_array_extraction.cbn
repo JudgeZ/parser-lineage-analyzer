@@ -1,0 +1,21 @@
+# BASELINE REPRODUCTION: JSON Array Index Extraction
+# Validates the parser's ability to extract and map from JSON arrays.
+# In complex logs (like AWS CloudTrail or CrowdStrike), arrays are common.
+# EXPECTED BEHAVIOR: The parser MUST correctly parse array index notation
+# `[json][records][0][name]` without treating the brackets as syntax errors
+# and accurately establish the lineage.
+filter {
+  json {
+    source => "message"
+    target => "parsed_json"
+  }
+
+  if [parsed_json][records][0] {
+    mutate {
+      add_field => {
+        "first_record_name" => "%{[parsed_json][records][0][name]}"
+        "first_record_value" => "%{[parsed_json][records][0][value]}"
+      }
+    }
+  }
+}

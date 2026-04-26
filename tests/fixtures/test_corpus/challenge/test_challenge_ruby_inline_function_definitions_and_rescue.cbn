@@ -1,0 +1,25 @@
+# TEST BEHAVIOR:
+# In real-world 700+ corpuses, ruby blocks often contain full inline functions,
+# classes, or complex error handling (begin/rescue/ensure).
+# The parser must not crash when analyzing the ruby AST. It should handle or
+# gracefully ignore inline method definitions `def ...` and only track the 
+# data lineage based on `event.get` and `event.set` calls, even if they are
+# buried inside an inner function or rescue block.
+filter {
+  ruby {
+    code => "
+      def parse_custom(val)
+        return val.upcase
+      end
+      
+      begin
+        raw_val = event.get('raw_payload')
+        event.set('processed_payload', parse_custom(raw_val))
+      rescue => e
+        event.set('ruby_error', e.message)
+      ensure
+        event.set('ruby_executed', true)
+      end
+    "
+  }
+}

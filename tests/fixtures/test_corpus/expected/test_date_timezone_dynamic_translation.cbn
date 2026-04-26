@@ -1,0 +1,24 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must capture the sequential data dependency: `translate` populates `[derived_tz]`, which is then read by `date`.
+# 2. The `date` plugin's `timezone` configuration uses dynamic interpolation `%{derived_tz}`. The parser must link this back to the `derived_tz` field.
+# 3. The `fallback` in translate must be tracked as a potential value for `derived_tz`.
+# 4. If `derived_tz` is missing, the date plugin might fail, so error handling or tags (`_dateparsefailure`) should be implicitly understood if tracking failures.
+
+filter {
+  translate {
+    field => "[location][country_code]"
+    destination => "[derived_tz]"
+    dictionary => {
+      "US" => "America/New_York"
+      "UK" => "Europe/London"
+      "JP" => "Asia/Tokyo"
+    }
+    fallback => "UTC"
+  }
+
+  date {
+    match => [ "timestamp", "ISO8601" ]
+    timezone => "%{derived_tz}"
+    target => "@timestamp"
+  }
+}

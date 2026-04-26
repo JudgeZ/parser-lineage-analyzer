@@ -1,0 +1,22 @@
+// EXPECTED BEHAVIOR:
+// The json filter implicitly adds `_jsonparsefailure` to `[tags]` if it fails.
+// The parser must understand this implicit mutation.
+// The subsequent `if "_jsonparsefailure" in [tags]` must correctly link to the potential failure of the json filter.
+// Ensures implicit failure tags are tracked in the static analysis.
+
+filter {
+  json {
+    source => "raw_message"
+    target => "parsed_json"
+  }
+
+  if "_jsonparsefailure" in [tags] {
+    mutate {
+      add_field => { "error_type" => "json_failure" }
+    }
+  } else {
+    mutate {
+      rename => { "[parsed_json][event_id]" => "event_id" }
+    }
+  }
+}

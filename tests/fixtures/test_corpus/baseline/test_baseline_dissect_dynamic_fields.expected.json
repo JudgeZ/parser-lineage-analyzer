@@ -1,0 +1,4 @@
+{
+  "must_resolve_fields": ["field_a", "field_b"],
+  "must_not_have_warning_codes": ["malformed_config"]
+}

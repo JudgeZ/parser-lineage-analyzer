@@ -1,0 +1,43 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must trace the data through three distinct extraction layers: CSV -> JSON -> KV.
+# 2. First, `csv` extracts `payload` into `csv_fields`.
+# 3. Then, a conditional checks if `csv_fields.embedded_json` exists and is valid.
+# 4. Next, `json` parses `csv_fields.embedded_json` into `json_data`.
+# 5. Then, another conditional checks for `json_data.properties.raw_kv`.
+# 6. Finally, `kv` parses `json_data.properties.raw_kv` into the root object.
+# 7. The parser must handle the implicit dependencies: KV depends on JSON which depends on CSV.
+# 8. Failure at any level should correctly skip the subsequent levels and potentially apply a failure tag.
+
+filter {
+  csv {
+    source => "raw_log"
+    columns => ["timestamp", "host", "embedded_json", "status"]
+    separator => ","
+    target => "csv_fields"
+  }
+
+  if [csv_fields][embedded_json] {
+    json {
+      source => "[csv_fields][embedded_json]"
+      target => "json_data"
+      skip_on_invalid_json => true
+    }
+
+    if [json_data][properties][raw_kv] {
+      kv {
+        source => "[json_data][properties][raw_kv]"
+        field_split => "&"
+        value_split => "="
+        target => "extracted_kv"
+      }
+      
+      if [extracted_kv][action] == "DROP" {
+        drop { }
+      }
+    }
+  } else {
+    mutate {
+      add_tag => ["missing_payload"]
+    }
+  }
+}

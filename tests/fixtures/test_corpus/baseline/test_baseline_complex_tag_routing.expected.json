@@ -1,0 +1,4 @@
+{
+  "must_have_warning_codes": ["mutate_ordering_drift"],
+  "must_not_have_warning_codes": ["unsupported_mutate_operation"]
+}

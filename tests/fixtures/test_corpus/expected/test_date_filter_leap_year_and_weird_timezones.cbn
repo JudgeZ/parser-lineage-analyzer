@@ -1,0 +1,31 @@
+# EXPECTED BEHAVIOR:
+# This test verifies the resilience of the date plugin when provided with complex, edge-case
+# timezone inputs and dates falling on leap years.
+# It must iterate through multiple fallback formats and dynamically assign the timezone using a field reference.
+# If the dynamic timezone lookup fails or the date string is invalid, it must safely fallback to UTC
+# and tag the event with _dateparsefailure.
+
+filter {
+  # Assume [event_time] might be "Feb 29 2024 14:30:00" and [tz_field] is "America/New_York" or a bizarre abbreviation
+  date {
+    match => [ 
+      "event_time", 
+      "MMM dd yyyy HH:mm:ss", 
+      "MMM  d yyyy HH:mm:ss", 
+      "ISO8601" 
+    ]
+    timezone => "%{tz_field}"
+    locale => "en"
+    target => "@timestamp"
+    tag_on_failure => ["_dateparsefailure", "weird_date_format"]
+  }
+
+  if "_dateparsefailure" in [tags] {
+    # Fallback attempt with strict UTC assuming a secondary timestamp field
+    date {
+      match => [ "secondary_time", "UNIX_MS" ]
+      timezone => "UTC"
+      target => "@timestamp"
+    }
+  }
+}

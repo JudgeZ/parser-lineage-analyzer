@@ -1,0 +1,20 @@
+# EXPECTED BEHAVIOR:
+# 1. Tests the parser's ability to handle complex control flows involving both regex matches and CIDR block checks simultaneously.
+# 2. Specifically checks how operators like `in` apply to CIDR arrays vs string arrays.
+# 3. Evaluates proper short-circuiting and AST generation for deeply nested boolean logic.
+
+filter {
+  if [client_ip] in ["192.168.0.0/16", "10.0.0.0/8"] and [request] =~ /^\/admin/ {
+    mutate { add_tag => ["internal_admin"] }
+  } else if ([client_ip] not in ["127.0.0.1/32"] and [status] == 403) or ([user_agent] =~ /curl/i) {
+    mutate { add_tag => ["suspicious"] }
+  }
+
+  if "suspicious" in [tags] {
+    if [client_ip] in "172.16.0.0/12" {
+      drop {}
+    } else {
+      mutate { add_field => { "action" => "block" } }
+    }
+  }
+}

@@ -1,0 +1,18 @@
+# EXPECTED BEHAVIOR:
+# The parser should detect that the ruby block modifies `event.get('my_field')` internally.
+# It should also flag that the ruby block is opaque and any fields accessed via `event.get` or `event.set`
+# represent dependencies or mutations. The shadowing of `my_var` is an internal ruby detail but the event
+# mutation must be tracked.
+filter {
+  mutate {
+    add_field => { "my_field" => "initial" }
+  }
+  ruby {
+    code => "
+      my_field = event.get('my_field')
+      my_field = my_field + '_modified'
+      event.set('my_field', my_field)
+      event.set('new_field', my_field)
+    "
+  }
+}

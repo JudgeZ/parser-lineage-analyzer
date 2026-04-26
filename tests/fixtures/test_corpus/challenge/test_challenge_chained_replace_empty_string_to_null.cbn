@@ -1,0 +1,31 @@
+# Test: Challenge Chained Replace Empty String to Null
+# Description: Logstash does not have a native "set empty to null" function that works universally well in older versions. A common pattern in a 700+ corpus is stripping whitespace, checking for emptiness, and then either deleting the field or replacing it with an explicit null/drop. The parser must trace this exact idiom and not hallucinate missing fields or drop the event inadvertently.
+
+filter {
+  # 1. Strip whitespace
+  mutate {
+    strip => ["user_agent", "referrer", "client_ip"]
+  }
+
+  # 2. For each field, if it's strictly empty, remove it or set a placeholder
+  if [user_agent] == "" {
+    mutate { remove_field => ["user_agent"] }
+  }
+  if [referrer] == "-" or [referrer] == "" {
+    mutate { remove_field => ["referrer"] }
+  }
+  
+  if [client_ip] == "" or [client_ip] == "unknown" {
+    # Replace with a safe local IP or drop if strict
+    if [strict_ip_enforcement] == "true" {
+      drop { }
+    } else {
+      mutate { replace => { "client_ip" => "127.0.0.1" } }
+    }
+  }
+
+  # 3. Post-cleanup validation
+  if ![client_ip] {
+    mutate { add_tag => ["ip_missing_post_cleanup"] }
+  }
+}

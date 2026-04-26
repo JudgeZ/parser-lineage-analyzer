@@ -1,0 +1,32 @@
+# EXPECTED BEHAVIOR:
+# 1. Parser should correctly track the creation and mutation of [@metadata] fields.
+# 2. [@metadata] fields are typically used for intermediate state and control flow.
+# 3. Lineage analysis should recognize that [@metadata] fields influence control flow 
+#    but do not directly manifest in the final event payload unless explicitly copied.
+# 4. Should handle array syntax like [@metadata][temp][index].
+
+filter {
+  mutate {
+    add_field => { "[@metadata][temp_id]" => "%{id}" }
+    add_field => { "[@metadata][flags]" => [] }
+  }
+
+  if [@metadata][temp_id] =~ /^admin_/ {
+    mutate {
+      add_field => { "[@metadata][is_admin]" => "true" }
+      add_tag => [ "admin_activity" ]
+    }
+  }
+
+  if [@metadata][is_admin] == "true" {
+    mutate {
+      add_field => { "admin_user" => "%{[@metadata][temp_id]}" }
+    }
+  }
+
+  # Clean up is not strictly necessary for @metadata in Logstash, 
+  # but some configurations might do it anyway.
+  mutate {
+    remove_field => [ "[@metadata][flags]" ]
+  }
+}

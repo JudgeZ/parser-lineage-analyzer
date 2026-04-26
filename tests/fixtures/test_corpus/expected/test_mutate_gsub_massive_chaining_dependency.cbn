@@ -1,0 +1,26 @@
+# EXPECTED BEHAVIOR:
+# This test challenges the parser's ability to handle long chains of gsub operations within a single mutate block.
+# In large parsers, users often string together dozens of gsub replacements to clean up dirty data.
+# The parser must execute these in the exact order specified, as later substitutions often depend on 
+# the intermediate states created by earlier ones.
+# Furthermore, it tests array of arrays syntax for gsub.
+filter {
+  mutate {
+    gsub => [
+      "raw_text", "\\x00", "",
+      "raw_text", "\\s+", " ",
+      "raw_text", "^\\s+|\\s+$", "",
+      "raw_text", "(error|fail|warn)", "[\1]",
+      "raw_text", "\\[error\\]", "CRITICAL",
+      "raw_text", "\\[fail\\]", "ERROR",
+      "raw_text", "\\[warn\\]", "WARNING",
+      "raw_text", "CRITICAL ERROR", "FATAL"
+    ]
+  }
+  
+  if [raw_text] =~ /FATAL/ {
+    mutate {
+      add_tag => ["fatal_error_found"]
+    }
+  }
+}

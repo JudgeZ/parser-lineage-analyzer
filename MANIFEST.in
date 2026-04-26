@@ -1,0 +1,2 @@
+include parser_lineage_analyzer/_native/*.pyx
+include parser_lineage_analyzer/_native/*.c

@@ -1,0 +1,34 @@
+# BASELINE REPRODUCTION: Input Type Tagging Cascade
+# Validates that metadata and tags injected at the `input` boundary persist
+# perfectly through the pipeline to strictly dictate filter and output execution.
+# EXPECTED BEHAVIOR:
+# - UDP 514 input receives `type => "network"`. UDP 515 receives `type => "auth"`.
+# - Filter and output blocks MUST enforce strict boundaries based on these input types.
+input {
+  udp {
+    port => 514
+    type => "network_firewall"
+    tags => ["datacenter_a"]
+  }
+  udp {
+    port => 515
+    type => "auth_vpn"
+    tags => ["datacenter_b"]
+  }
+}
+
+filter {
+  if [type] == "network_firewall" {
+    grok { match => { "message" => "FW_LOG: %{GREEDYDATA:fw_data}" } }
+  } else if [type] == "auth_vpn" {
+    kv { source => "message" }
+  }
+}
+
+output {
+  if "datacenter_a" in [tags] {
+    elasticsearch { index => "dc-a-traffic" }
+  } else {
+    elasticsearch { index => "dc-b-traffic" }
+  }
+}

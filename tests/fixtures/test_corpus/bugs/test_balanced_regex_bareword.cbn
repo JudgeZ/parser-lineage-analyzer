@@ -1,0 +1,9 @@
+# BUG REPRODUCTION: Lexer Brace Desynchronization on Regex Barewords
+# The lexer uses a fragile heuristic `_is_regex_literal_start` that triggers on bareword
+# file paths containing slashes (e.g., `/var/{logs}/`). This causes the lexer to consume
+# braces as regex characters instead of tokens, completely corrupting the global brace-depth counter.
+# EXPECTED FIX: The parser should parse this block without exiting early and losing sight of subsequent lines.
+filter {
+  mutate { replace => { "path" => /var/{logs}/ } }
+  mutate { replace => { "status" => "parsed" } }
+}

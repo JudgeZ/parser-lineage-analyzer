@@ -1,0 +1,34 @@
+# TEST BEHAVIOR:
+# A common issue in large corpuses is modifying a field's type, renaming it, 
+# and then relying on it in a fallback operation later.
+# The parser must track that `original_id` was converted to integer, renamed
+# to `user_id` or `system_id` conditionally, and then used as a fallback source for `primary_id`.
+# The lineage of `primary_id` must cleanly trace back to `original_id`.
+filter {
+  mutate {
+    convert => { "original_id" => "integer" }
+  }
+  
+  if [original_id] > 1000 {
+    mutate {
+      rename => { "original_id" => "user_id" }
+    }
+  } else {
+    mutate {
+      rename => { "original_id" => "system_id" }
+    }
+  }
+
+  mutate {
+    add_field => {
+      "primary_id" => "%{user_id}"
+    }
+  }
+  
+  # Fallback if primary_id was literally "%{user_id}" because it didn't exist
+  if [primary_id] == "%{user_id}" {
+    mutate {
+      replace => { "primary_id" => "%{system_id}" }
+    }
+  }
+}

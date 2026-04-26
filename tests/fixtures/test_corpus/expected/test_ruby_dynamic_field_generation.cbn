@@ -1,0 +1,13 @@
+# EXPECTED BEHAVIOR:
+# The static analyzer should mark the event as tainted or having dynamic schema
+# because the ruby block injects fields based on runtime keys that cannot be statically
+# determined.
+filter {
+  ruby {
+    code => "
+      event.get('dynamic_dict').each do |k, v|
+        event.set('prefix_' + k, v * 2)
+      end
+    "
+  }
+}

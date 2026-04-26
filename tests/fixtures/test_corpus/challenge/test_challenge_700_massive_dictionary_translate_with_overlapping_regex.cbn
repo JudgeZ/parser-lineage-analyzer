@@ -1,0 +1,56 @@
+# TEST BEHAVIOR:
+# Simulates a scenario where a very large dictionary (in practice loaded from an external YAML/CSV)
+# is used inline or configured with overlapping regex and exact match rules. The challenge
+# in 700+ parser systems is that translate dictionaries are often shared across parsers and 
+# contain thousands of keys. Sometimes regex keys overlap with exact keys, or multiple regex
+# keys overlap with each other, leading to ambiguity in translation order.
+# The reverse parser must properly handle `regex => true`, `exact => true`, and `fallback`
+# behavior, modeling the priority of exact matches over regex matches, and the iteration order
+# of regex matches if an exact match is not found.
+filter {
+  translate {
+    field => "http_user_agent"
+    destination => "browser_family"
+    dictionary => {
+      # Exact matches
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36" => "Chrome 91 (Exact)"
+      "CustomApp/1.0" => "Custom Application"
+      
+      # Regex matches
+      "^Mozilla.*Chrome/.*" => "Chrome (Generic)"
+      "^Mozilla.*Firefox/.*" => "Firefox"
+      ".*Safari.*" => "Safari" # Overlaps with Chrome string but usually evaluated top-to-bottom
+      ".*iPhone.*" => "iOS Device"
+    }
+    exact => true
+    regex => true
+    fallback => "Unknown Browser"
+  }
+
+  if [browser_family] == "Chrome (Generic)" {
+    mutate {
+      add_tag => [ "is_chrome" ]
+    }
+  }
+
+  translate {
+    field => "status_code"
+    destination => "status_description"
+    dictionary => {
+      "200" => "OK"
+      "404" => "Not Found"
+      "500" => "Internal Server Error"
+      "5.." => "Server Error (Regex)"
+      "..." => "Unknown 3-digit code"
+    }
+    exact => true
+    regex => true
+    # no fallback, field won't be created if no match
+  }
+
+  if !([status_description]) {
+    mutate {
+      add_field => { "status_description" => "Unmapped Code" }
+    }
+  }
+}

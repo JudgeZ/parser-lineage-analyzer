@@ -1,0 +1,16 @@
+# CHALLENGE REPRODUCTION: Grok Duplicate Named Capture Collision
+# Validates how grok handles multiple distinct patterns in the same match block
+# utilizing the identical named capture but extracting different underlying data types.
+# EXPECTED BEHAVIOR:
+# - If regex A captures an integer into `(?<status>\d+)` and regex B captures a 
+#   string into `(?<status>[A-Z]+)`, the parser must not crash when determining the target type.
+filter {
+  grok {
+    match => {
+      "message" => [
+        "Status Code: (?<status>\d+)",
+        "Status Text: (?<status>[A-Z]+)"
+      ]
+    }
+  }
+}

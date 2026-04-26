@@ -1,0 +1,68 @@
+/*
+ * TEST CORPUS: Event Dropping and Deep Logic Contradictions
+ * 
+ * CHALLENGE:
+ * Parser configurations often include multiple drop conditions to filter out noise. These conditions
+ * can be nested, contradictory, or redundant. Identifying unreachable branches or incorrectly dropped
+ * events is a key requirement for parser lineage analysis.
+ * 
+ * EXPECTED BEHAVIOR:
+ * 1. The parser must track the `drop{}` action as a terminal state for the lineage mapping of the current event.
+ * 2. It should analyze the nested `if` statements and detect potential logical contradictions 
+ *    (e.g., `if [action] == "deny"` followed immediately by `if [action] == "allow"` inside the same block).
+ * 3. The `not in` and `in` array operator conditions should be correctly evaluated.
+ * 4. The analyzer should flag the unreachable code block where `action == "allow"` is checked inside a `action == "deny"` block.
+ */
+
+filter {
+  # Extract basic fields
+  kv {
+    source => "message"
+    field_split => " "
+    value_split => "="
+  }
+
+  # Initial drop for noisy domains
+  if [domain] in ["noise.local", "test.local", "dev.local"] {
+    drop { }
+  }
+
+  # Complex nested logic
+  if [action] == "deny" {
+    mutate {
+      add_tag => [ "blocked_traffic" ]
+    }
+    
+    # CONTRADICTION: action cannot be 'allow' here.
+    # The analyzer must identify this block as unreachable.
+    if [action] == "allow" {
+      mutate {
+        add_tag => [ "this_should_never_happen" ]
+      }
+    }
+
+    if [src_ip] == "10.0.0.1" {
+      # Ignore block for the main gateway
+      drop { }
+    }
+  } else if [action] == "allow" {
+    if [dest_port] not in ["80", "443", "53"] {
+      mutate {
+        add_tag => [ "non_standard_port" ]
+      }
+    }
+  } else {
+    # If action is neither allow nor deny, and it exists
+    if [action] {
+      mutate {
+        add_field => { "unknown_action" => "%{action}" }
+      }
+    }
+  }
+
+  # Another drop condition later in the pipeline
+  if "blocked_traffic" in [tags] and [src_ip] =~ /^192\.168\.100\./ {
+    # Drop traffic from specific subnet even if it was tagged
+    drop { }
+  }
+}

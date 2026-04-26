@@ -1,0 +1,13 @@
+# Test: Field References with Special Characters
+# Description: Tests how the parser handles field names containing dots, hyphens, and at-signs.
+# The parser must correctly identify `[http.request.method]`, `@timestamp`, and `user-agent`
+# as complete, individual identifiers and not perform unintended dotted member inference.
+
+filter {
+  if [http.request.method] == "POST" {
+    mutate {
+      rename => { "user-agent" => "[http.request.headers][user-agent]" }
+      copy => { "@timestamp" => "event_time" }
+    }
+  }
+}

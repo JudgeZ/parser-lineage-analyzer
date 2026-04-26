@@ -1,0 +1,24 @@
+# EXPECTED BEHAVIOR:
+# Tests the parser's modeling of deep JSON objects that are subsequently
+# modified by `mutate` operations. The parser must understand that if JSON
+# creates a nested object `a.b.c`, and mutate later renames `a.b` to `x.y`,
+# the final state is `x.y.c`. It also tests conflict resolution when
+# `target` overwrites an existing field.
+
+filter {
+  mutate {
+    add_field => { "parsed_data" => "some_string_that_will_be_overwritten" }
+  }
+
+  json {
+    source => "raw_json_string"
+    target => "parsed_data"
+    # This overwrites parsed_data with a hash/object
+  }
+
+  mutate {
+    rename => { "[parsed_data][user][id]" => "[user_metadata][user_id]" }
+    merge => { "[parsed_data][tags]" => "[global_tags]" }
+    # parsed_data is now an object, and these operations manipulate its internals.
+  }
+}

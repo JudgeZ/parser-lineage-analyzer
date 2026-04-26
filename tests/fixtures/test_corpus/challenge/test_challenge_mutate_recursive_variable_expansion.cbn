@@ -1,0 +1,20 @@
+# EXPECTED BEHAVIOR:
+# This test challenges the parser's taint tracking and string interpolation resolution.
+# A field is created, and then subsequent fields are created by interpolating the previous ones.
+# The parser must correctly model the order of operations within the `mutate` block (or across multiple `mutate` blocks)
+# to understand that `[final_string]` ultimately depends on `[source_a]`, `[source_b]`, and `[source_c]`.
+
+filter {
+  mutate {
+    add_field => {
+      "intermediate_1" => "%{source_a}_%{source_b}"
+    }
+  }
+  mutate {
+    add_field => {
+      "intermediate_2" => "%{intermediate_1}_%{source_c}"
+      "final_string" => "Result: %{intermediate_2}"
+    }
+    remove_field => ["intermediate_1", "intermediate_2"]
+  }
+}

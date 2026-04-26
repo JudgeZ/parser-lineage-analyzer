@@ -1,0 +1,18 @@
+# EXPECTED BEHAVIOR:
+# 1. A complex conditional combining tag existence, field regex match, and negative lookups.
+# 2. Correct precedence grouping and AST generation for `and`, `or`, `in`, `!~`.
+# 3. Ensures the parser does not misinterpret the regex literal or the field references.
+
+filter {
+  if ("syslog" in [tags] or "wineventlog" in [tags]) and [message] !~ /^DEBUG/ and [process][name] =~ /(?i)powershell\.exe/ {
+    mutate {
+      add_tag => [ "potential_malicious_powershell" ]
+    }
+  }
+
+  if "potential_malicious_powershell" in [tags] {
+    mutate {
+      add_field => { "severity" => "high" }
+    }
+  }
+}

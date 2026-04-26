@@ -1,0 +1,35 @@
+/*
+ * EXPECTED BEHAVIOR:
+ * This test simulates a complex date extraction workflow.
+ * First, a translate filter determines the timezone based on a source IP or location string.
+ * Then, a date filter uses multiple formats and the dynamically resolved timezone.
+ * If the first date filter fails, a second one with different formats and a default timezone is attempted.
+ * The parser must correctly map the dependency of `extracted_timezone` from translate into the date filter's `timezone` parameter, and track the `_dateparsefailure` tag logic.
+ */
+filter {
+  translate {
+    source => "[client][location]"
+    target => "extracted_timezone"
+    dictionary => {
+      "US-East" => "America/New_York"
+      "US-West" => "America/Los_Angeles"
+      "EU" => "Europe/London"
+    }
+    fallback => "UTC"
+  }
+
+  date {
+    match => [ "timestamp_str", "yyyy-MM-dd HH:mm:ss", "ISO8601" ]
+    timezone => "%{extracted_timezone}"
+    target => "@timestamp"
+  }
+
+  if "_dateparsefailure" in [tags] {
+    mutate { remove_tag => ["_dateparsefailure"] }
+    date {
+      match => [ "backup_timestamp", "UNIX", "UNIX_MS" ]
+      timezone => "UTC"
+      target => "@timestamp"
+    }
+  }
+}

@@ -1,0 +1,11 @@
+# BASELINE REPRODUCTION: Merge Object Projection
+# Validates that `mutate { merge => ... }` correctly projects all known descendant
+# sub-fields from the source onto the destination.
+# The tool MUST continue to ensure that `dest.name` is successfully mapped
+# with a lineage tracing back to `src.name`. (This stands in contrast to the
+# rename and copy plugins which currently fail this).
+# EXPECTED BEHAVIOR: `dest.name` should be exact, mapped to "Alice".
+filter {
+  mutate { replace => { "src.name" => "Alice" } }
+  mutate { merge => { "dest" => "src" } }
+}

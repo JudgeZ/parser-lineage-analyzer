@@ -1,0 +1,420 @@
+"""Command-line interface."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from collections.abc import Mapping, Sequence
+from pathlib import Path
+from typing import TYPE_CHECKING, Protocol, cast
+
+from . import __version__
+from .analyzer import MAX_PARSER_BYTES
+
+if TYPE_CHECKING:
+    from .model import QueryResult
+
+_STDIN_READ_CHUNK_CHARS = 64 * 1024
+_UTF8_BOM_BYTES = b"\xef\xbb\xbf"
+
+
+class _BinaryReadable(Protocol):
+    def read(self, size: int = -1) -> bytes: ...
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="parser-lineage-analyzer",
+        description="Trace a Google SecOps / Chronicle UDM parser field to likely raw-log source field(s).",
+    )
+    parser.add_argument("parser_file", help="Path to a SecOps/Chronicle parser file (.cbn or text). Use '-' for stdin.")
+    parser.add_argument(
+        "udm_field", nargs="?", help="UDM field to trace, e.g. target.ip or event.idm.read_only_udm.target.ip"
+    )
+    parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    parser.add_argument(
+        "--compact-json",
+        action="store_true",
+        help="Emit bounded JSON for high-cardinality query output. Query semantics are unchanged.",
+    )
+    parser.add_argument(
+        "--list", action="store_true", help="List discovered UDM-like parser fields instead of querying one field."
+    )
+    parser.add_argument(
+        "--summary", action="store_true", help="Emit parser/analyzer coverage summary instead of querying one field."
+    )
+    parser.add_argument(
+        "--compact-summary",
+        action="store_true",
+        help="Bound high-volume summary diagnostics and include counts by code. Implies --summary.",
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help=(
+            "Exit 3 if the analysis includes warnings, unsupported constructs, or taints, "
+            "or if the query result is unresolved, partial, or dynamic. "
+            "Applies to --list, --summary, --compact-summary, and query modes."
+        ),
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Include full parser locations, notes, taints, and structured warning detail in text output.",
+    )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument(
+        "--max-parser-bytes",
+        type=int,
+        default=MAX_PARSER_BYTES,
+        help=(
+            f"Maximum parser input size in bytes. Defaults to {MAX_PARSER_BYTES}. "
+            "Use a negative value (e.g., -1) for unlimited."
+        ),
+    )
+    # Per-mutate-block canonical ordering matches Logstash's documented
+    # operation order (rename → update → replace → convert → gsub →
+    # uppercase → lowercase → strip → remove → split → join → merge →
+    # add_field → add_tag → remove_tag). Adjacent mutate{} blocks are
+    # intentionally NOT merged for ordering: Logstash applies canonical order
+    # within each individual mutate{} invocation, then advances to the next
+    # pipeline plugin in source order. The per-pipeline alternative was
+    # investigated and rejected (no real fixture demonstrated the cross-block
+    # need).
+    parser.add_argument(
+        "--mutate-canonical-order",
+        action="store_true",
+        help=(
+            "Reorder operations within each mutate{} block into Logstash's "
+            "canonical execution order before iterating. Default is source "
+            "order; this flag opts into Logstash-fidelity semantics."
+        ),
+    )
+    return parser
+
+
+def _parse_args(parser: argparse.ArgumentParser, argv: list[str] | None) -> argparse.Namespace:
+    parse_intermixed_args = getattr(parser, "parse_intermixed_args", None)
+    if parse_intermixed_args is not None:
+        return cast(argparse.Namespace, parse_intermixed_args(argv))
+    return parser.parse_args(argv)
+
+
+def _strip_utf8_bom(text: str) -> str:
+    # Defense in depth: file paths use ``utf-8-sig`` to consume a BOM before
+    # decode, but stdin (and pre-decoded text streams without a binary buffer)
+    # may still carry the U+FEFF character at the head. Stripping it here keeps
+    # the first identifier from being silently corrupted before it reaches Lark.
+    if text.startswith("﻿"):
+        return text[1:]
+    return text
+
+
+def _read_stdin_bounded(max_parser_bytes: int) -> str:
+    buffer = cast(_BinaryReadable | None, getattr(sys.stdin, "buffer", None))
+    if max_parser_bytes < 0:
+        data_or_text = buffer.read() if buffer is not None else sys.stdin.read()
+        if isinstance(data_or_text, bytes):
+            return _strip_utf8_bom(data_or_text.decode("utf-8-sig"))
+        return _strip_utf8_bom(data_or_text)
+    if buffer is not None:
+        data = buffer.read(max_parser_bytes + 1)
+        if len(data) > max_parser_bytes:
+            raise ValueError(f"Parser input size exceeds maximum parser size of {max_parser_bytes} bytes")
+        return _strip_utf8_bom(data.decode("utf-8-sig"))
+
+    chunks: list[str] = []
+    size = 0
+    while True:
+        remaining = max_parser_bytes - size
+        if remaining < 0:
+            raise ValueError(f"Parser input size exceeds maximum parser size of {max_parser_bytes} bytes")
+        chunk = sys.stdin.read(min(_STDIN_READ_CHUNK_CHARS, remaining + 1))
+        if not chunk:
+            break
+        size += len(chunk.encode("utf-8"))
+        if size > max_parser_bytes:
+            raise ValueError(f"Parser input size exceeds maximum parser size of {max_parser_bytes} bytes")
+        chunks.append(chunk)
+    return _strip_utf8_bom("".join(chunks))
+
+
+def _read_parser(path: str, max_parser_bytes: int = MAX_PARSER_BYTES) -> str:
+    if path == "-":
+        text = _read_stdin_bounded(max_parser_bytes)
+    else:
+        parser_path = Path(path)
+        if parser_path.is_dir():
+            raise IsADirectoryError(path)
+        if max_parser_bytes < 0:
+            data = parser_path.read_bytes()
+        else:
+            with parser_path.open("rb") as handle:
+                data = handle.read(max_parser_bytes + len(_UTF8_BOM_BYTES) + 1)
+            payload_size = len(data.removeprefix(_UTF8_BOM_BYTES))
+            if payload_size > max_parser_bytes:
+                raise ValueError(
+                    f"Parser input size exceeds maximum parser size of {max_parser_bytes} bytes "
+                    f"(raise with --max-parser-bytes)"
+                )
+        # ``utf-8-sig`` transparently consumes a leading UTF-8 BOM (common on
+        # Windows-authored files); the encoded size below still measures the
+        # post-BOM payload, which is what the parser actually sees.
+        text = data.decode("utf-8-sig")
+    size = len(text.encode("utf-8"))
+    if max_parser_bytes >= 0 and size > max_parser_bytes:
+        raise ValueError(
+            f"Parser input size {size} bytes exceeds maximum parser size of {max_parser_bytes} bytes "
+            f"(raise with --max-parser-bytes)"
+        )
+    return text
+
+
+def _summary_sequence(summary: Mapping[str, object], key: str) -> Sequence[object]:
+    value = summary.get(key, [])
+    return value if isinstance(value, Sequence) and not isinstance(value, str) else []
+
+
+def _summary_count(summary: Mapping[str, object], key: str) -> int:
+    total = summary.get(f"{key}_total")
+    if isinstance(total, int):
+        return total
+    return len(_summary_sequence(summary, key))
+
+
+def _summary_mapping(summary: Mapping[str, object], key: str) -> Mapping[str, object]:
+    value = summary.get(key, {})
+    return value if isinstance(value, Mapping) else {}
+
+
+def _summary_has_strict_findings(summary: Mapping[str, object]) -> bool:
+    diagnostics = summary.get("diagnostics", [])
+    has_strict_diagnostic = isinstance(diagnostics, list) and any(
+        isinstance(diagnostic, dict) and diagnostic.get("strict", True) for diagnostic in diagnostics
+    )
+    return bool(summary.get("unsupported") or summary.get("warnings") or summary.get("taints") or has_strict_diagnostic)
+
+
+def _print_strict_summary_failure(summary: Mapping[str, object]) -> None:
+    unsupported_count = _summary_count(summary, "unsupported")
+    warnings_count = _summary_count(summary, "warnings")
+    taints_count = _summary_count(summary, "taints")
+    print(
+        f"strict: {unsupported_count} unsupported, {warnings_count} warning(s), "
+        f"{taints_count} taint(s) in parser summary",
+        file=sys.stderr,
+    )
+
+
+def _print_summary_count_map(summary: Mapping[str, object], key: str, heading: str) -> None:
+    counts = _summary_mapping(summary, key)
+    if not counts:
+        return
+    print(f"{heading}:")
+    for code in sorted(counts):
+        print(f"  - {code}: {counts[code]}")
+
+
+def _query_has_strict_findings(result: QueryResult) -> bool:
+    return bool(
+        result.status in {"unresolved", "partial", "dynamic"}
+        or result.unsupported
+        or result.warnings
+        or result.has_taints
+        or any(diagnostic.strict for diagnostic in result.effective_diagnostics)
+    )
+
+
+# Code emitted by the analyzer for the "no mappings discovered for the queried
+# field" suggestion (see ``_analysis_query.py``). The CLI lifts this entry out
+# of ``warnings`` / ``structured_warnings`` and renders it under a separate
+# ``Hint:`` section / top-level ``hint`` JSON key so users can tell a parser
+# diagnostic from a UX nudge at a glance.
+_QUERY_NO_MATCH_CODE = "no_assignment"
+
+
+def _extract_query_no_match_hint(result: QueryResult) -> dict[str, str] | None:
+    """Detach the analyzer's "no assignment" suggestion from the warning lists.
+
+    Mutates ``result.warnings`` and ``result.structured_warnings`` in place to
+    remove the hint and returns the lifted hint as a plain dict (with ``code``,
+    ``message``, and ``warning`` fields) for the renderer to display
+    separately. Returns ``None`` if the hint isn't present.
+    """
+    structured = next(
+        (warning for warning in result.structured_warnings if warning.code == _QUERY_NO_MATCH_CODE),
+        None,
+    )
+    if structured is None:
+        return None
+    result.structured_warnings = [
+        warning for warning in result.structured_warnings if warning.code != _QUERY_NO_MATCH_CODE
+    ]
+    hint_text = structured.warning or structured.message
+    if hint_text in result.warnings:
+        result.warnings = [warning for warning in result.warnings if warning != hint_text]
+    return {
+        "code": "query_no_match",
+        "message": structured.message,
+        "warning": hint_text,
+    }
+
+
+def _augment_json_with_hint(payload: str, hint: dict[str, str] | None) -> str:
+    """Insert a top-level ``hint`` key into a rendered JSON document."""
+    if hint is None:
+        return payload
+    data = json.loads(payload)
+    if isinstance(data, dict):
+        data["hint"] = hint
+    return json.dumps(data, indent=2, sort_keys=False)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parse_args(build_arg_parser(), argv)
+    summary_requested = args.summary or args.compact_summary
+    if args.udm_field and (summary_requested or args.list):
+        print("error: udm_field cannot be used with --list, --summary, or --compact-summary", file=sys.stderr)
+        return 2
+    if args.list and summary_requested:
+        print("error: --list and --summary/--compact-summary are mutually exclusive", file=sys.stderr)
+        return 2
+    if args.json and args.compact_json:
+        print("error: --json and --compact-json are mutually exclusive", file=sys.stderr)
+        return 2
+    if args.compact_json and args.list:
+        print("error: --compact-json and --list are mutually exclusive", file=sys.stderr)
+        return 2
+    if args.compact_json and args.summary:
+        print("error: --compact-json and --summary are mutually exclusive", file=sys.stderr)
+        return 2
+    if args.compact_json and args.compact_summary:
+        print("error: --compact-json and --compact-summary are mutually exclusive", file=sys.stderr)
+        return 2
+    if args.verbose and (args.list or args.summary or args.compact_summary or args.json or args.compact_json):
+        print(
+            "warning: --verbose is ignored with --list, --summary, --compact-summary, --json, or --compact-json",
+            file=sys.stderr,
+        )
+    if args.udm_field is not None:
+        stripped_udm = args.udm_field.strip()
+        if not stripped_udm:
+            print("error: udm_field cannot be empty", file=sys.stderr)
+            return 2
+        args.udm_field = stripped_udm
+    try:
+        code = _read_parser(args.parser_file, args.max_parser_bytes)
+    except FileNotFoundError:
+        print(
+            f"error: parser file not found: {args.parser_file} (use '-' to read from stdin)",
+            file=sys.stderr,
+        )
+        return 1
+    except IsADirectoryError:
+        print(f"error: parser file is a directory: {args.parser_file}", file=sys.stderr)
+        return 1
+    except PermissionError as exc:
+        print(f"error: permission denied reading parser file {args.parser_file}: {exc.strerror}", file=sys.stderr)
+        return 1
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        print(f"error: could not read parser file {args.parser_file}: {exc}", file=sys.stderr)
+        return 1
+    if not code.strip():
+        print("error: parser input is empty (received 0 non-whitespace bytes)", file=sys.stderr)
+        return 1
+    from .analyzer import ReverseParser
+
+    try:
+        rp = ReverseParser(
+            code,
+            max_parser_bytes=args.max_parser_bytes,
+            mutate_canonical_order=args.mutate_canonical_order,
+        )
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    if summary_requested:
+        summary = rp.analysis_summary(compact=args.compact_summary)
+        if args.json:
+            print(json.dumps(summary, indent=2))
+        else:
+            unsupported = _summary_sequence(summary, "unsupported")
+            warnings = _summary_sequence(summary, "warnings")
+            print(f"UDM fields: {_summary_count(summary, 'udm_fields')}")
+            print(f"Tokens: {summary['token_count']}")
+            print(f"Output anchors: {_summary_count(summary, 'output_anchors')}")
+            print(f"Unsupported: {_summary_count(summary, 'unsupported')}")
+            print(f"Warnings: {_summary_count(summary, 'warnings')}")
+            if args.compact_summary:
+                _print_summary_count_map(summary, "warning_counts", "Warning counts by code")
+                _print_summary_count_map(summary, "taint_counts", "Taint counts by code")
+                _print_summary_count_map(summary, "diagnostic_counts", "Diagnostic counts by code")
+            if unsupported:
+                print("Unsupported constructs:")
+                for item in unsupported:
+                    print(f"  - {item}")
+            if warnings:
+                print("Warnings:")
+                for item in warnings:
+                    print(f"  - {item}")
+        if args.strict and _summary_has_strict_findings(summary):
+            sys.stdout.flush()
+            _print_strict_summary_failure(summary)
+            return 3
+        return 0
+    if args.list:
+        fields = rp.list_udm_fields()
+        if args.json:
+            print(json.dumps({"udm_fields": fields, "udm_fields_total": len(fields)}, indent=2))
+        elif not fields:
+            print("No UDM fields found.")
+        else:
+            for f in fields:
+                print(f)
+        if args.strict:
+            summary = rp.analysis_summary()
+            if _summary_has_strict_findings(summary):
+                sys.stdout.flush()
+                _print_strict_summary_failure(summary)
+                return 3
+        return 0
+    if not args.udm_field:
+        print(
+            "error: udm_field is required unless --list, --summary, or --compact-summary is used",
+            file=sys.stderr,
+        )
+        return 2
+    result = rp.query(args.udm_field, compact=args.compact_json)
+    hint = _extract_query_no_match_hint(result)
+    if args.compact_json:
+        from .render import render_compact_json
+
+        print(_augment_json_with_hint(render_compact_json(result), hint))
+    elif args.json:
+        from .render import render_json
+
+        print(_augment_json_with_hint(render_json(result), hint))
+    else:
+        from .render import render_text
+
+        rendered = render_text(result, verbose=args.verbose)
+        if hint is not None:
+            rendered = f"{rendered}\n\nHint:\n  - {hint['warning']}"
+        print(rendered)
+    if args.strict and _query_has_strict_findings(result):
+        warnings_count = len(result.warnings)
+        taints_total = sum(len(mapping.taints) for mapping in result.mappings)
+        unsupported_count = len(result.unsupported)
+        sys.stdout.flush()
+        print(
+            f"strict: query status={result.status}, {unsupported_count} unsupported, "
+            f"{warnings_count} warning(s), {taints_total} taint(s)",
+            file=sys.stderr,
+        )
+        return 3
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

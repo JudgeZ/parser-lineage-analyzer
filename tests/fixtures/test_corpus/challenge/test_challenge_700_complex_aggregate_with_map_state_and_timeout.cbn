@@ -1,0 +1,49 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must recognize the `aggregate` plugin and its `task_id` logic, which groups events.
+# 2. It must track the state manipulation within the `code` block via the `map` object.
+# 3. It needs to understand the `map_action => "create"` vs `"update"` vs `"create_or_update"` and how they affect the `map` lifecycle.
+# 4. Crucially, the parser must trace the `timeout` and `timeout_code` properties. It must understand that `timeout_code` generates a *synthetic event* asynchronously.
+# 5. The synthetic event will not have the fields of the original events unless explicitly copied from `map`. The parser must correctly model this isolated scope.
+# 6. Variables created in `timeout_code` (e.g., `event.set('timeout_status', map['status'])`) must be tracked as a separate execution path.
+
+filter {
+  if [type] == "start" {
+    aggregate {
+      task_id => "%{session_id}"
+      code => "
+        map['status'] = 'started'
+        map['start_time'] = event.get('@timestamp')
+        map['events_seen'] = 1
+      "
+      map_action => "create"
+    }
+  } else if [type] == "update" {
+    aggregate {
+      task_id => "%{session_id}"
+      code => "
+        map['events_seen'] ||= 0
+        map['events_seen'] += 1
+        map['last_update'] = event.get('@timestamp')
+      "
+      map_action => "update"
+    }
+  } else if [type] == "end" {
+    aggregate {
+      task_id => "%{session_id}"
+      code => "
+        event.set('total_events', map['events_seen'])
+        event.set('duration', event.get('@timestamp') - map['start_time'])
+      "
+      map_action => "update"
+      end_of_task => true
+      timeout => 120
+      timeout_tags => ["aggregate_timeout"]
+      push_map_as_event_on_timeout => true
+      timeout_code => "
+        event.set('synthetic_timeout_event', true)
+        event.set('final_status', map['status'])
+        event.set('missed_events', map['events_seen'])
+      "
+    }
+  }
+}

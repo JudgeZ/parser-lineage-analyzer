@@ -1,0 +1,17 @@
+# EXPECTATION:
+# A common pattern is unpacking a JSON string back into the same field, overwriting it.
+# The parser must handle the type transition of `[log_data]` from a scalar (string) 
+# to a complex object (dictionary/hash).
+# Subsequent references like `[log_data][user_id]` must be tracked as originating from this JSON parse.
+filter {
+  json {
+    source => "log_data"
+    target => "log_data"
+  }
+  
+  if [log_data][user_id] {
+    mutate {
+      add_tag => ["has_user"]
+    }
+  }
+}

@@ -1,0 +1,25 @@
+# EXPECTED BEHAVIOR:
+# Evaluates how the parser handles extremely deep nested conditionals combined with 
+# short-circuiting logic like `drop {}`. The parser should be able to track the logical 
+# paths and understand that any code after a `drop {}` in a specific branch is unreachable.
+# This simulates 700+ line parsers where deep nesting often leads to implicit logical bottlenecks.
+filter {
+  if [type] == "syslog" {
+    if [syslog_severity] == "error" {
+      if [syslog_facility] == "kernel" {
+        if [message] =~ /critical/ {
+          mutate { add_tag => ["critical_kernel_error"] }
+        } else if [message] =~ /fatal/ {
+          drop {}
+          mutate { add_tag => ["unreachable"] } # This should be flagged as unreachable
+        } else {
+          mutate { add_tag => ["other_kernel_error"] }
+        }
+      } else {
+        if [syslog_facility] == "auth" {
+           mutate { add_tag => ["auth_error"] }
+        }
+      }
+    }
+  }
+}

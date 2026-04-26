@@ -1,0 +1,20 @@
+# BASELINE REPRODUCTION: Third-Party REST/HTTP Plugin
+# Validates the parser's ability to execute third-party community plugins like `rest`.
+# EXPECTED BEHAVIOR:
+# - The parser should execute an HTTP GET request to enrich the log.
+# - Network timeouts or 404s must be handled gracefully without dropping the event,
+#   usually appending a `_restfailure` tag.
+filter {
+  rest {
+    request => {
+      url => "https://api.threatintel.local/v1/ip/%{source.ip}"
+      method => "get"
+      headers => {
+        "Authorization" => "Bearer ${API_TOKEN:default_token}"
+      }
+    }
+    target => "threat_intel"
+    fallback_on_error => true
+    connection_timeout => 2
+  }
+}

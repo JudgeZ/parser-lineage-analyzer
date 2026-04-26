@@ -1,0 +1,44 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must track deeply nested payload extraction. It starts with a `json` parse.
+# 2. The `[parsed_json][raw_xml]` field is then targeted by an `xml` filter. The parser must know that `parsed_json` is an object and `raw_xml` is a string inside it.
+# 3. The `xml` filter uses `xpath` to extract values into an array. The parser must correctly type `[xml_data][user_ids]` as an array.
+# 4. A `dissect` filter then attempts to parse the FIRST element of that array `[xml_data][user_ids][0]`. The parser must support array index syntax.
+# 5. A fallback condition checks if the array is empty or missing, and performs a different mutation.
+# 6. Type coercion conflicts: The parser must detect if `user_id_prefix` and `user_id_suffix` (from dissect) are strings, while `[xml_data][user_ids]` is an array, ensuring downstream logic doesn't assume incorrect types.
+
+filter {
+  json {
+    source => "message"
+    target => "parsed_json"
+  }
+
+  if [parsed_json][raw_xml] {
+    xml {
+      source => "[parsed_json][raw_xml]"
+      target => "xml_data"
+      store_xml => false
+      xpath => [
+        "/root/users/user/@id", "[xml_data][user_ids]",
+        "/root/metadata/source/text()", "[xml_data][source_system]"
+      ]
+    }
+
+    if [xml_data][user_ids][0] {
+      dissect {
+        mapping => {
+          "[xml_data][user_ids][0]" => "%{user_id_prefix}-%{user_id_suffix}"
+        }
+      }
+    } else {
+      mutate {
+        add_field => { "processing_error" => "No user IDs found in XML" }
+      }
+    }
+  }
+
+  if [user_id_prefix] == "ADMIN" {
+    mutate {
+      uppercase => [ "[xml_data][source_system]" ]
+    }
+  }
+}

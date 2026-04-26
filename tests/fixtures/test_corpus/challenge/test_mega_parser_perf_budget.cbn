@@ -1,0 +1,2569 @@
+filter {
+  grok { match => { "message" => "%{GREEDYDATA:raw}" } }
+  json { source => "raw" }
+  if [action] == "0" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_0" } }
+  } else if [action] == "sub_0" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_0" } }
+  }
+  if [action] == "1" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_1" } }
+  } else if [action] == "sub_1" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_1" } }
+  }
+  if [action] == "2" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_2" } }
+  } else if [action] == "sub_2" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_2" } }
+  }
+  if [action] == "3" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_3" } }
+  } else if [action] == "sub_3" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_3" } }
+  }
+  if [action] == "4" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_4" } }
+  } else if [action] == "sub_4" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_4" } }
+  }
+  if [action] == "5" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_5" } }
+  } else if [action] == "sub_5" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_5" } }
+  }
+  if [action] == "6" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_6" } }
+  } else if [action] == "sub_6" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_6" } }
+  }
+  if [action] == "7" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_7" } }
+  } else if [action] == "sub_7" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_7" } }
+  }
+  if [action] == "8" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_8" } }
+  } else if [action] == "sub_8" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_8" } }
+  }
+  if [action] == "9" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_9" } }
+  } else if [action] == "sub_9" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_9" } }
+  }
+  if [action] == "10" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_10" } }
+  } else if [action] == "sub_10" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_10" } }
+  }
+  if [action] == "11" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_11" } }
+  } else if [action] == "sub_11" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_11" } }
+  }
+  if [action] == "12" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_12" } }
+  } else if [action] == "sub_12" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_12" } }
+  }
+  if [action] == "13" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_13" } }
+  } else if [action] == "sub_13" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_13" } }
+  }
+  if [action] == "14" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_14" } }
+  } else if [action] == "sub_14" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_14" } }
+  }
+  if [action] == "15" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_15" } }
+  } else if [action] == "sub_15" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_15" } }
+  }
+  if [action] == "16" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_16" } }
+  } else if [action] == "sub_16" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_16" } }
+  }
+  if [action] == "17" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_17" } }
+  } else if [action] == "sub_17" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_17" } }
+  }
+  if [action] == "18" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_18" } }
+  } else if [action] == "sub_18" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_18" } }
+  }
+  if [action] == "19" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_19" } }
+  } else if [action] == "sub_19" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_19" } }
+  }
+  if [action] == "20" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_20" } }
+  } else if [action] == "sub_20" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_20" } }
+  }
+  if [action] == "21" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_21" } }
+  } else if [action] == "sub_21" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_21" } }
+  }
+  if [action] == "22" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_22" } }
+  } else if [action] == "sub_22" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_22" } }
+  }
+  if [action] == "23" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_23" } }
+  } else if [action] == "sub_23" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_23" } }
+  }
+  if [action] == "24" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_24" } }
+  } else if [action] == "sub_24" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_24" } }
+  }
+  if [action] == "25" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_25" } }
+  } else if [action] == "sub_25" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_25" } }
+  }
+  if [action] == "26" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_26" } }
+  } else if [action] == "sub_26" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_26" } }
+  }
+  if [action] == "27" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_27" } }
+  } else if [action] == "sub_27" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_27" } }
+  }
+  if [action] == "28" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_28" } }
+  } else if [action] == "sub_28" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_28" } }
+  }
+  if [action] == "29" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_29" } }
+  } else if [action] == "sub_29" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_29" } }
+  }
+  if [action] == "30" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_30" } }
+  } else if [action] == "sub_30" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_30" } }
+  }
+  if [action] == "31" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_31" } }
+  } else if [action] == "sub_31" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_31" } }
+  }
+  if [action] == "32" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_32" } }
+  } else if [action] == "sub_32" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_32" } }
+  }
+  if [action] == "33" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_33" } }
+  } else if [action] == "sub_33" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_33" } }
+  }
+  if [action] == "34" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_34" } }
+  } else if [action] == "sub_34" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_34" } }
+  }
+  if [action] == "35" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_35" } }
+  } else if [action] == "sub_35" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_35" } }
+  }
+  if [action] == "36" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_36" } }
+  } else if [action] == "sub_36" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_36" } }
+  }
+  if [action] == "37" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_37" } }
+  } else if [action] == "sub_37" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_37" } }
+  }
+  if [action] == "38" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_38" } }
+  } else if [action] == "sub_38" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_38" } }
+  }
+  if [action] == "39" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_39" } }
+  } else if [action] == "sub_39" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_39" } }
+  }
+  if [action] == "40" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_40" } }
+  } else if [action] == "sub_40" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_40" } }
+  }
+  if [action] == "41" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_41" } }
+  } else if [action] == "sub_41" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_41" } }
+  }
+  if [action] == "42" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_42" } }
+  } else if [action] == "sub_42" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_42" } }
+  }
+  if [action] == "43" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_43" } }
+  } else if [action] == "sub_43" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_43" } }
+  }
+  if [action] == "44" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_44" } }
+  } else if [action] == "sub_44" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_44" } }
+  }
+  if [action] == "45" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_45" } }
+  } else if [action] == "sub_45" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_45" } }
+  }
+  if [action] == "46" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_46" } }
+  } else if [action] == "sub_46" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_46" } }
+  }
+  if [action] == "47" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_47" } }
+  } else if [action] == "sub_47" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_47" } }
+  }
+  if [action] == "48" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_48" } }
+  } else if [action] == "sub_48" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_48" } }
+  }
+  if [action] == "49" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_49" } }
+  } else if [action] == "sub_49" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_49" } }
+  }
+  if [action] == "50" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_50" } }
+  } else if [action] == "sub_50" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_50" } }
+  }
+  if [action] == "51" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_51" } }
+  } else if [action] == "sub_51" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_51" } }
+  }
+  if [action] == "52" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_52" } }
+  } else if [action] == "sub_52" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_52" } }
+  }
+  if [action] == "53" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_53" } }
+  } else if [action] == "sub_53" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_53" } }
+  }
+  if [action] == "54" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_54" } }
+  } else if [action] == "sub_54" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_54" } }
+  }
+  if [action] == "55" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_55" } }
+  } else if [action] == "sub_55" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_55" } }
+  }
+  if [action] == "56" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_56" } }
+  } else if [action] == "sub_56" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_56" } }
+  }
+  if [action] == "57" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_57" } }
+  } else if [action] == "sub_57" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_57" } }
+  }
+  if [action] == "58" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_58" } }
+  } else if [action] == "sub_58" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_58" } }
+  }
+  if [action] == "59" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_59" } }
+  } else if [action] == "sub_59" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_59" } }
+  }
+  if [action] == "60" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_60" } }
+  } else if [action] == "sub_60" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_60" } }
+  }
+  if [action] == "61" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_61" } }
+  } else if [action] == "sub_61" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_61" } }
+  }
+  if [action] == "62" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_62" } }
+  } else if [action] == "sub_62" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_62" } }
+  }
+  if [action] == "63" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_63" } }
+  } else if [action] == "sub_63" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_63" } }
+  }
+  if [action] == "64" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_64" } }
+  } else if [action] == "sub_64" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_64" } }
+  }
+  if [action] == "65" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_65" } }
+  } else if [action] == "sub_65" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_65" } }
+  }
+  if [action] == "66" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_66" } }
+  } else if [action] == "sub_66" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_66" } }
+  }
+  if [action] == "67" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_67" } }
+  } else if [action] == "sub_67" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_67" } }
+  }
+  if [action] == "68" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_68" } }
+  } else if [action] == "sub_68" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_68" } }
+  }
+  if [action] == "69" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_69" } }
+  } else if [action] == "sub_69" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_69" } }
+  }
+  if [action] == "70" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_70" } }
+  } else if [action] == "sub_70" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_70" } }
+  }
+  if [action] == "71" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_71" } }
+  } else if [action] == "sub_71" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_71" } }
+  }
+  if [action] == "72" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_72" } }
+  } else if [action] == "sub_72" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_72" } }
+  }
+  if [action] == "73" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_73" } }
+  } else if [action] == "sub_73" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_73" } }
+  }
+  if [action] == "74" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_74" } }
+  } else if [action] == "sub_74" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_74" } }
+  }
+  if [action] == "75" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_75" } }
+  } else if [action] == "sub_75" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_75" } }
+  }
+  if [action] == "76" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_76" } }
+  } else if [action] == "sub_76" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_76" } }
+  }
+  if [action] == "77" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_77" } }
+  } else if [action] == "sub_77" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_77" } }
+  }
+  if [action] == "78" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_78" } }
+  } else if [action] == "sub_78" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_78" } }
+  }
+  if [action] == "79" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_79" } }
+  } else if [action] == "sub_79" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_79" } }
+  }
+  if [action] == "80" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_80" } }
+  } else if [action] == "sub_80" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_80" } }
+  }
+  if [action] == "81" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_81" } }
+  } else if [action] == "sub_81" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_81" } }
+  }
+  if [action] == "82" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_82" } }
+  } else if [action] == "sub_82" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_82" } }
+  }
+  if [action] == "83" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_83" } }
+  } else if [action] == "sub_83" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_83" } }
+  }
+  if [action] == "84" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_84" } }
+  } else if [action] == "sub_84" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_84" } }
+  }
+  if [action] == "85" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_85" } }
+  } else if [action] == "sub_85" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_85" } }
+  }
+  if [action] == "86" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_86" } }
+  } else if [action] == "sub_86" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_86" } }
+  }
+  if [action] == "87" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_87" } }
+  } else if [action] == "sub_87" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_87" } }
+  }
+  if [action] == "88" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_88" } }
+  } else if [action] == "sub_88" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_88" } }
+  }
+  if [action] == "89" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_89" } }
+  } else if [action] == "sub_89" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_89" } }
+  }
+  if [action] == "90" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_90" } }
+  } else if [action] == "sub_90" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_90" } }
+  }
+  if [action] == "91" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_91" } }
+  } else if [action] == "sub_91" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_91" } }
+  }
+  if [action] == "92" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_92" } }
+  } else if [action] == "sub_92" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_92" } }
+  }
+  if [action] == "93" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_93" } }
+  } else if [action] == "sub_93" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_93" } }
+  }
+  if [action] == "94" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_94" } }
+  } else if [action] == "sub_94" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_94" } }
+  }
+  if [action] == "95" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_95" } }
+  } else if [action] == "sub_95" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_95" } }
+  }
+  if [action] == "96" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_96" } }
+  } else if [action] == "sub_96" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_96" } }
+  }
+  if [action] == "97" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_97" } }
+  } else if [action] == "sub_97" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_97" } }
+  }
+  if [action] == "98" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_98" } }
+  } else if [action] == "sub_98" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_98" } }
+  }
+  if [action] == "99" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_99" } }
+  } else if [action] == "sub_99" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_99" } }
+  }
+  if [action] == "100" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_100" } }
+  } else if [action] == "sub_100" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_100" } }
+  }
+  if [action] == "101" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_101" } }
+  } else if [action] == "sub_101" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_101" } }
+  }
+  if [action] == "102" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_102" } }
+  } else if [action] == "sub_102" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_102" } }
+  }
+  if [action] == "103" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_103" } }
+  } else if [action] == "sub_103" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_103" } }
+  }
+  if [action] == "104" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_104" } }
+  } else if [action] == "sub_104" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_104" } }
+  }
+  if [action] == "105" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_105" } }
+  } else if [action] == "sub_105" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_105" } }
+  }
+  if [action] == "106" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_106" } }
+  } else if [action] == "sub_106" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_106" } }
+  }
+  if [action] == "107" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_107" } }
+  } else if [action] == "sub_107" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_107" } }
+  }
+  if [action] == "108" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_108" } }
+  } else if [action] == "sub_108" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_108" } }
+  }
+  if [action] == "109" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_109" } }
+  } else if [action] == "sub_109" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_109" } }
+  }
+  if [action] == "110" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_110" } }
+  } else if [action] == "sub_110" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_110" } }
+  }
+  if [action] == "111" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_111" } }
+  } else if [action] == "sub_111" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_111" } }
+  }
+  if [action] == "112" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_112" } }
+  } else if [action] == "sub_112" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_112" } }
+  }
+  if [action] == "113" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_113" } }
+  } else if [action] == "sub_113" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_113" } }
+  }
+  if [action] == "114" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_114" } }
+  } else if [action] == "sub_114" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_114" } }
+  }
+  if [action] == "115" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_115" } }
+  } else if [action] == "sub_115" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_115" } }
+  }
+  if [action] == "116" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_116" } }
+  } else if [action] == "sub_116" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_116" } }
+  }
+  if [action] == "117" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_117" } }
+  } else if [action] == "sub_117" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_117" } }
+  }
+  if [action] == "118" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_118" } }
+  } else if [action] == "sub_118" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_118" } }
+  }
+  if [action] == "119" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_119" } }
+  } else if [action] == "sub_119" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_119" } }
+  }
+  if [action] == "120" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_120" } }
+  } else if [action] == "sub_120" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_120" } }
+  }
+  if [action] == "121" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_121" } }
+  } else if [action] == "sub_121" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_121" } }
+  }
+  if [action] == "122" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_122" } }
+  } else if [action] == "sub_122" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_122" } }
+  }
+  if [action] == "123" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_123" } }
+  } else if [action] == "sub_123" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_123" } }
+  }
+  if [action] == "124" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_124" } }
+  } else if [action] == "sub_124" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_124" } }
+  }
+  if [action] == "125" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_125" } }
+  } else if [action] == "sub_125" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_125" } }
+  }
+  if [action] == "126" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_126" } }
+  } else if [action] == "sub_126" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_126" } }
+  }
+  if [action] == "127" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_127" } }
+  } else if [action] == "sub_127" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_127" } }
+  }
+  if [action] == "128" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_128" } }
+  } else if [action] == "sub_128" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_128" } }
+  }
+  if [action] == "129" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_129" } }
+  } else if [action] == "sub_129" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_129" } }
+  }
+  if [action] == "130" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_130" } }
+  } else if [action] == "sub_130" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_130" } }
+  }
+  if [action] == "131" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_131" } }
+  } else if [action] == "sub_131" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_131" } }
+  }
+  if [action] == "132" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_132" } }
+  } else if [action] == "sub_132" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_132" } }
+  }
+  if [action] == "133" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_133" } }
+  } else if [action] == "sub_133" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_133" } }
+  }
+  if [action] == "134" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_134" } }
+  } else if [action] == "sub_134" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_134" } }
+  }
+  if [action] == "135" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_135" } }
+  } else if [action] == "sub_135" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_135" } }
+  }
+  if [action] == "136" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_136" } }
+  } else if [action] == "sub_136" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_136" } }
+  }
+  if [action] == "137" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_137" } }
+  } else if [action] == "sub_137" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_137" } }
+  }
+  if [action] == "138" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_138" } }
+  } else if [action] == "sub_138" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_138" } }
+  }
+  if [action] == "139" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_139" } }
+  } else if [action] == "sub_139" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_139" } }
+  }
+  if [action] == "140" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_140" } }
+  } else if [action] == "sub_140" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_140" } }
+  }
+  if [action] == "141" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_141" } }
+  } else if [action] == "sub_141" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_141" } }
+  }
+  if [action] == "142" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_142" } }
+  } else if [action] == "sub_142" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_142" } }
+  }
+  if [action] == "143" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_143" } }
+  } else if [action] == "sub_143" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_143" } }
+  }
+  if [action] == "144" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_144" } }
+  } else if [action] == "sub_144" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_144" } }
+  }
+  if [action] == "145" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_145" } }
+  } else if [action] == "sub_145" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_145" } }
+  }
+  if [action] == "146" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_146" } }
+  } else if [action] == "sub_146" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_146" } }
+  }
+  if [action] == "147" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_147" } }
+  } else if [action] == "sub_147" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_147" } }
+  }
+  if [action] == "148" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_148" } }
+  } else if [action] == "sub_148" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_148" } }
+  }
+  if [action] == "149" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_149" } }
+  } else if [action] == "sub_149" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_149" } }
+  }
+  if [action] == "150" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_150" } }
+  } else if [action] == "sub_150" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_150" } }
+  }
+  if [action] == "151" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_151" } }
+  } else if [action] == "sub_151" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_151" } }
+  }
+  if [action] == "152" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_152" } }
+  } else if [action] == "sub_152" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_152" } }
+  }
+  if [action] == "153" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_153" } }
+  } else if [action] == "sub_153" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_153" } }
+  }
+  if [action] == "154" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_154" } }
+  } else if [action] == "sub_154" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_154" } }
+  }
+  if [action] == "155" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_155" } }
+  } else if [action] == "sub_155" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_155" } }
+  }
+  if [action] == "156" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_156" } }
+  } else if [action] == "sub_156" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_156" } }
+  }
+  if [action] == "157" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_157" } }
+  } else if [action] == "sub_157" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_157" } }
+  }
+  if [action] == "158" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_158" } }
+  } else if [action] == "sub_158" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_158" } }
+  }
+  if [action] == "159" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_159" } }
+  } else if [action] == "sub_159" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_159" } }
+  }
+  if [action] == "160" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_160" } }
+  } else if [action] == "sub_160" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_160" } }
+  }
+  if [action] == "161" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_161" } }
+  } else if [action] == "sub_161" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_161" } }
+  }
+  if [action] == "162" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_162" } }
+  } else if [action] == "sub_162" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_162" } }
+  }
+  if [action] == "163" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_163" } }
+  } else if [action] == "sub_163" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_163" } }
+  }
+  if [action] == "164" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_164" } }
+  } else if [action] == "sub_164" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_164" } }
+  }
+  if [action] == "165" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_165" } }
+  } else if [action] == "sub_165" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_165" } }
+  }
+  if [action] == "166" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_166" } }
+  } else if [action] == "sub_166" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_166" } }
+  }
+  if [action] == "167" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_167" } }
+  } else if [action] == "sub_167" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_167" } }
+  }
+  if [action] == "168" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_168" } }
+  } else if [action] == "sub_168" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_168" } }
+  }
+  if [action] == "169" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_169" } }
+  } else if [action] == "sub_169" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_169" } }
+  }
+  if [action] == "170" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_170" } }
+  } else if [action] == "sub_170" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_170" } }
+  }
+  if [action] == "171" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_171" } }
+  } else if [action] == "sub_171" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_171" } }
+  }
+  if [action] == "172" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_172" } }
+  } else if [action] == "sub_172" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_172" } }
+  }
+  if [action] == "173" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_173" } }
+  } else if [action] == "sub_173" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_173" } }
+  }
+  if [action] == "174" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_174" } }
+  } else if [action] == "sub_174" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_174" } }
+  }
+  if [action] == "175" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_175" } }
+  } else if [action] == "sub_175" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_175" } }
+  }
+  if [action] == "176" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_176" } }
+  } else if [action] == "sub_176" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_176" } }
+  }
+  if [action] == "177" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_177" } }
+  } else if [action] == "sub_177" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_177" } }
+  }
+  if [action] == "178" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_178" } }
+  } else if [action] == "sub_178" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_178" } }
+  }
+  if [action] == "179" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_179" } }
+  } else if [action] == "sub_179" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_179" } }
+  }
+  if [action] == "180" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_180" } }
+  } else if [action] == "sub_180" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_180" } }
+  }
+  if [action] == "181" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_181" } }
+  } else if [action] == "sub_181" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_181" } }
+  }
+  if [action] == "182" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_182" } }
+  } else if [action] == "sub_182" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_182" } }
+  }
+  if [action] == "183" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_183" } }
+  } else if [action] == "sub_183" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_183" } }
+  }
+  if [action] == "184" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_184" } }
+  } else if [action] == "sub_184" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_184" } }
+  }
+  if [action] == "185" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_185" } }
+  } else if [action] == "sub_185" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_185" } }
+  }
+  if [action] == "186" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_186" } }
+  } else if [action] == "sub_186" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_186" } }
+  }
+  if [action] == "187" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_187" } }
+  } else if [action] == "sub_187" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_187" } }
+  }
+  if [action] == "188" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_188" } }
+  } else if [action] == "sub_188" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_188" } }
+  }
+  if [action] == "189" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_189" } }
+  } else if [action] == "sub_189" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_189" } }
+  }
+  if [action] == "190" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_190" } }
+  } else if [action] == "sub_190" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_190" } }
+  }
+  if [action] == "191" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_191" } }
+  } else if [action] == "sub_191" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_191" } }
+  }
+  if [action] == "192" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_192" } }
+  } else if [action] == "sub_192" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_192" } }
+  }
+  if [action] == "193" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_193" } }
+  } else if [action] == "sub_193" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_193" } }
+  }
+  if [action] == "194" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_194" } }
+  } else if [action] == "sub_194" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_194" } }
+  }
+  if [action] == "195" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_195" } }
+  } else if [action] == "sub_195" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_195" } }
+  }
+  if [action] == "196" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_196" } }
+  } else if [action] == "sub_196" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_196" } }
+  }
+  if [action] == "197" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_197" } }
+  } else if [action] == "sub_197" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_197" } }
+  }
+  if [action] == "198" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_198" } }
+  } else if [action] == "sub_198" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_198" } }
+  }
+  if [action] == "199" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_199" } }
+  } else if [action] == "sub_199" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_199" } }
+  }
+  if [action] == "200" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_200" } }
+  } else if [action] == "sub_200" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_200" } }
+  }
+  if [action] == "201" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_201" } }
+  } else if [action] == "sub_201" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_201" } }
+  }
+  if [action] == "202" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_202" } }
+  } else if [action] == "sub_202" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_202" } }
+  }
+  if [action] == "203" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_203" } }
+  } else if [action] == "sub_203" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_203" } }
+  }
+  if [action] == "204" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_204" } }
+  } else if [action] == "sub_204" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_204" } }
+  }
+  if [action] == "205" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_205" } }
+  } else if [action] == "sub_205" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_205" } }
+  }
+  if [action] == "206" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_206" } }
+  } else if [action] == "sub_206" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_206" } }
+  }
+  if [action] == "207" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_207" } }
+  } else if [action] == "sub_207" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_207" } }
+  }
+  if [action] == "208" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_208" } }
+  } else if [action] == "sub_208" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_208" } }
+  }
+  if [action] == "209" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_209" } }
+  } else if [action] == "sub_209" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_209" } }
+  }
+  if [action] == "210" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_210" } }
+  } else if [action] == "sub_210" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_210" } }
+  }
+  if [action] == "211" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_211" } }
+  } else if [action] == "sub_211" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_211" } }
+  }
+  if [action] == "212" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_212" } }
+  } else if [action] == "sub_212" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_212" } }
+  }
+  if [action] == "213" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_213" } }
+  } else if [action] == "sub_213" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_213" } }
+  }
+  if [action] == "214" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_214" } }
+  } else if [action] == "sub_214" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_214" } }
+  }
+  if [action] == "215" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_215" } }
+  } else if [action] == "sub_215" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_215" } }
+  }
+  if [action] == "216" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_216" } }
+  } else if [action] == "sub_216" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_216" } }
+  }
+  if [action] == "217" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_217" } }
+  } else if [action] == "sub_217" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_217" } }
+  }
+  if [action] == "218" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_218" } }
+  } else if [action] == "sub_218" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_218" } }
+  }
+  if [action] == "219" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_219" } }
+  } else if [action] == "sub_219" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_219" } }
+  }
+  if [action] == "220" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_220" } }
+  } else if [action] == "sub_220" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_220" } }
+  }
+  if [action] == "221" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_221" } }
+  } else if [action] == "sub_221" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_221" } }
+  }
+  if [action] == "222" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_222" } }
+  } else if [action] == "sub_222" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_222" } }
+  }
+  if [action] == "223" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_223" } }
+  } else if [action] == "sub_223" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_223" } }
+  }
+  if [action] == "224" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_224" } }
+  } else if [action] == "sub_224" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_224" } }
+  }
+  if [action] == "225" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_225" } }
+  } else if [action] == "sub_225" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_225" } }
+  }
+  if [action] == "226" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_226" } }
+  } else if [action] == "sub_226" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_226" } }
+  }
+  if [action] == "227" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_227" } }
+  } else if [action] == "sub_227" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_227" } }
+  }
+  if [action] == "228" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_228" } }
+  } else if [action] == "sub_228" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_228" } }
+  }
+  if [action] == "229" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_229" } }
+  } else if [action] == "sub_229" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_229" } }
+  }
+  if [action] == "230" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_230" } }
+  } else if [action] == "sub_230" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_230" } }
+  }
+  if [action] == "231" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_231" } }
+  } else if [action] == "sub_231" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_231" } }
+  }
+  if [action] == "232" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_232" } }
+  } else if [action] == "sub_232" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_232" } }
+  }
+  if [action] == "233" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_233" } }
+  } else if [action] == "sub_233" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_233" } }
+  }
+  if [action] == "234" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_234" } }
+  } else if [action] == "sub_234" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_234" } }
+  }
+  if [action] == "235" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_235" } }
+  } else if [action] == "sub_235" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_235" } }
+  }
+  if [action] == "236" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_236" } }
+  } else if [action] == "sub_236" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_236" } }
+  }
+  if [action] == "237" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_237" } }
+  } else if [action] == "sub_237" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_237" } }
+  }
+  if [action] == "238" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_238" } }
+  } else if [action] == "sub_238" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_238" } }
+  }
+  if [action] == "239" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_239" } }
+  } else if [action] == "sub_239" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_239" } }
+  }
+  if [action] == "240" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_240" } }
+  } else if [action] == "sub_240" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_240" } }
+  }
+  if [action] == "241" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_241" } }
+  } else if [action] == "sub_241" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_241" } }
+  }
+  if [action] == "242" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_242" } }
+  } else if [action] == "sub_242" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_242" } }
+  }
+  if [action] == "243" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_243" } }
+  } else if [action] == "sub_243" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_243" } }
+  }
+  if [action] == "244" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_244" } }
+  } else if [action] == "sub_244" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_244" } }
+  }
+  if [action] == "245" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_245" } }
+  } else if [action] == "sub_245" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_245" } }
+  }
+  if [action] == "246" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_246" } }
+  } else if [action] == "sub_246" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_246" } }
+  }
+  if [action] == "247" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_247" } }
+  } else if [action] == "sub_247" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_247" } }
+  }
+  if [action] == "248" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_248" } }
+  } else if [action] == "sub_248" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_248" } }
+  }
+  if [action] == "249" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_249" } }
+  } else if [action] == "sub_249" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_249" } }
+  }
+  if [action] == "250" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_250" } }
+  } else if [action] == "sub_250" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_250" } }
+  }
+  if [action] == "251" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_251" } }
+  } else if [action] == "sub_251" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_251" } }
+  }
+  if [action] == "252" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_252" } }
+  } else if [action] == "sub_252" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_252" } }
+  }
+  if [action] == "253" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_253" } }
+  } else if [action] == "sub_253" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_253" } }
+  }
+  if [action] == "254" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_254" } }
+  } else if [action] == "sub_254" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_254" } }
+  }
+  if [action] == "255" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_255" } }
+  } else if [action] == "sub_255" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_255" } }
+  }
+  if [action] == "256" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_256" } }
+  } else if [action] == "sub_256" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_256" } }
+  }
+  if [action] == "257" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_257" } }
+  } else if [action] == "sub_257" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_257" } }
+  }
+  if [action] == "258" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_258" } }
+  } else if [action] == "sub_258" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_258" } }
+  }
+  if [action] == "259" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_259" } }
+  } else if [action] == "sub_259" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_259" } }
+  }
+  if [action] == "260" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_260" } }
+  } else if [action] == "sub_260" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_260" } }
+  }
+  if [action] == "261" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_261" } }
+  } else if [action] == "sub_261" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_261" } }
+  }
+  if [action] == "262" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_262" } }
+  } else if [action] == "sub_262" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_262" } }
+  }
+  if [action] == "263" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_263" } }
+  } else if [action] == "sub_263" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_263" } }
+  }
+  if [action] == "264" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_264" } }
+  } else if [action] == "sub_264" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_264" } }
+  }
+  if [action] == "265" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_265" } }
+  } else if [action] == "sub_265" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_265" } }
+  }
+  if [action] == "266" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_266" } }
+  } else if [action] == "sub_266" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_266" } }
+  }
+  if [action] == "267" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_267" } }
+  } else if [action] == "sub_267" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_267" } }
+  }
+  if [action] == "268" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_268" } }
+  } else if [action] == "sub_268" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_268" } }
+  }
+  if [action] == "269" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_269" } }
+  } else if [action] == "sub_269" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_269" } }
+  }
+  if [action] == "270" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_270" } }
+  } else if [action] == "sub_270" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_270" } }
+  }
+  if [action] == "271" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_271" } }
+  } else if [action] == "sub_271" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_271" } }
+  }
+  if [action] == "272" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_272" } }
+  } else if [action] == "sub_272" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_272" } }
+  }
+  if [action] == "273" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_273" } }
+  } else if [action] == "sub_273" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_273" } }
+  }
+  if [action] == "274" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_274" } }
+  } else if [action] == "sub_274" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_274" } }
+  }
+  if [action] == "275" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_275" } }
+  } else if [action] == "sub_275" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_275" } }
+  }
+  if [action] == "276" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_276" } }
+  } else if [action] == "sub_276" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_276" } }
+  }
+  if [action] == "277" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_277" } }
+  } else if [action] == "sub_277" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_277" } }
+  }
+  if [action] == "278" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_278" } }
+  } else if [action] == "sub_278" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_278" } }
+  }
+  if [action] == "279" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_279" } }
+  } else if [action] == "sub_279" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_279" } }
+  }
+  if [action] == "280" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_280" } }
+  } else if [action] == "sub_280" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_280" } }
+  }
+  if [action] == "281" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_281" } }
+  } else if [action] == "sub_281" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_281" } }
+  }
+  if [action] == "282" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_282" } }
+  } else if [action] == "sub_282" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_282" } }
+  }
+  if [action] == "283" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_283" } }
+  } else if [action] == "sub_283" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_283" } }
+  }
+  if [action] == "284" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_284" } }
+  } else if [action] == "sub_284" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_284" } }
+  }
+  if [action] == "285" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_285" } }
+  } else if [action] == "sub_285" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_285" } }
+  }
+  if [action] == "286" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_286" } }
+  } else if [action] == "sub_286" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_286" } }
+  }
+  if [action] == "287" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_287" } }
+  } else if [action] == "sub_287" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_287" } }
+  }
+  if [action] == "288" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_288" } }
+  } else if [action] == "sub_288" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_288" } }
+  }
+  if [action] == "289" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_289" } }
+  } else if [action] == "sub_289" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_289" } }
+  }
+  if [action] == "290" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_290" } }
+  } else if [action] == "sub_290" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_290" } }
+  }
+  if [action] == "291" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_291" } }
+  } else if [action] == "sub_291" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_291" } }
+  }
+  if [action] == "292" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_292" } }
+  } else if [action] == "sub_292" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_292" } }
+  }
+  if [action] == "293" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_293" } }
+  } else if [action] == "sub_293" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_293" } }
+  }
+  if [action] == "294" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_294" } }
+  } else if [action] == "sub_294" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_294" } }
+  }
+  if [action] == "295" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_295" } }
+  } else if [action] == "sub_295" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_295" } }
+  }
+  if [action] == "296" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_296" } }
+  } else if [action] == "sub_296" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_296" } }
+  }
+  if [action] == "297" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_297" } }
+  } else if [action] == "sub_297" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_297" } }
+  }
+  if [action] == "298" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_298" } }
+  } else if [action] == "sub_298" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_298" } }
+  }
+  if [action] == "299" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_299" } }
+  } else if [action] == "sub_299" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_299" } }
+  }
+  if [action] == "300" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_300" } }
+  } else if [action] == "sub_300" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_300" } }
+  }
+  if [action] == "301" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_301" } }
+  } else if [action] == "sub_301" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_301" } }
+  }
+  if [action] == "302" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_302" } }
+  } else if [action] == "sub_302" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_302" } }
+  }
+  if [action] == "303" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_303" } }
+  } else if [action] == "sub_303" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_303" } }
+  }
+  if [action] == "304" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_304" } }
+  } else if [action] == "sub_304" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_304" } }
+  }
+  if [action] == "305" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_305" } }
+  } else if [action] == "sub_305" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_305" } }
+  }
+  if [action] == "306" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_306" } }
+  } else if [action] == "sub_306" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_306" } }
+  }
+  if [action] == "307" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_307" } }
+  } else if [action] == "sub_307" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_307" } }
+  }
+  if [action] == "308" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_308" } }
+  } else if [action] == "sub_308" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_308" } }
+  }
+  if [action] == "309" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_309" } }
+  } else if [action] == "sub_309" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_309" } }
+  }
+  if [action] == "310" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_310" } }
+  } else if [action] == "sub_310" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_310" } }
+  }
+  if [action] == "311" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_311" } }
+  } else if [action] == "sub_311" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_311" } }
+  }
+  if [action] == "312" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_312" } }
+  } else if [action] == "sub_312" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_312" } }
+  }
+  if [action] == "313" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_313" } }
+  } else if [action] == "sub_313" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_313" } }
+  }
+  if [action] == "314" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_314" } }
+  } else if [action] == "sub_314" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_314" } }
+  }
+  if [action] == "315" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_315" } }
+  } else if [action] == "sub_315" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_315" } }
+  }
+  if [action] == "316" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_316" } }
+  } else if [action] == "sub_316" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_316" } }
+  }
+  if [action] == "317" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_317" } }
+  } else if [action] == "sub_317" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_317" } }
+  }
+  if [action] == "318" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_318" } }
+  } else if [action] == "sub_318" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_318" } }
+  }
+  if [action] == "319" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_319" } }
+  } else if [action] == "sub_319" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_319" } }
+  }
+  if [action] == "320" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_320" } }
+  } else if [action] == "sub_320" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_320" } }
+  }
+  if [action] == "321" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_321" } }
+  } else if [action] == "sub_321" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_321" } }
+  }
+  if [action] == "322" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_322" } }
+  } else if [action] == "sub_322" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_322" } }
+  }
+  if [action] == "323" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_323" } }
+  } else if [action] == "sub_323" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_323" } }
+  }
+  if [action] == "324" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_324" } }
+  } else if [action] == "sub_324" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_324" } }
+  }
+  if [action] == "325" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_325" } }
+  } else if [action] == "sub_325" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_325" } }
+  }
+  if [action] == "326" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_326" } }
+  } else if [action] == "sub_326" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_326" } }
+  }
+  if [action] == "327" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_327" } }
+  } else if [action] == "sub_327" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_327" } }
+  }
+  if [action] == "328" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_328" } }
+  } else if [action] == "sub_328" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_328" } }
+  }
+  if [action] == "329" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_329" } }
+  } else if [action] == "sub_329" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_329" } }
+  }
+  if [action] == "330" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_330" } }
+  } else if [action] == "sub_330" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_330" } }
+  }
+  if [action] == "331" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_331" } }
+  } else if [action] == "sub_331" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_331" } }
+  }
+  if [action] == "332" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_332" } }
+  } else if [action] == "sub_332" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_332" } }
+  }
+  if [action] == "333" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_333" } }
+  } else if [action] == "sub_333" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_333" } }
+  }
+  if [action] == "334" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_334" } }
+  } else if [action] == "sub_334" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_334" } }
+  }
+  if [action] == "335" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_335" } }
+  } else if [action] == "sub_335" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_335" } }
+  }
+  if [action] == "336" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_336" } }
+  } else if [action] == "sub_336" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_336" } }
+  }
+  if [action] == "337" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_337" } }
+  } else if [action] == "sub_337" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_337" } }
+  }
+  if [action] == "338" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_338" } }
+  } else if [action] == "sub_338" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_338" } }
+  }
+  if [action] == "339" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_339" } }
+  } else if [action] == "sub_339" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_339" } }
+  }
+  if [action] == "340" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_340" } }
+  } else if [action] == "sub_340" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_340" } }
+  }
+  if [action] == "341" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_341" } }
+  } else if [action] == "sub_341" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_341" } }
+  }
+  if [action] == "342" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_342" } }
+  } else if [action] == "sub_342" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_342" } }
+  }
+  if [action] == "343" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_343" } }
+  } else if [action] == "sub_343" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_343" } }
+  }
+  if [action] == "344" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_344" } }
+  } else if [action] == "sub_344" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_344" } }
+  }
+  if [action] == "345" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_345" } }
+  } else if [action] == "sub_345" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_345" } }
+  }
+  if [action] == "346" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_346" } }
+  } else if [action] == "sub_346" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_346" } }
+  }
+  if [action] == "347" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_347" } }
+  } else if [action] == "sub_347" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_347" } }
+  }
+  if [action] == "348" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_348" } }
+  } else if [action] == "sub_348" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_348" } }
+  }
+  if [action] == "349" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_349" } }
+  } else if [action] == "sub_349" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_349" } }
+  }
+  if [action] == "350" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_350" } }
+  } else if [action] == "sub_350" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_350" } }
+  }
+  if [action] == "351" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_351" } }
+  } else if [action] == "sub_351" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_351" } }
+  }
+  if [action] == "352" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_352" } }
+  } else if [action] == "sub_352" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_352" } }
+  }
+  if [action] == "353" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_353" } }
+  } else if [action] == "sub_353" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_353" } }
+  }
+  if [action] == "354" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_354" } }
+  } else if [action] == "sub_354" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_354" } }
+  }
+  if [action] == "355" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_355" } }
+  } else if [action] == "sub_355" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_355" } }
+  }
+  if [action] == "356" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_356" } }
+  } else if [action] == "sub_356" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_356" } }
+  }
+  if [action] == "357" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_357" } }
+  } else if [action] == "sub_357" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_357" } }
+  }
+  if [action] == "358" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_358" } }
+  } else if [action] == "sub_358" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_358" } }
+  }
+  if [action] == "359" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_359" } }
+  } else if [action] == "sub_359" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_359" } }
+  }
+  if [action] == "360" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_360" } }
+  } else if [action] == "sub_360" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_360" } }
+  }
+  if [action] == "361" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_361" } }
+  } else if [action] == "sub_361" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_361" } }
+  }
+  if [action] == "362" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_362" } }
+  } else if [action] == "sub_362" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_362" } }
+  }
+  if [action] == "363" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_363" } }
+  } else if [action] == "sub_363" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_363" } }
+  }
+  if [action] == "364" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_364" } }
+  } else if [action] == "sub_364" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_364" } }
+  }
+  if [action] == "365" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_365" } }
+  } else if [action] == "sub_365" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_365" } }
+  }
+  if [action] == "366" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_366" } }
+  } else if [action] == "sub_366" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_366" } }
+  }
+  if [action] == "367" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_367" } }
+  } else if [action] == "sub_367" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_367" } }
+  }
+  if [action] == "368" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_368" } }
+  } else if [action] == "sub_368" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_368" } }
+  }
+  if [action] == "369" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_369" } }
+  } else if [action] == "sub_369" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_369" } }
+  }
+  if [action] == "370" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_370" } }
+  } else if [action] == "sub_370" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_370" } }
+  }
+  if [action] == "371" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_371" } }
+  } else if [action] == "sub_371" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_371" } }
+  }
+  if [action] == "372" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_372" } }
+  } else if [action] == "sub_372" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_372" } }
+  }
+  if [action] == "373" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_373" } }
+  } else if [action] == "sub_373" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_373" } }
+  }
+  if [action] == "374" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_374" } }
+  } else if [action] == "sub_374" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_374" } }
+  }
+  if [action] == "375" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_375" } }
+  } else if [action] == "sub_375" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_375" } }
+  }
+  if [action] == "376" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_376" } }
+  } else if [action] == "sub_376" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_376" } }
+  }
+  if [action] == "377" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_377" } }
+  } else if [action] == "sub_377" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_377" } }
+  }
+  if [action] == "378" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_378" } }
+  } else if [action] == "sub_378" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_378" } }
+  }
+  if [action] == "379" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_379" } }
+  } else if [action] == "sub_379" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_379" } }
+  }
+  if [action] == "380" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_380" } }
+  } else if [action] == "sub_380" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_380" } }
+  }
+  if [action] == "381" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_381" } }
+  } else if [action] == "sub_381" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_381" } }
+  }
+  if [action] == "382" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_382" } }
+  } else if [action] == "sub_382" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_382" } }
+  }
+  if [action] == "383" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_383" } }
+  } else if [action] == "sub_383" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_383" } }
+  }
+  if [action] == "384" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_384" } }
+  } else if [action] == "sub_384" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_384" } }
+  }
+  if [action] == "385" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_385" } }
+  } else if [action] == "sub_385" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_385" } }
+  }
+  if [action] == "386" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_386" } }
+  } else if [action] == "sub_386" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_386" } }
+  }
+  if [action] == "387" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_387" } }
+  } else if [action] == "sub_387" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_387" } }
+  }
+  if [action] == "388" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_388" } }
+  } else if [action] == "sub_388" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_388" } }
+  }
+  if [action] == "389" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_389" } }
+  } else if [action] == "sub_389" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_389" } }
+  }
+  if [action] == "390" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_390" } }
+  } else if [action] == "sub_390" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_390" } }
+  }
+  if [action] == "391" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_391" } }
+  } else if [action] == "sub_391" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_391" } }
+  }
+  if [action] == "392" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_392" } }
+  } else if [action] == "sub_392" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_392" } }
+  }
+  if [action] == "393" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_393" } }
+  } else if [action] == "sub_393" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_393" } }
+  }
+  if [action] == "394" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_394" } }
+  } else if [action] == "sub_394" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_394" } }
+  }
+  if [action] == "395" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_395" } }
+  } else if [action] == "sub_395" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_395" } }
+  }
+  if [action] == "396" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_396" } }
+  } else if [action] == "sub_396" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_396" } }
+  }
+  if [action] == "397" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_397" } }
+  } else if [action] == "sub_397" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_397" } }
+  }
+  if [action] == "398" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_398" } }
+  } else if [action] == "sub_398" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_398" } }
+  }
+  if [action] == "399" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_399" } }
+  } else if [action] == "sub_399" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_399" } }
+  }
+  if [action] == "400" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_400" } }
+  } else if [action] == "sub_400" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_400" } }
+  }
+  if [action] == "401" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_401" } }
+  } else if [action] == "sub_401" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_401" } }
+  }
+  if [action] == "402" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_402" } }
+  } else if [action] == "sub_402" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_402" } }
+  }
+  if [action] == "403" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_403" } }
+  } else if [action] == "sub_403" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_403" } }
+  }
+  if [action] == "404" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_404" } }
+  } else if [action] == "sub_404" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_404" } }
+  }
+  if [action] == "405" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_405" } }
+  } else if [action] == "sub_405" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_405" } }
+  }
+  if [action] == "406" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_406" } }
+  } else if [action] == "sub_406" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_406" } }
+  }
+  if [action] == "407" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_407" } }
+  } else if [action] == "sub_407" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_407" } }
+  }
+  if [action] == "408" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_408" } }
+  } else if [action] == "sub_408" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_408" } }
+  }
+  if [action] == "409" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_409" } }
+  } else if [action] == "sub_409" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_409" } }
+  }
+  if [action] == "410" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_410" } }
+  } else if [action] == "sub_410" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_410" } }
+  }
+  if [action] == "411" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_411" } }
+  } else if [action] == "sub_411" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_411" } }
+  }
+  if [action] == "412" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_412" } }
+  } else if [action] == "sub_412" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_412" } }
+  }
+  if [action] == "413" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_413" } }
+  } else if [action] == "sub_413" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_413" } }
+  }
+  if [action] == "414" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_414" } }
+  } else if [action] == "sub_414" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_414" } }
+  }
+  if [action] == "415" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_415" } }
+  } else if [action] == "sub_415" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_415" } }
+  }
+  if [action] == "416" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_416" } }
+  } else if [action] == "sub_416" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_416" } }
+  }
+  if [action] == "417" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_417" } }
+  } else if [action] == "sub_417" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_417" } }
+  }
+  if [action] == "418" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_418" } }
+  } else if [action] == "sub_418" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_418" } }
+  }
+  if [action] == "419" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_419" } }
+  } else if [action] == "sub_419" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_419" } }
+  }
+  if [action] == "420" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_420" } }
+  } else if [action] == "sub_420" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_420" } }
+  }
+  if [action] == "421" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_421" } }
+  } else if [action] == "sub_421" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_421" } }
+  }
+  if [action] == "422" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_422" } }
+  } else if [action] == "sub_422" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_422" } }
+  }
+  if [action] == "423" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_423" } }
+  } else if [action] == "sub_423" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_423" } }
+  }
+  if [action] == "424" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_424" } }
+  } else if [action] == "sub_424" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_424" } }
+  }
+  if [action] == "425" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_425" } }
+  } else if [action] == "sub_425" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_425" } }
+  }
+  if [action] == "426" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_426" } }
+  } else if [action] == "sub_426" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_426" } }
+  }
+  if [action] == "427" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_427" } }
+  } else if [action] == "sub_427" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_427" } }
+  }
+  if [action] == "428" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_428" } }
+  } else if [action] == "sub_428" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_428" } }
+  }
+  if [action] == "429" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_429" } }
+  } else if [action] == "sub_429" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_429" } }
+  }
+  if [action] == "430" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_430" } }
+  } else if [action] == "sub_430" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_430" } }
+  }
+  if [action] == "431" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_431" } }
+  } else if [action] == "sub_431" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_431" } }
+  }
+  if [action] == "432" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_432" } }
+  } else if [action] == "sub_432" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_432" } }
+  }
+  if [action] == "433" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_433" } }
+  } else if [action] == "sub_433" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_433" } }
+  }
+  if [action] == "434" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_434" } }
+  } else if [action] == "sub_434" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_434" } }
+  }
+  if [action] == "435" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_435" } }
+  } else if [action] == "sub_435" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_435" } }
+  }
+  if [action] == "436" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_436" } }
+  } else if [action] == "sub_436" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_436" } }
+  }
+  if [action] == "437" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_437" } }
+  } else if [action] == "sub_437" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_437" } }
+  }
+  if [action] == "438" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_438" } }
+  } else if [action] == "sub_438" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_438" } }
+  }
+  if [action] == "439" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_439" } }
+  } else if [action] == "sub_439" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_439" } }
+  }
+  if [action] == "440" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_440" } }
+  } else if [action] == "sub_440" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_440" } }
+  }
+  if [action] == "441" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_441" } }
+  } else if [action] == "sub_441" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_441" } }
+  }
+  if [action] == "442" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_442" } }
+  } else if [action] == "sub_442" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_442" } }
+  }
+  if [action] == "443" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_443" } }
+  } else if [action] == "sub_443" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_443" } }
+  }
+  if [action] == "444" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_444" } }
+  } else if [action] == "sub_444" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_444" } }
+  }
+  if [action] == "445" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_445" } }
+  } else if [action] == "sub_445" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_445" } }
+  }
+  if [action] == "446" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_446" } }
+  } else if [action] == "sub_446" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_446" } }
+  }
+  if [action] == "447" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_447" } }
+  } else if [action] == "sub_447" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_447" } }
+  }
+  if [action] == "448" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_448" } }
+  } else if [action] == "sub_448" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_448" } }
+  }
+  if [action] == "449" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_449" } }
+  } else if [action] == "sub_449" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_449" } }
+  }
+  if [action] == "450" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_450" } }
+  } else if [action] == "sub_450" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_450" } }
+  }
+  if [action] == "451" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_451" } }
+  } else if [action] == "sub_451" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_451" } }
+  }
+  if [action] == "452" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_452" } }
+  } else if [action] == "sub_452" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_452" } }
+  }
+  if [action] == "453" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_453" } }
+  } else if [action] == "sub_453" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_453" } }
+  }
+  if [action] == "454" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_454" } }
+  } else if [action] == "sub_454" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_454" } }
+  }
+  if [action] == "455" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_455" } }
+  } else if [action] == "sub_455" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_455" } }
+  }
+  if [action] == "456" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_456" } }
+  } else if [action] == "sub_456" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_456" } }
+  }
+  if [action] == "457" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_457" } }
+  } else if [action] == "sub_457" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_457" } }
+  }
+  if [action] == "458" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_458" } }
+  } else if [action] == "sub_458" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_458" } }
+  }
+  if [action] == "459" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_459" } }
+  } else if [action] == "sub_459" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_459" } }
+  }
+  if [action] == "460" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_460" } }
+  } else if [action] == "sub_460" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_460" } }
+  }
+  if [action] == "461" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_461" } }
+  } else if [action] == "sub_461" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_461" } }
+  }
+  if [action] == "462" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_462" } }
+  } else if [action] == "sub_462" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_462" } }
+  }
+  if [action] == "463" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_463" } }
+  } else if [action] == "sub_463" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_463" } }
+  }
+  if [action] == "464" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_464" } }
+  } else if [action] == "sub_464" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_464" } }
+  }
+  if [action] == "465" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_465" } }
+  } else if [action] == "sub_465" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_465" } }
+  }
+  if [action] == "466" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_466" } }
+  } else if [action] == "sub_466" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_466" } }
+  }
+  if [action] == "467" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_467" } }
+  } else if [action] == "sub_467" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_467" } }
+  }
+  if [action] == "468" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_468" } }
+  } else if [action] == "sub_468" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_468" } }
+  }
+  if [action] == "469" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_469" } }
+  } else if [action] == "sub_469" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_469" } }
+  }
+  if [action] == "470" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_470" } }
+  } else if [action] == "sub_470" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_470" } }
+  }
+  if [action] == "471" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_471" } }
+  } else if [action] == "sub_471" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_471" } }
+  }
+  if [action] == "472" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_472" } }
+  } else if [action] == "sub_472" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_472" } }
+  }
+  if [action] == "473" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_473" } }
+  } else if [action] == "sub_473" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_473" } }
+  }
+  if [action] == "474" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_474" } }
+  } else if [action] == "sub_474" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_474" } }
+  }
+  if [action] == "475" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_475" } }
+  } else if [action] == "sub_475" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_475" } }
+  }
+  if [action] == "476" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_476" } }
+  } else if [action] == "sub_476" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_476" } }
+  }
+  if [action] == "477" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_477" } }
+  } else if [action] == "sub_477" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_477" } }
+  }
+  if [action] == "478" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_478" } }
+  } else if [action] == "sub_478" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_478" } }
+  }
+  if [action] == "479" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_479" } }
+  } else if [action] == "sub_479" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_479" } }
+  }
+  if [action] == "480" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_480" } }
+  } else if [action] == "sub_480" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_480" } }
+  }
+  if [action] == "481" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_481" } }
+  } else if [action] == "sub_481" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_481" } }
+  }
+  if [action] == "482" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_482" } }
+  } else if [action] == "sub_482" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_482" } }
+  }
+  if [action] == "483" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_483" } }
+  } else if [action] == "sub_483" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_483" } }
+  }
+  if [action] == "484" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_484" } }
+  } else if [action] == "sub_484" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_484" } }
+  }
+  if [action] == "485" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_485" } }
+  } else if [action] == "sub_485" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_485" } }
+  }
+  if [action] == "486" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_486" } }
+  } else if [action] == "sub_486" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_486" } }
+  }
+  if [action] == "487" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_487" } }
+  } else if [action] == "sub_487" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_487" } }
+  }
+  if [action] == "488" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_488" } }
+  } else if [action] == "sub_488" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_488" } }
+  }
+  if [action] == "489" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_489" } }
+  } else if [action] == "sub_489" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_489" } }
+  }
+  if [action] == "490" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_490" } }
+  } else if [action] == "sub_490" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_490" } }
+  }
+  if [action] == "491" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_491" } }
+  } else if [action] == "sub_491" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_491" } }
+  }
+  if [action] == "492" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_492" } }
+  } else if [action] == "sub_492" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_492" } }
+  }
+  if [action] == "493" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_493" } }
+  } else if [action] == "sub_493" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_493" } }
+  }
+  if [action] == "494" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_494" } }
+  } else if [action] == "sub_494" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_494" } }
+  }
+  if [action] == "495" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_495" } }
+  } else if [action] == "sub_495" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_495" } }
+  }
+  if [action] == "496" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_496" } }
+  } else if [action] == "sub_496" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_496" } }
+  }
+  if [action] == "497" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_497" } }
+  } else if [action] == "sub_497" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_497" } }
+  }
+  if [action] == "498" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_498" } }
+  } else if [action] == "sub_498" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_498" } }
+  }
+  if [action] == "499" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ACTION_499" } }
+  } else if [action] == "sub_499" {
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "SUBACTION_499" } }
+  }
+  for item in tags {
+    for sub_item in item.sub_tags {
+      if [sub_item] == "tag_0" {
+        mutate { replace => { "event.idm.read_only_udm.security_result.category" => "CAT_0" } }
+      }
+      if [sub_item] == "tag_1" {
+        mutate { replace => { "event.idm.read_only_udm.security_result.category" => "CAT_1" } }
+      }
+      if [sub_item] == "tag_2" {
+        mutate { replace => { "event.idm.read_only_udm.security_result.category" => "CAT_2" } }
+      }
+      if [sub_item] == "tag_3" {
+        mutate { replace => { "event.idm.read_only_udm.security_result.category" => "CAT_3" } }
+      }
+      if [sub_item] == "tag_4" {
+        mutate { replace => { "event.idm.read_only_udm.security_result.category" => "CAT_4" } }
+      }
+      if [sub_item] == "tag_5" {
+        mutate { replace => { "event.idm.read_only_udm.security_result.category" => "CAT_5" } }
+      }
+      if [sub_item] == "tag_6" {
+        mutate { replace => { "event.idm.read_only_udm.security_result.category" => "CAT_6" } }
+      }
+      if [sub_item] == "tag_7" {
+        mutate { replace => { "event.idm.read_only_udm.security_result.category" => "CAT_7" } }
+      }
+      if [sub_item] == "tag_8" {
+        mutate { replace => { "event.idm.read_only_udm.security_result.category" => "CAT_8" } }
+      }
+      if [sub_item] == "tag_9" {
+        mutate { replace => { "event.idm.read_only_udm.security_result.category" => "CAT_9" } }
+      }
+      if [sub_item] == "tag_10" {
+        mutate { replace => { "event.idm.read_only_udm.security_result.category" => "CAT_10" } }
+      }
+      if [sub_item] == "tag_11" {
+        mutate { replace => { "event.idm.read_only_udm.security_result.category" => "CAT_11" } }
+      }
+      if [sub_item] == "tag_12" {
+        mutate { replace => { "event.idm.read_only_udm.security_result.category" => "CAT_12" } }
+      }
+      if [sub_item] == "tag_13" {
+        mutate { replace => { "event.idm.read_only_udm.security_result.category" => "CAT_13" } }
+      }
+      if [sub_item] == "tag_14" {
+        mutate { replace => { "event.idm.read_only_udm.security_result.category" => "CAT_14" } }
+      }
+      if [sub_item] == "tag_15" {
+        mutate { replace => { "event.idm.read_only_udm.security_result.category" => "CAT_15" } }
+      }
+      if [sub_item] == "tag_16" {
+        mutate { replace => { "event.idm.read_only_udm.security_result.category" => "CAT_16" } }
+      }
+      if [sub_item] == "tag_17" {
+        mutate { replace => { "event.idm.read_only_udm.security_result.category" => "CAT_17" } }
+      }
+      if [sub_item] == "tag_18" {
+        mutate { replace => { "event.idm.read_only_udm.security_result.category" => "CAT_18" } }
+      }
+      if [sub_item] == "tag_19" {
+        mutate { replace => { "event.idm.read_only_udm.security_result.category" => "CAT_19" } }
+      }
+    }
+  }
+  mutate { merge => { "@output" => "event" } }
+}

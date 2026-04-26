@@ -1,0 +1,48 @@
+# TEST BEHAVIOR:
+# Simulates a large corpus where a common field name (e.g., "message_data") is used by multiple
+# independent parsers merged together. In this scenario, Parser A treats "message_data" as a string
+# and uses mutate uppercase. Parser B treats it as a JSON object and parses it. Parser C treats it as an array.
+# The parser must correctly model the type transformations and potential conflicts or overwrites
+# depending on the control flow. If "message_data" changes from string to object, subsequent string operations
+# (like uppercase) should fail or be ignored, unless implicitly cast.
+filter {
+  if [log_type] == "A" {
+    mutate {
+      add_field => { "message_data" => "%{raw_message}" }
+    }
+    mutate {
+      uppercase => [ "message_data" ]
+    }
+  }
+
+  if [log_type] == "B" {
+    # If log_type is B, but somehow message_data was already an object...
+    json {
+      source => "raw_message"
+      target => "message_data"
+    }
+  }
+
+  if [log_type] == "C" {
+    mutate {
+      add_field => { "message_data" => "some_value" }
+    }
+    mutate {
+      split => { "message_data" => "_" }
+    }
+  }
+
+  # Now a generic parser runs for all logs
+  if [message_data] {
+    # This mutate could act on a string (from A), an object (from B), or an array (from C)
+    mutate {
+      add_tag => [ "has_message_data" ]
+    }
+    # Attempting to gsub on what might be an object or array
+    mutate {
+      gsub => [
+        "message_data", "error", "WARNING"
+      ]
+    }
+  }
+}

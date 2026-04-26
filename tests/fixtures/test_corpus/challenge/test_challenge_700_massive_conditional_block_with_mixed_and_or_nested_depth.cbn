@@ -1,0 +1,23 @@
+# TEST BEHAVIOR:
+# This test asserts the parser's ability to handle extremely complex and deep boolean logic chains.
+# In a 700+ parser environment, conditional logic often evolves organically into massive
+# unparenthesized strings of ANDs, ORs, regex matches, and IN operators.
+# The parser MUST correctly apply operator precedence (AND before OR, IN before AND, etc.)
+# and construct the AST without stack overflow or incorrect short-circuit evaluation.
+
+filter {
+  if [event_type] == "network" and [src_ip] in ["10.0.0.1", "10.0.0.2"] or [event_type] == "auth" and [status] == "failed" and [user] !~ /^admin_.*/ or [event_type] == "process" and ( [process_name] == "cmd.exe" or [process_name] == "powershell.exe" and [parent_process] != "explorer.exe" ) and [action] == "start" or [classification] in [threat_intel_tags] and not [is_whitelisted] == "true" {
+    mutate {
+      add_tag => ["complex_match_1"]
+    }
+  } else if [field1] == "val1" and [field2] == "val2" or [field3] == "val3" and [field4] == "val4" or [field5] == "val5" and [field6] == "val6" or [field7] == "val7" and [field8] == "val8" or [field9] == "val9" and [field10] == "val10" {
+    # Deep implicit precedence chain
+    mutate {
+      add_tag => ["complex_match_2"]
+    }
+  }
+
+  if (([a] == "b" or [c] == "d") and ([e] == "f" or [g] == "h")) or (not ([i] == "j" and [k] == "l") and [m] =~ /regex/) {
+     mutate { rename => { "a" => "b" } }
+  }
+}

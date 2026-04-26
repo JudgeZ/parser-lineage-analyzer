@@ -1,0 +1,10 @@
+# Test: Complex URL Decoding
+# Description: Tests the urldecode filter applied to a nested field.
+# The parser needs to track the state change of `[request][query]` after this filter executes.
+# Lineage should show `[request][query]` being transformed by URL decode.
+
+filter {
+  urldecode {
+    field => "[request][query]"
+  }
+}

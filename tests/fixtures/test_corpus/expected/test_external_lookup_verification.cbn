@@ -1,0 +1,16 @@
+# EXPECTED BEHAVIOR:
+# 1. External lookup plugins should extract parameters and assign dynamic lineage to target.
+
+filter {
+  elasticsearch {
+    query_template => "search.json"
+    target => "[es_results]"
+    add_tag => ["es_success"]
+  }
+  
+  if "es_success" in [tags] {
+    mutate {
+      add_field => { "has_es_results" => "true" }
+    }
+  }
+}

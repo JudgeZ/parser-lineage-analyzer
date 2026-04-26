@@ -1,0 +1,22 @@
+/*
+ * EXPECTED BEHAVIOR:
+ * The parser must handle translate filters with large dictionaries, including regex features if exact => false.
+ * In this scenario, we have a mix of literal and regex matches (since exact is false, keys can be evaluated as regex by Logstash if regex is true, but often users just mix them up in config).
+ * The parser should track the dictionary mappings, identify the fallback behavior, and note the destination field `threat_category`.
+ */
+filter {
+  translate {
+    source => "alert_signature"
+    target => "threat_category"
+    exact => false
+    regex => true
+    dictionary => {
+      "^SQL Injection" => "Injection"
+      "^Cross-Site Scripting" => "XSS"
+      "Malware.*" => "Malware"
+      "Ransomware" => "Malware"
+      "Failed Login" => "Authentication"
+    }
+    fallback => "Unknown"
+  }
+}

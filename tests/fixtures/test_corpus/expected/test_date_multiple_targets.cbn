@@ -1,0 +1,16 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must track multiple `date` plugin executions in sequence.
+# 2. It must recognize that `start_time` populates `@timestamp` (the default target) while `end_time` populates a custom target `[event][end]`.
+# 3. Lineage must accurately map the source fields to their respective targets.
+
+filter {
+  date {
+    match => [ "start_time", "ISO8601" ]
+    # Default target is @timestamp
+  }
+
+  date {
+    match => [ "end_time", "ISO8601" ]
+    target => "[event][end]"
+  }
+}

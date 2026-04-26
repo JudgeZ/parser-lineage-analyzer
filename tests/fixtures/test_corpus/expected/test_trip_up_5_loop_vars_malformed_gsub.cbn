@@ -1,0 +1,31 @@
+filter {
+  // Case 1: Date Format Nested Array Coercion
+  // A nested array of formats is coerced into the literal Python string "['ISO8601', 'UNIX']".
+  date {
+    match => [ "time", [ "ISO8601", "UNIX" ] ]
+    target => "event.idm.read_only_udm.metadata.event_timestamp"
+  }
+
+  // Case 2: Base64 Map Coercion
+  // Providing a map to `fields` instead of an array causes the analyzer to extract
+  // the map as a Python tuple string: `"('event.idm.read_only_udm.encoded_payload', 'Standard')"`.
+  base64 {
+    fields => { "event.idm.read_only_udm.encoded_payload" => "Standard" }
+  }
+
+  // Case 3: `for` Loop Variable Dropping
+  // The parser only extracts the first two variables (index, item).
+  // The third variable `c` is silently dropped, meaning any lineage queries
+  // depending on it will come back as unresolved.
+  for a, b, c in target_array {
+    mutate { replace => { "event.idm.read_only_udm.target.ip" => "%{c}" } }
+  }
+
+  // Case 4: Gsub Array Truncation
+  // Logstash allows malformed arrays, but the `gsub` loop steps by 3.
+  // Because this array only has 2 elements, it silently skips execution
+  // rather than emitting a warning, leaving the DNS field unresolved.
+  mutate {
+    gsub => [ "event.idm.read_only_udm.network.dns.answers.data", "regex_with_missing_replacement" ]
+  }
+}

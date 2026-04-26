@@ -1,0 +1,17 @@
+# TEST BEHAVIOR:
+# Real-world security configs often do complex network segment checking.
+# This test challenges the parser with a conditional that negates a CIDR block
+# check while simultaneously checking array containment with `not in`.
+# The parser must correctly map the boolean logic and implicit dependencies
+# on `source_ip` and `destination_port`.
+filter {
+  if [source_ip] and [source_ip] !~ /^10\./ {
+    if [source_ip] not in ["192.168.1.1", "172.16.0.1"] and "80" not in [destination_port] {
+      cidr {
+        address => [ "%{source_ip}" ]
+        network => [ "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16" ]
+        add_tag => [ "is_private" ]
+      }
+    }
+  }
+}

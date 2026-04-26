@@ -1,0 +1,51 @@
+# TEST BEHAVIOR:
+# Simulates a large parser configuration where deeply nested JSON/dictionary structures
+# are mutated dynamically based on keys derived from other fields or regex captures.
+# This often results in runtime namespace collisions, implicit creation of intermediate objects,
+# or array vs object type conflicts at deep levels.
+# The tool must correctly model the `[parent][child][%{dynamic_key}]` interpolation
+# in mutate targets and ensure that conflicting types (e.g. assigning a scalar to a path
+# that was previously an array) are appropriately flagged or modeled according to engine behavior.
+filter {
+  # Assume [raw_data] is parsed into an object
+  json {
+    source => "message"
+    target => "payload"
+  }
+
+  if [payload][app_type] {
+    mutate {
+      # The key name itself is dynamic
+      add_field => { "[app_metrics][%{payload[app_type]}][count]" => "1" }
+    }
+  }
+
+  # Regex capture driving dynamic key
+  if [payload][resource_path] =~ /\/api\/v1\/(?<endpoint>[a-zA-Z0-9_]+)/ {
+    mutate {
+      add_field => { "[api_stats][%{endpoint}][hits]" => "1" }
+    }
+    
+    # Conflict scenario: what if [api_stats][%{endpoint}] was already an array from a previous event?
+    # Logstash mutate will append "1" to the array if the key maps to an array,
+    # or convert it to an array if it was a string.
+    # However, if we try to assign to a subkey `[hits]` when `[%{endpoint}]` is a string, it fails.
+    mutate {
+      convert => { "[api_stats][%{endpoint}][hits]" => "integer" }
+    }
+  }
+
+  # Deep array mutation
+  if [payload][nested][array][0][id] {
+    mutate {
+      rename => { "[payload][nested][array][0][id]" => "primary_id" }
+    }
+  }
+
+  # Recursive dynamic assignment
+  if [payload][source_field] and [payload][target_field] {
+    mutate {
+      add_field => { "[dynamic_mapping][%{payload[target_field]}]" => "%{payload[source_field]}" }
+    }
+  }
+}

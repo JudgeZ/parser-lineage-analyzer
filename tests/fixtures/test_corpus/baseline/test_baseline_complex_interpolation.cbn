@@ -1,0 +1,12 @@
+# BASELINE: Complex String Interpolation
+# Validates that the parser can correctly identify and extract field dependencies
+# when they are embedded within strings using the %{field} syntax.
+# The tool MUST track that `new_field` depends on both `parent.child` and `other_field`.
+# It should also correctly handle literal percent signs or curly braces that are not valid interpolations.
+filter {
+  mutate {
+    add_field => {
+      "new_field" => "Value is %{[parent][child]} and %{other_field} with 100% certainty %{}"
+    }
+  }
+}

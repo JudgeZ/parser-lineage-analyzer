@@ -1,0 +1,15 @@
+# Test: Complex Date Filter
+# Description: This tests the parser's ability to handle the date filter with multiple potential match formats,
+# custom timezones, locales, and target fields. It should track the assignment of the extracted date
+# to the target field, and understand the list structure of the match array.
+# Future requirement: Be able to validate the date formats strings themselves for correctness.
+
+filter {
+  date {
+    match => [ "syslog_timestamp", "MMM  d HH:mm:ss", "MMM dd HH:mm:ss", "ISO8601" ]
+    timezone => "UTC"
+    locale => "en"
+    target => "@timestamp"
+    add_tag => [ "date_parsed" ]
+  }
+}

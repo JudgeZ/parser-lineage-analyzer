@@ -1,0 +1,16 @@
+# CHALLENGE: Mutate Rename Circular Reference
+# Validates how the parser handles sequential rename operations that form a circular reference.
+# In Logstash/SecOps configs, `rename` operations in a single `mutate` block are processed
+# in the order they are defined.
+# The tool MUST trace the field lineage sequentially without falling into an infinite loop
+# or raising a maximum recursion depth error during static analysis.
+# EXPECTED BEHAVIOR: `field_a` -> `field_b`, `field_b` (old) -> `field_c`, `field_c` (old) -> `field_a`.
+filter {
+  mutate {
+    rename => {
+      "field_a" => "field_b"
+      "field_b" => "field_c"
+      "field_c" => "field_a"
+    }
+  }
+}

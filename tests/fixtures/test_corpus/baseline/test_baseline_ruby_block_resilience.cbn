@@ -1,0 +1,20 @@
+# TEST EXPECTATION:
+# The parser must not crash when encountering inline Ruby code.
+# While full Ruby static analysis is typically out of scope, the parser
+# should successfully tokenize the block, treat the code string as an opaque literal,
+# and continue analyzing the rest of the pipeline.
+# It should also flag the pipeline as 'tainted' by opaque code if such a mechanism exists.
+
+filter {
+  ruby {
+    code => "
+      if event.get('bytes').to_i > 1000
+        event.set('large_transfer', true)
+      end
+    "
+  }
+
+  mutate {
+    add_tag => ["processed"]
+  }
+}

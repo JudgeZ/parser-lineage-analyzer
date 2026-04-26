@@ -1,0 +1,13 @@
+# BASELINE REPRODUCTION: Date Filter Multiple Matches and Fallbacks
+# Validates that the `date` filter can handle multiple possible format strings
+# and timezone overrides.
+# The tool MUST recognize that `@timestamp` is created/updated by this filter
+# and that `timestamp_string` is the source.
+# EXPECTED BEHAVIOR: `@timestamp` lineage points to `timestamp_string`.
+filter {
+  date {
+    match => [ "timestamp_string", "ISO8601", "yyyy-MM-dd HH:mm:ss", "MMM dd HH:mm:ss" ]
+    timezone => "UTC"
+    target => "@timestamp"
+  }
+}

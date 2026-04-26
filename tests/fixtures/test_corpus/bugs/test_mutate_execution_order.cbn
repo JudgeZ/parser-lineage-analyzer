@@ -1,0 +1,14 @@
+# BUG REPRODUCTION: Mutate Execution Order Semantic Deviation
+# Logstash does NOT execute mutate operations in the order they are written.
+# It uses a strict, hardcoded internal ordering (e.g., `rename` always runs before `replace`,
+# `gsub` runs before `split`, etc.).
+# The analyzer's `_exec_mutate` loop iterates over `stmt.config` and executes them
+# sequentially based on AST appearance. This fundamentally corrupts the final state
+# if a parser author relies on Logstash's built-in evaluation order.
+# EXPECTED FIX: The analyzer must sort mutate operations according to the Logstash specification.
+filter {
+  mutate {
+    replace => { "source" => "value" }
+    rename => { "source" => "target" }
+  }
+}

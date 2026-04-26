@@ -1,0 +1,12 @@
+# test_mutate_gsub_dynamic_regex.cbn
+# EXPECTED BEHAVIOR:
+# Tests the capability (or fallback) when a dynamic field interpolation is used within a gsub pattern or replacement.
+# The parser should identify the dynamic nature of the regex and handle potential evaluation errors or escaping issues gracefully.
+filter {
+  mutate {
+    gsub => [
+      "message", "%{dynamic_pattern}", "REDACTED",
+      "another_field", "constant_pattern", "%{dynamic_replacement}"
+    ]
+  }
+}

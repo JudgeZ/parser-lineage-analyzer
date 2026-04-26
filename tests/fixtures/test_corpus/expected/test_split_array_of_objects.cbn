@@ -1,0 +1,27 @@
+# EXPECTED BEHAVIOR:
+# 1. The `split` filter is used to clone an event for each element in an array.
+# 2. When splitting an array of objects, the parser must understand that the target 
+#    field changes from an array of objects to a single object in the subsequent pipeline.
+# 3. Subsequent references to `[items][name]` should be valid and track back to the split.
+
+filter {
+  json {
+    source => "message"
+    target => "doc"
+  }
+
+  # doc.items is an array of objects: [{"name": "A", "val": 1}, {"name": "B", "val": 2}]
+  if [doc][items] {
+    split {
+      field => "[doc][items]"
+    }
+  }
+
+  # After split, [doc][items] is a single object for the current cloned event.
+  if [doc][items][val] > 10 {
+    mutate {
+      add_tag => [ "high_value_item" ]
+      add_field => { "item_name" => "%{[doc][items][name]}" }
+    }
+  }
+}

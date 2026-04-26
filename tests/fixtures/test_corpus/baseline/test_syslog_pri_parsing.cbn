@@ -1,0 +1,11 @@
+# BASELINE REPRODUCTION: Syslog Priority Parsing
+# Validates that the `syslog_pri` filter correctly extracts syslog severity and facility.
+# The tool MUST parse the filter and recognize that default fields `syslog_severity`
+# and `syslog_facility` are implicitly created based on `syslog_pri`.
+# EXPECTED BEHAVIOR: `syslog_severity` lineage points to `syslog_pri`.
+filter {
+  syslog_pri {
+    syslog_pri_field_name => "syslog_pri"
+    facility_labels => ["kernel", "user", "mail"]
+  }
+}

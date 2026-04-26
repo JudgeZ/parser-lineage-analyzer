@@ -1,0 +1,18 @@
+# EXPECTED BEHAVIOR:
+# The `kv` filter can parse nested structures if configured recursively or if applied sequentially.
+# This test checks if the parser handles sequential KV parsing where the target of one becomes the source of another.
+# The graph must show a direct lineage from `raw_data` -> `parsed_level1` -> `parsed_level2`.
+filter {
+  kv {
+    source => "raw_data"
+    target => "parsed_level1"
+    field_split => "&"
+    value_split => "="
+  }
+  kv {
+    source => "[parsed_level1][nested_payload]"
+    target => "parsed_level2"
+    field_split => "|"
+    value_split => ":"
+  }
+}

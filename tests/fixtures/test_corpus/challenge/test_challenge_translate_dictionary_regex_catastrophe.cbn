@@ -1,0 +1,19 @@
+# CHALLENGE REPRODUCTION: Translate Dictionary Regex Catastrophe
+# Validates catastrophic backtracking limits *inside* the translate plugin's regex engine.
+# EXPECTED BEHAVIOR:
+# - If the inline dictionary uses a complex regex key and the translate plugin evaluates
+#   it against a massive input, the timeout/watchdog MUST interrupt the lookup without
+#   halting the entire pipeline process.
+filter {
+  translate {
+    field => "user_input"
+    destination => "threat_category"
+    regex => true
+    exact => false
+    dictionary => {
+      "([a-zA-Z]+)*$" => "malicious_regex_payload"
+      "^admin.*" => "privileged"
+    }
+    fallback => "unknown"
+  }
+}

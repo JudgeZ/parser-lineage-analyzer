@@ -1,0 +1,17 @@
+# CHALLENGE REPRODUCTION: Date Leap Second and DST Ambiguity
+# Validates the time parsing library's handling of edge-case temporal anomalies,
+# such as leap seconds (23:59:60) and Daylight Saving Time (DST) overlapping hours.
+# EXPECTED BEHAVIOR:
+# - Leap seconds should be safely clamped to 23:59:59 or accepted based on ISO standards.
+# - DST fallback overlapping hours (e.g., 01:30 AM occurring twice) must not throw fatal exceptions.
+filter {
+  date {
+    match => [ "leap_second_field", "yyyy-MM-dd HH:mm:ss" ] # e.g., 2016-12-31 23:59:60
+    target => "parsed_leap"
+  }
+  date {
+    match => [ "dst_overlap_field", "yyyy-MM-dd HH:mm:ss" ] # e.g., 2022-11-06 01:30:00 (EST/EDT)
+    timezone => "America/New_York"
+    target => "parsed_dst"
+  }
+}

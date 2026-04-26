@@ -1,0 +1,48 @@
+# TEST BEHAVIOR:
+# Simulates a large parser corpus (700+ parsers) where multiple independent parsers process the
+# same event sequentially, relying on complex regex captures and mutations. A challenge arises
+# when a regex capture from an earlier parser bleeds into the scope of a later parser, or
+# when a later parser mutates a field based on an implicit assumption of its state.
+# The tool must correctly model the sequential state mutation, capture group lifetimes,
+# and how a capture group overwritten or left hanging affects subsequent conditionals.
+filter {
+  # Parser 1: Extracts initial values
+  if [message] =~ /^(?<header>[A-Z]+):\s+(?<payload>.*)$/ {
+    mutate {
+      add_tag => [ "parsed_header" ]
+    }
+  }
+
+  # Parser 2: Modifies payload but relies on header being present
+  if "parsed_header" in [tags] {
+    if [header] == "SYS" {
+      mutate {
+        gsub => [
+          "payload", "\s+", "_"
+        ]
+      }
+    } else if [header] =~ /^(SEC|AUTH)$/ {
+      # This conditional might capture $1, overwriting previous regex state if the parser engine isn't careful
+      if [payload] =~ /user=(?<username>[a-zA-Z0-9]+)/ {
+        mutate {
+          add_field => { "actor" => "%{username}" }
+        }
+      }
+    }
+  }
+
+  # Parser 3: Global cleanup that might conflict with earlier assumptions
+  if [actor] {
+    mutate {
+      uppercase => [ "actor" ]
+      remove_field => [ "header", "payload", "username" ]
+    }
+  } else {
+    # If actor isn't set, fallback to dissecting the payload
+    dissect {
+      mapping => {
+        "payload" => "%{?discard} reason=%{reason}"
+      }
+    }
+  }
+}

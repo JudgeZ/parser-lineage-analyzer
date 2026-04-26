@@ -1,0 +1,26 @@
+# BASELINE REPRODUCTION: Dynamic Index / Topic Routing
+# Validates string interpolation within the output block, heavily relying on
+# fields extracted during the filter phase.
+# EXPECTED BEHAVIOR:
+# - The Elasticsearch output MUST dynamically substitute `%{customer_id}` and
+#   date math `%{+YYYY.MM.dd}` to route to tenant-specific daily indices.
+input {
+  http {
+    port => 8080
+  }
+}
+
+filter {
+  json { source => "message" }
+  if ![customer_id] {
+    mutate { add_field => { "customer_id" => "unassigned" } }
+  }
+}
+
+output {
+  elasticsearch {
+    hosts => ["https://es.local:9200"]
+    index => "tenant-%{customer_id}-events-%{+YYYY.MM.dd}"
+    document_id => "%{event_uuid}"
+  }
+}

@@ -1,0 +1,27 @@
+# BASELINE REPRODUCTION: CIDR Array Routing
+# Validates the cidr plugin's ability to handle array-based matching,
+# where both the target field and the network list can be dynamic or static arrays.
+#
+# Production network traffic parsers use CIDR blocks to classify traffic 
+# (e.g., internal vs external).
+#
+# EXPECTED BEHAVIOR: The parser must correctly interpret the `address` field
+# containing multiple variables and the `network` parameter containing CIDR strings.
+# The AST must capture the tag routing (`add_tag`) successfully.
+filter {
+  cidr {
+    add_tag => [ "internal_traffic" ]
+    address => [ "%{src_ip}", "%{dst_ip}" ]
+    network => [ "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7" ]
+  }
+
+  if "internal_traffic" in [tags] {
+    mutate {
+      add_field => { "traffic_direction" => "internal" }
+    }
+  } else {
+    mutate {
+      add_field => { "traffic_direction" => "external" }
+    }
+  }
+}

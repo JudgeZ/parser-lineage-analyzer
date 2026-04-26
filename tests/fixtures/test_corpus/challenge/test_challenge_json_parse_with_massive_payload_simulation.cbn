@@ -1,0 +1,16 @@
+# EXPECTED BEHAVIOR:
+# Evaluates the parser's ability to handle JSON parsing where the source is the same
+# as the target (overwriting itself), combined with skipping on invalid JSON.
+# This is a common pattern in large corpora where raw messages are iteratively expanded.
+filter {
+  json {
+    source => "message"
+    target => "message"
+    skip_on_invalid_json => true
+  }
+  if [message][nested_field] {
+    mutate {
+      rename => { "[message][nested_field]" => "extracted_field" }
+    }
+  }
+}

@@ -1,0 +1,31 @@
+# EXPECTED BEHAVIOR:
+# Tests the parser's logic engine on a massive sequence of if/else if/else
+# statements where inline mutations change the state, potentially affecting
+# what *would* have happened in subsequent blocks if it weren't for short-circuiting.
+# The parser must correctly map the state at the end of each branch.
+
+filter {
+  if [action] == "login" {
+    mutate { add_tag => ["auth_event"] }
+    if [status] == "success" {
+      mutate { add_field => { "outcome" => "allow" } }
+    } else {
+      mutate { add_field => { "outcome" => "deny" } }
+    }
+  } else if [action] == "logout" {
+    mutate { add_tag => ["auth_event"] }
+    mutate { add_field => { "outcome" => "info" } }
+  } else if [action] =~ /^admin_.*/ {
+    mutate { 
+      add_tag => ["admin_event"] 
+      # This mutation changes [action], but we are already inside the branch
+      gsub => [ "action", "admin_", "" ]
+    }
+    # This nested condition uses the mutated [action]
+    if [action] == "delete" {
+      mutate { add_tag => ["high_risk"] }
+    }
+  } else {
+    drop {}
+  }
+}

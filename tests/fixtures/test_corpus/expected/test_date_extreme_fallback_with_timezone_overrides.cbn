@@ -1,0 +1,21 @@
+# EXPECTED BEHAVIOR:
+# In 700+ line parsers, standardizing the @timestamp from logs originating across
+# the globe requires complex date filters.
+# This test incorporates multiple formats, explicit timezones that might be overridden
+# by field references, and fallback locales.
+filter {
+  date {
+    match => [ "log_timestamp", "MMM dd HH:mm:ss", "MMM  d HH:mm:ss", "ISO8601", "yyyy-MM-dd HH:mm:ss.SSS" ]
+    timezone => "%{tz_field}"
+    locale => "en"
+    target => "@timestamp"
+    tag_on_failure => ["_dateparsefailure", "needs_manual_tz"]
+  }
+  
+  if "_dateparsefailure" in [tags] {
+    date {
+      match => [ "backup_timestamp", "UNIX", "UNIX_MS" ]
+      target => "@timestamp"
+    }
+  }
+}

@@ -1,0 +1,45 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must evaluate a complex set of combinatorial conditionals featuring heavy use 
+#    of parenthesization, negation, and implicit truthiness.
+# 2. It must interpret `in` operators correctly when checking against statically defined arrays 
+#    and dynamic field references.
+# 3. It must handle `drop` percentage along with a conditional drop contradiction, where the drop
+#    logic is spread across multiple nested branches with varying truth paths.
+# 4. The parser must trace `mutate` -> `gsub` -> `split` across an array of targets inside the true branch.
+
+filter {
+  if (([action] == "login" and [status] == "failed") or ([action] == "auth" and [status] in ["error", "timeout"])) and !([user][is_admin]) {
+    
+    if [src_ip] in ["10.0.0.1", "10.0.0.2"] or [src_ip] =~ /^192\.168\./ {
+      mutate {
+        add_tag => ["internal_auth_failure"]
+      }
+    } else {
+      mutate {
+        add_tag => ["external_auth_failure"]
+      }
+      # Complex gsub with backreferences
+      mutate {
+        gsub => [
+          "user_agent", ".*(Chrome\/[0-9]+).*", "\\1",
+          "error_msg", "(?<=\\[ERR\\] ).*(?=\\[END\\])", "redacted"
+        ]
+        split => { "user_agent" => "/" }
+      }
+    }
+
+    if "external_auth_failure" in [tags] and ([threat_intel][score] > 80 or [threat_intel][category] == "malware") {
+      # Keep it
+    } else if "internal_auth_failure" in [tags] {
+       drop { percentage => 10 }
+    } else {
+       drop {}
+    }
+
+  } else if [action] in ["logout", "disconnect"] {
+     # Implicit truthiness of arrays or strings
+     if [session_id] and [duration] {
+        mutate { convert => { "duration" => "integer" } }
+     }
+  }
+}

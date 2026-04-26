@@ -1,0 +1,21 @@
+# EXPECTED BEHAVIOR:
+# The parser must track the nested decoding of data formats. Lineage must reflect
+# that the final parsed fields (e.g., `[syslog_message][app_data][csv_col1]`) originate
+# from the initial raw `message` string.
+filter {
+  json {
+    source => "message"
+    target => "parsed_json"
+  }
+  if [parsed_json][inner_syslog] {
+    grok {
+      match => { "[parsed_json][inner_syslog]" => "%{SYSLOGBASE} %{GREEDYDATA:syslog_msg}" }
+    }
+    if [syslog_msg] {
+      csv {
+        source => "syslog_msg"
+        columns => ["csv_col1", "csv_col2"]
+      }
+    }
+  }
+}

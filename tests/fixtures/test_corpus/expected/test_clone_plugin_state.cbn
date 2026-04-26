@@ -1,0 +1,17 @@
+# EXPECTATION:
+# The `clone` filter duplicates the current event, adding a "clone" tag to the duplicate.
+# This represents a complex control flow where a single logical event stream diverges.
+# The parser must record that subsequent filters might operate on the original, the clone, or both,
+# often gated by checking the `type` or tags added by the clone filter.
+filter {
+  clone {
+    clones => ["cloned_event_type"]
+    add_tag => ["is_clone"]
+  }
+
+  if "is_clone" in [tags] {
+    mutate {
+      remove_field => ["sensitive_data"]
+    }
+  }
+}

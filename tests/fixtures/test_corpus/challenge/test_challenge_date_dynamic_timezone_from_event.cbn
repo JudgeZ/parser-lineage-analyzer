@@ -1,0 +1,18 @@
+# EXPECTED BEHAVIOR:
+# Tests handling of the date filter when the `timezone` setting is dynamically derived from the event itself via string interpolation.
+# The parser must link the timezone coercion configuration to the `[extracted_tz]` field and recognize that the temporal
+# normalization of `[timestamp]` is dependent on the prior extraction of `[extracted_tz]`.
+
+filter {
+  grok {
+    match => { "message" => "%{TIMESTAMP_ISO8601:timestamp} TZ:%{WORD:extracted_tz}" }
+  }
+
+  if [extracted_tz] {
+    date {
+      match => [ "timestamp", "ISO8601" ]
+      timezone => "%{extracted_tz}"
+      target => "@timestamp"
+    }
+  }
+}

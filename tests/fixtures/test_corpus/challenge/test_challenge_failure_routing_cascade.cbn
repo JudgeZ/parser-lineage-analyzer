@@ -1,0 +1,28 @@
+# CHALLENGE REPRODUCTION: Failure Routing Cascade (Dead Letter Queue simulation)
+# Validates complex control flow heavily relying on multiple failure tags.
+# EXPECTED BEHAVIOR:
+# - If grok fails, it tries dissect. If dissect fails, it routes to JSON.
+# - If all fail, it must correctly drop the event or route to an `unparsed` bucket.
+# - Ensures `_xxxparsefailure` tags are correctly generated and evaluated in subsequent blocks.
+filter {
+  grok {
+    match => { "message" => "%{SYSLOGBASE} %{GREEDYDATA:payload}" }
+  }
+  if "_grokparsefailure" in [tags] {
+    mutate { remove_tag => [ "_grokparsefailure" ] }
+    dissect {
+      mapping => { "message" => "%{ts} %{host} %{payload}" }
+    }
+  }
+  if "_dissectfailure" in [tags] {
+    mutate { remove_tag => [ "_dissectfailure" ] }
+    json {
+      source => "message"
+      target => "json_payload"
+    }
+  }
+  if "_jsonparsefailure" in [tags] {
+    mutate { add_tag => [ "DEAD_LETTER_QUEUE" ] }
+    drop { }
+  }
+}

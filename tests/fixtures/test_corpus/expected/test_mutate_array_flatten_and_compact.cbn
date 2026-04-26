@@ -1,0 +1,21 @@
+# EXPECTED BEHAVIOR:
+# Parsers handling varied inputs often end up with fields containing arrays of arrays,
+# or arrays with null values. They often use ruby blocks or multiple mutate merges
+# to flatten or compact these structures.
+# This tests the parser's awareness of complex array states.
+filter {
+  mutate {
+    merge => { "combined_list" => "list_a" }
+  }
+  mutate {
+    merge => { "combined_list" => "list_b" }
+  }
+  ruby {
+    code => "
+      if event.get('combined_list').is_a?(Array)
+        flat = event.get('combined_list').flatten.compact.uniq
+        event.set('combined_list', flat)
+      end
+    "
+  }
+}

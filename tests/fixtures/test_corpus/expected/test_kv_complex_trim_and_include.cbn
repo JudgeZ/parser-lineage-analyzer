@@ -1,0 +1,16 @@
+# EXPECTED BEHAVIOR:
+# The parser must handle complex KV extraction where field/value splitters
+# are unusual (like pipes and equals), keys/values are trimmed of brackets,
+# and only specific keys are included. It should recognize `included_key1`
+# and `included_key2` as potential outputs of this filter.
+filter {
+  kv {
+    source => "message"
+    field_split => "|"
+    value_split => "="
+    trim_key => "\s\[\]"
+    trim_value => "\s\[\]"
+    include_keys => ["included_key1", "included_key2"]
+    target => "kv_data"
+  }
+}

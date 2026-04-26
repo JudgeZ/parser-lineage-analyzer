@@ -1,0 +1,14 @@
+# BASELINE REPRODUCTION: Mutate Self Interpolation
+# Validates that the parser can correctly handle field replacement using an
+# interpolated value of itself. In large parsers, this is common for 
+# normalizations (e.g., prepending protocols to domains).
+# EXPECTED BEHAVIOR: The parser MUST recognize the circular dependency without
+# entering an infinite loop and correctly track the lineage of the new `url`
+# as dependent on its original value.
+filter {
+  if [url] and [url] !~ /^http/ {
+    mutate {
+      replace => { "url" => "https://%{url}" }
+    }
+  }
+}

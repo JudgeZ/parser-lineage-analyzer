@@ -1,0 +1,13 @@
+# Test: Deeply Nested Interpolation
+# Description: Tests the parser's ability to handle deeply nested and complex field interpolations.
+# The parser must correctly resolve `%{[field][child]}` and nested constructs like `%{prefix_%{type}}`.
+# Future requirement: correctly handle recursive or dynamically constructed field names in the AST.
+
+filter {
+  mutate {
+    add_field => {
+      "dynamic_key" => "%{vendor}_%{product}_%{[sys][version]}"
+      "nested_dynamic" => "%{prefix_%{dynamic_key}_suffix}"
+    }
+  }
+}

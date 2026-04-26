@@ -1,0 +1,49 @@
+# TEST FIXTURE: Extreme Variable Expansion in GSUB Replacement with Fallbacks
+# PURPOSE: To verify the parser handles complex mutate > gsub operations where the replacement 
+# string contains multiple variable expansions, literal backslashes, capture group backreferences, 
+# and fallbacks. In a 700+ parser corpus, these patterns are often used to dynamically construct
+# URLs, file paths, or command line arguments based on multiple fields.
+# 
+# EXPECTED BEHAVIOR:
+# 1. The parser MUST NOT crash or infinite-loop when expanding nested or missing variables.
+# 2. It MUST correctly identify the capture groups (\1, \2) alongside variable references (%{field}).
+# 3. If a variable is missing, it should handle the interpolation failure gracefully (leave as literal or null based on config).
+# 4. It MUST correctly parse the sequential fallbacks and conditional routing based on the gsub results.
+
+filter {
+  if [action] == "execute" and [process_cmd] {
+    mutate {
+      gsub => [
+        # Match a path and a file, replace with a constructed string using field values
+        "process_cmd", "^(.*)/([^/]+\.exe)$", "%{base_path}/\\2 -config=%{global_config_path} -user=%{user.name} -env=\\1",
+        
+        # Another complex regex replacing quotes and expanding missing fields
+        "cmd_args", "\"([^\"]*)\"", "'\\1' --fallback=%{[system][default_args]}",
+
+        # Extreme escaping and expansion
+        "raw_payload", "\\\\", "\\\\\\\\%{escaped_char_sequence}\\\\\\\\",
+        
+        # Self-referential update with regex
+        "self_field", "(\w+)", "%{self_field}_\\1_updated"
+      ]
+    }
+  }
+
+  # Conditional based on the mutated field
+  if [process_cmd] =~ /^%\{base_path\}/ {
+    # This means base_path was missing and left as literal %{base_path}
+    mutate {
+      add_tag => [ "missing_base_path_expansion" ]
+      replace => { "process_cmd" => "UNRESOLVED_PATH" }
+    }
+  } else if [process_cmd] =~ /-[uU]ser=\w+/ {
+    mutate {
+      add_field => { "user_extracted" => "true" }
+    }
+  }
+
+  # Cleanup step
+  if "missing_base_path_expansion" in [tags] {
+    drop { percentage => 50 }
+  }
+}

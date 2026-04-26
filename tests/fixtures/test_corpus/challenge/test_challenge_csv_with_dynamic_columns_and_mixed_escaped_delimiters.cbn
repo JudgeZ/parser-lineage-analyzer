@@ -1,0 +1,50 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must correctly parse the `csv` plugin configuration, including complex quote characters and escaped delimiters.
+# 2. It must handle the `columns` array, especially if it's partially populated or implicitly derived.
+# 3. It should recognize `autogenerate_column_names` and how it interacts with explicit `columns`.
+# 4. It should detect the type conversion within the csv plugin itself (e.g., `convert` block).
+# 5. It must process the fallback logic where, if CSV parsing fails, it attempts a manual split.
+
+filter {
+  if [log_type] == "custom_csv" {
+    csv {
+      source => "message"
+      target => "parsed_csv"
+      separator => "|"
+      quote_char => "'"
+      columns => ["timestamp", "user_id", "action", "metadata_json", "status_code"]
+      convert => {
+        "user_id" => "integer"
+        "status_code" => "integer"
+      }
+      skip_empty_columns => true
+      autogenerate_column_names => false
+      on_error => "_csv_parse_failure"
+    }
+
+    if "_csv_parse_failure" in [tags] {
+      # Fallback to manual split if CSV is malformed
+      mutate {
+        split => { "message" => "|" }
+      }
+      mutate {
+        add_field => {
+          "[parsed_csv][timestamp]" => "%{[message][0]}"
+          "[parsed_csv][user_id]" => "%{[message][1]}"
+          "[parsed_csv][action]" => "%{[message][2]}"
+        }
+        remove_tag => ["_csv_parse_failure"]
+        add_tag => ["_csv_manual_fallback"]
+      }
+    }
+    
+    # Process metadata JSON embedded in CSV column
+    if [parsed_csv][metadata_json] and [parsed_csv][metadata_json] != "" {
+       json {
+         source => "[parsed_csv][metadata_json]"
+         target => "[parsed_csv][metadata]"
+         skip_on_invalid_json => true
+       }
+    }
+  }
+}

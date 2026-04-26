@@ -1,0 +1,19 @@
+# TEST BEHAVIOR:
+# Simulates a KV plugin configuration where a prefix is added to all extracted keys,
+# and extraction is limited by both `include_keys` and `exclude_keys`.
+# The parser needs to accurately infer the lineage of the final fields created
+# (e.g., `kv_auth_status`), and correctly map the dropped or ignored fields.
+filter {
+  kv {
+    source => "kv_payload"
+    prefix => "kv_"
+    include_keys => [ "auth_status", "user_role", "session_id", "temp_token" ]
+    exclude_keys => [ "temp_token" ]
+  }
+
+  if [kv_auth_status] == "failed" {
+    mutate {
+      add_tag => ["auth_failure"]
+    }
+  }
+}

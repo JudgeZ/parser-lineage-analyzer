@@ -1,0 +1,11 @@
+# BASELINE: Complex Field Reference Brackets
+# Validates that deeply nested field references, including array indices, are parsed
+# correctly without treating brackets as arrays or throwing syntax errors.
+# The tool MUST recognize `[events][0][data][id]` as a valid field reference.
+filter {
+  if [events][0][data][id] == "12345" {
+    mutate {
+      add_tag => [ "found_id" ]
+    }
+  }
+}

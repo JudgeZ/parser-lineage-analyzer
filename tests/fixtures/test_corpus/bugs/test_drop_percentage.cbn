@@ -1,0 +1,17 @@
+# EXPECTATION:
+# The `drop` filter can be probabilistic using the `percentage` option.
+# The parser must recognize this as a non-deterministic control flow path,
+# meaning the subsequent steps are not guaranteed to execute, but are not
+# definitely blocked either. The lineage analysis should treat this as a 
+# branching execution flow.
+filter {
+  if [log_level] == "DEBUG" {
+    drop {
+      percentage => 50
+    }
+  }
+
+  mutate {
+    add_tag => ["survived_drop"]
+  }
+}

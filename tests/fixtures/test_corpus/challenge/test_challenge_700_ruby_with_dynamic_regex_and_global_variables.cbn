@@ -1,0 +1,46 @@
+# TEST BEHAVIOR:
+# This test simulates a complex `ruby` block that interacts with the event API, dynamically generates regexes based on event fields,
+# and modifies global/class-level variables (e.g., $global_state or @@class_state).
+# Expected parsing behavior:
+# - The parser should capture the full ruby code block without syntax errors.
+# - It should recognize the `init` block and its distinction from the main `code` block.
+# - It should correctly handle the multi-line ruby strings and regex interpolation.
+# - The AST should retain the integrity of the Ruby logic, including the begin/rescue blocks and event.cancel.
+
+filter {
+  ruby {
+    init => "
+      @@pattern_cache = {}
+      @@error_count = 0
+    "
+    code => "
+      begin
+        dynamic_prefix = event.get('custom_prefix')
+        if dynamic_prefix
+          # Dynamically create or retrieve regex
+          @@pattern_cache[dynamic_prefix] ||= Regexp.new('^' + Regexp.escape(dynamic_prefix) + '_(.*)')
+          regex = @@pattern_cache[dynamic_prefix]
+          
+          raw_message = event.get('message')
+          if match = regex.match(raw_message)
+            event.set('extracted_suffix', match[1])
+            event.tag('dynamic_regex_success')
+          else
+            event.tag('dynamic_regex_miss')
+          end
+        else
+          # Example of cancelling event
+          event.cancel
+        end
+      rescue => e
+        @@error_count += 1
+        event.tag('_rubyexception')
+        event.set('ruby_error_msg', e.message)
+        if @@error_count > 100
+           # Simulated global state consequence
+           event.tag('high_ruby_error_rate')
+        end
+      end
+    "
+  }
+}

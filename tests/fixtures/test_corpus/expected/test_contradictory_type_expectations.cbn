@@ -1,0 +1,14 @@
+# EXPECTED BEHAVIOR:
+# The analyzer should detect that `field_x` is treated as a string (split) and then
+# immediately as an object (accessed as `[field_x][sub_field]`). This usually indicates
+# a configuration error or requires dynamic typing.
+filter {
+  mutate {
+    split => { "field_x" => "," }
+  }
+  if [field_x][sub_field] == "value" {
+    mutate {
+      add_tag => ["impossible"]
+    }
+  }
+}

@@ -1,0 +1,36 @@
+# EXPECTED BEHAVIOR:
+# This test verifies the CSV parser's ability to handle deeply malformed or highly escaped CSV data.
+# Scenarios include mis-escaped quotes, embedded commas inside quoted fields, and a mismatch 
+# between the number of defined columns and the actual data in the payload.
+# The parser must extract as much as possible, apply autogenerate_column_names if necessary, 
+# and safely handle quote character edge cases.
+
+filter {
+  csv {
+    source => "message"
+    columns => ["col1", "col2", "col3", "col4"]
+    separator => ","
+    quote_char => '"'
+    # Suppose the message is: "value1","val,ue2",\"malformed_quote,"value4","extra_value5"
+    # This mismatch in columns vs data must be handled gracefully.
+    skip_empty_columns => true
+  }
+
+  if "_csvparsefailure" in [tags] {
+    # If the standard strict CSV fails, attempt a more permissive split
+    mutate {
+      split => { "message" => "," }
+    }
+    mutate {
+      add_field => {
+        "fallback_col1" => "%{[message][0]}"
+        "fallback_col2" => "%{[message][1]}"
+      }
+    }
+  } else {
+    mutate {
+      uppercase => ["col1"]
+      strip => ["col2", "col3"]
+    }
+  }
+}

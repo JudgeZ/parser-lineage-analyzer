@@ -1,0 +1,14 @@
+# EXPECTED BEHAVIOR:
+# The parser must resolve `pattern_definitions` inline and allow Grok patterns
+# to reference these newly defined patterns, even in a recursive or nested manner.
+# It should extract `custom_id` and `custom_status`.
+filter {
+  grok {
+    match => { "message" => "%{MY_CUSTOM_LOG}" }
+    pattern_definitions => {
+      "MY_ID" => "[A-Z]{3}-\d{4}"
+      "MY_STATUS" => "(SUCCESS|FAILURE|PENDING)"
+      "MY_CUSTOM_LOG" => "ID: %{MY_ID:custom_id} - Status: %{MY_STATUS:custom_status}"
+    }
+  }
+}

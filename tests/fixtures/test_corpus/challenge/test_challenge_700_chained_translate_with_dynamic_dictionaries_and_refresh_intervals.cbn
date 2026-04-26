@@ -1,0 +1,24 @@
+# EXPECTED BEHAVIOR:
+# 1. Models external translate dictionary lookups using hypothetical dynamic paths.
+# 2. Checks parser behavior when `dictionary_path` uses string interpolation `%{customer_id}`.
+# 3. Simulates cascading translations where one lookup dictates the dictionary of the next.
+
+filter {
+  translate {
+    field => "tenant_code"
+    destination => "tenant_id"
+    dictionary_path => "/opt/rules/tenants.yaml"
+    refresh_interval => 300
+    fallback => "unknown"
+  }
+
+  if [tenant_id] != "unknown" {
+    translate {
+      field => "event_type"
+      destination => "event_category"
+      dictionary_path => "/opt/rules/events/%{tenant_id}_events.yaml"
+      refresh_interval => 60
+      fallback => "default_category"
+    }
+  }
+}

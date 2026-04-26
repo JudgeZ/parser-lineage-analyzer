@@ -1,0 +1,11 @@
+{
+  "must_not_have_warning_codes": [
+    "malformed_config",
+    "parse_recovery"
+  ],
+  "must_resolve_fields": [
+    "target.ip",
+    "my_udm_object",
+    "my_udm_object.child_key"
+  ]
+}

@@ -1,0 +1,20 @@
+# EXPECTED BEHAVIOR:
+# 1. Extremely long and nested boolean condition.
+# 2. Mix of regex `=~`, equality `==`, existence, and `in` operators.
+# 3. Tests precedence and parentheses matching.
+
+filter {
+  if ([fieldA] == "val1" and ([fieldB] =~ /^start/ or "token" in [fieldC])) or 
+     (![fieldD] and [fieldE] > 100) or 
+     ([fieldF][nested] == "true" and ([fieldG] < 50.5 or [fieldH] == [fieldI])) {
+    mutate {
+      add_tag => ["complex_match"]
+      convert => {
+        "fieldE" => "string"
+        "[fieldF][nested]" => "boolean"
+      }
+    }
+  } else if [fieldJ] or [fieldK] and ![fieldL] {
+    drop {}
+  }
+}

@@ -1,0 +1,15 @@
+# CHALLENGE: Mutate Split and Rejoin
+# Validates the handling of sequential `split` and `join` operations on the same field
+# within a single `mutate` block. 
+# This is a common pattern in the real parser corpus for normalizing delimiters (e.g.,
+# splitting on multiple spaces and joining on a single space or a different character).
+# The tool MUST track the type transformation: string -> array (after split) -> string (after join).
+# EXPECTED BEHAVIOR: `normalized_path` lineage shows a split by `\`, then a join by `/`.
+# Its final inferred type should be a string, not an array.
+filter {
+  mutate {
+    add_field => { "normalized_path" => "%{original_path}" }
+    split => { "normalized_path" => "\" }
+    join => { "normalized_path" => "/" }
+  }
+}

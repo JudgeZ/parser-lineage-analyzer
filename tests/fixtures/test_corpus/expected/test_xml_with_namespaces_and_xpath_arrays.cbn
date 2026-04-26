@@ -1,0 +1,25 @@
+/*
+ * EXPECTED BEHAVIOR:
+ * The parser needs to handle XML parsing where strict namespaces are defined and XPath queries extract arrays.
+ * It must trace the lineage from `raw_xml` -> `xml filter` -> `xpath arrays` -> `split plugin`.
+ * The split plugin then operates on the extracted array, emitting one event per element.
+ * The parser should recognize the splitting behavior and how it affects the event cardinality.
+ */
+filter {
+  xml {
+    source => "raw_xml"
+    target => "parsed_xml"
+    namespaces => {
+      "soap" => "http://schemas.xmlsoap.org/soap/envelope/"
+      "saml" => "urn:oasis:names:tc:SAML:2.0:assertion"
+    }
+    xpath => {
+      "/soap:Envelope/soap:Body/saml:Assertion/saml:AttributeStatement/saml:Attribute[@Name='roles']/saml:AttributeValue/text()" => "user_roles"
+      "//saml:Conditions/@NotOnOrAfter" => "expiration_date"
+    }
+  }
+
+  split {
+    field => "user_roles"
+  }
+}

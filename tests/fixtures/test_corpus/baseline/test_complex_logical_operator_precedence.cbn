@@ -1,0 +1,25 @@
+# BASELINE REPRODUCTION: Complex Logical Operator Precedence
+# Validates that the parser correctly handles complex conditional logic
+# involving a mix of 'and', 'or', 'in', 'not in', '=~', '!~', and nested parentheses.
+# 
+# Real 700+ parser configuration files often have massive nested if-statements
+# that dictate routing and parsing paths based on various flags and values.
+#
+# EXPECTED BEHAVIOR: The AST must correctly establish the precedence of operations.
+# Grouping by parentheses must be respected, and logical evaluations must form
+# an accurate boolean expression tree without confusing token boundaries.
+filter {
+  if ([event_type] in ["auth", "login"] and [user] != "system") or (![src_ip] and [dst_ip] =~ /^192\.168\./) {
+    mutate {
+      add_tag => ["complex_match_1"]
+    }
+  } else if ("admin" in [groups] and [action] == "delete") and !([status] in [200, 201, 204]) {
+    mutate {
+      add_tag => ["complex_match_2"]
+    }
+  } else if ([fieldA] =~ /regex1/ and [fieldB] !~ /regex2/) or ([fieldC] > 100 and [fieldD] <= 50) {
+    mutate {
+      add_tag => ["complex_match_3"]
+    }
+  }
+}

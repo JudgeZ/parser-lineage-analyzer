@@ -1,0 +1,18 @@
+# EXPECTED BEHAVIOR:
+# The parser must handle complex aggregate filter usage, specifically the `code` and `timeout_tags` parameters.
+# The map operations in the `code` block are opaque, but the parser must correctly parse the multiline string block.
+# It must also recognize that `timeout_tags` will add tags, and track that lineage.
+
+filter {
+  aggregate {
+    task_id => "%{session_id}"
+    code => "
+      map['events_count'] ||= 0
+      map['events_count'] += 1
+      event.set('current_count', map['events_count'])
+    "
+    push_map_as_event_on_timeout => true
+    timeout => 600
+    timeout_tags => ["_aggregate_timeout"]
+  }
+}

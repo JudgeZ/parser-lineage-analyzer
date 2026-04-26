@@ -1,0 +1,15 @@
+# EXPECTED BEHAVIOR:
+# The parser must handle conditional regex matches with multiple named capture groups.
+# It should correctly expose `first_part` and `second_part` as fields in the current scope if the regex matches.
+# Subsequent references to `[first_part]` and `[second_part]` should be correctly linked to this conditional regex capture.
+
+filter {
+  if [message] =~ /(?<first_part>\w+)-(?<second_part>\d+)/ {
+    mutate {
+      add_field => {
+        "extracted_name" => "%{first_part}"
+        "extracted_id" => "%{second_part}"
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+# BASELINE REPRODUCTION: Date Plugin Target Overwrite
+# Validates handling of the date plugin when target is not the default @timestamp
+# and when multiple date fields are being parsed sequentially.
+# The tool MUST parse the date match patterns and the target assignments.
+# EXPECTED BEHAVIOR: AST formed, date plugin properties mapped accurately.
+filter {
+  date {
+    match => [ "login_time", "ISO8601", "yyyy-MM-dd HH:mm:ss" ]
+    target => "parsed_login_time"
+    timezone => "UTC"
+  }
+  date {
+    match => [ "logout_time", "UNIX" ]
+    target => "parsed_logout_time"
+  }
+}

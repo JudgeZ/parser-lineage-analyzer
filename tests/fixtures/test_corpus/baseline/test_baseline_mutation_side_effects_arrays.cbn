@@ -1,0 +1,33 @@
+# TEST EXPECTATION:
+# The parser must correctly track type coercion and mutation side effects when a field transitions from a string to an array and back.
+# The field `target_ips` starts as a string, is split into an array, has an element appended, and then is improperly used in a string operation (gsub).
+# The parser should detect this potential type mismatch or handle the array-to-string coercion semantics correctly as per logstash/cbn rules.
+
+filter {
+  # Start with a string
+  mutate {
+    add_field => { "target_ips" => "192.168.1.1,10.0.0.1" }
+  }
+
+  # Transition to array
+  mutate {
+    split => { "target_ips" => "," }
+  }
+
+  # Append to array
+  mutate {
+    merge => { "target_ips" => "172.16.0.1" }
+  }
+
+  # Invalid or implicitly coercing operation on array
+  mutate {
+    gsub => [
+      "target_ips", "\.", "_"
+    ]
+  }
+
+  # Array membership check
+  if "10.0.0.1" in [target_ips] {
+    mutate { add_tag => ["contains_internal_ip"] }
+  }
+}

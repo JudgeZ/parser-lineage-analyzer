@@ -1,0 +1,23 @@
+# BUG REPRODUCTION: KV include_keys / exclude_keys filters not enforced
+# The kv plugin's `include_keys => ["a", "b"]` should restrict inferable
+# tokens to that whitelist; before the Phase 3A fix the resolver would
+# happily resolve ANY plausible kv key, hallucinating fields that the kv
+# plugin would skip at runtime.
+# EXPECTED FIX: only the listed include_keys produce kv-derived lineage;
+# excluded keys and unlisted keys do not.
+filter {
+  kv {
+    source => "message"
+    field_split => " "
+    value_split => "="
+    include_keys => ["allowed_key", "also_allowed"]
+    exclude_keys => ["forbidden"]
+  }
+  mutate {
+    replace => {
+      "event.idm.read_only_udm.principal.user.userid" => "%{allowed_key}"
+      "event.idm.read_only_udm.principal.role" => "%{forbidden}"
+      "event.idm.read_only_udm.principal.email_addresses" => "%{not_in_include_list}"
+    }
+  }
+}

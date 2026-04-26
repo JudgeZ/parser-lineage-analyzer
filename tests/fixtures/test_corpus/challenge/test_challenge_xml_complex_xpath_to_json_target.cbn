@@ -1,0 +1,20 @@
+# TEST BEHAVIOR:
+# Tests parser's ability to map XPath extractions into deeply nested objects.
+# The parser must establish the hierarchy of `[event_data][network][ip]` and
+# correctly link it to the XPath query result.
+filter {
+  xml {
+    source => "xml_payload"
+    store_xml => false
+    xpath => [
+      "/Event/System/Execution/@ProcessID", "[event_data][process][pid]",
+      "/Event/EventData/Data[@Name='IpAddress']/text()", "[event_data][network][ip]"
+    ]
+  }
+
+  if [event_data][network][ip] {
+    mutate {
+      add_tag => ["has_ip"]
+    }
+  }
+}

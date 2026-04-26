@@ -1,0 +1,11 @@
+# test_mutate_gsub_self_reference.cbn
+# EXPECTED BEHAVIOR:
+# Tests a gsub mutation that references its own source field dynamically within the replacement pattern.
+# The parser must correctly assess the evaluation order to avoid undefined states or infinite self-replacement.
+filter {
+  mutate {
+    gsub => [
+      "message", "ERROR", "%{message}_handled"
+    ]
+  }
+}

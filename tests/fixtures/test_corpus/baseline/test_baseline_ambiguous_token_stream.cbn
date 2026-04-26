@@ -1,0 +1,29 @@
+# TEST EXPECTATION:
+# The parser must correctly handle ambiguous token streams resulting from multiple grok patterns that could match the same input.
+# The expectation is that the first successfully matching pattern in the array wins (short-circuit evaluation).
+# The parser should also correctly track the state of the target field if multiple captures target the same name within the same pattern.
+
+filter {
+  grok {
+    match => {
+      "message" => [
+        "%{SYSLOGTIMESTAMP:timestamp} %{IPORHOST:host} %{WORD:app}\\[%{NUMBER:pid}\\]: %{GREEDYDATA:msg}",
+        "%{TIMESTAMP_ISO8601:timestamp} %{LOGLEVEL:level} %{GREEDYDATA:msg}",
+        "%{GREEDYDATA:msg}" # Fallback
+      ]
+    }
+  }
+
+  # Ambiguous capturing to the same field 'user'
+  grok {
+    match => {
+      "msg" => "%{WORD:user} logged in from %{IP:user}"
+    }
+  }
+
+  if [user] {
+    mutate {
+      add_tag => ["has_user"]
+    }
+  }
+}

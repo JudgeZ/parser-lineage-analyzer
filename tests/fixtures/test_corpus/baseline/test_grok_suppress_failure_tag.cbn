@@ -1,0 +1,17 @@
+# BASELINE REPRODUCTION: Grok Suppress Failure Tag
+# Validates that the parser correctly interprets `tag_on_failure => []` as
+# suppressing the default `_grokparsefailure` tag.
+# EXPECTED BEHAVIOR: A subsequent check for `_grokparsefailure` MUST be 
+# recognized as a contradiction if `tag_on_failure => []` was applied.
+filter {
+  grok {
+    match => { "message" => "%{WORD:word1}" }
+    tag_on_failure => []
+  }
+
+  if "_grokparsefailure" in [tags] {
+    mutate {
+      add_field => { "error" => "this should be identified as unreachable" }
+    }
+  }
+}

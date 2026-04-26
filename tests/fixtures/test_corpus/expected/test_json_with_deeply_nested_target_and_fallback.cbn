@@ -1,0 +1,17 @@
+# EXPECTED BEHAVIOR:
+# The parser must handle JSON filters where the target is a deeply nested field (e.g., "[parent][child][grandchild]")
+# and includes a fallback mechanism or conditional logic immediately following it if parsing fails.
+# The tool should track the newly created nested structure within the internal state properly.
+filter {
+  json {
+    source => "message"
+    target => "[data][payload][extracted_json]"
+    skip_on_invalid_json => true
+  }
+  if "_jsonparsefailure" in [tags] {
+    mutate {
+      add_field => { "[data][payload][error]" => "invalid json format" }
+      remove_tag => ["_jsonparsefailure"]
+    }
+  }
+}

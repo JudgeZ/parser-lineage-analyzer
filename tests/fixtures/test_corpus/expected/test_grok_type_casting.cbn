@@ -1,0 +1,12 @@
+# EXPECTED BEHAVIOR:
+# The parser must identify and correctly handle type casting within Grok patterns.
+# `status_code` should be identified as an integer, and `duration` as a float.
+# The type metadata should ideally be recorded in the lineage or field definition state.
+
+filter {
+  grok {
+    match => {
+      "message" => "%{WORD:method} %{URIPATH:request} %{NUMBER:status_code:int} %{NUMBER:duration:float}"
+    }
+  }
+}

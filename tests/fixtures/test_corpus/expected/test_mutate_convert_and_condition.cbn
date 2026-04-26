@@ -1,0 +1,36 @@
+# EXPECTED BEHAVIOR:
+# Tests the parser's ability to track type conversions and subsequent conditional logic
+# that relies on that new type. In massive configurations, fields often change types mid-flight.
+# - A string field 'status_code' is converted to an integer.
+# - An 'if' condition checks if the value is >= 400 (integer comparison).
+# - The parser must not fail on the integer comparison and should ideally
+#   recognize that 'status_code' was converted prior to this check.
+
+filter {
+  mutate {
+    convert => {
+      "status_code" => "integer"
+      "response_time_ms" => "float"
+    }
+  }
+
+  if [status_code] >= 400 {
+    mutate {
+      add_tag => [ "error_response" ]
+    }
+    
+    if [status_code] >= 500 {
+      mutate {
+        add_field => { "severity" => "high" }
+      }
+    } else {
+      mutate {
+        add_field => { "severity" => "medium" }
+      }
+    }
+  } else if [status_code] == 200 and [response_time_ms] > 1000.0 {
+    mutate {
+      add_tag => [ "slow_response" ]
+    }
+  }
+}

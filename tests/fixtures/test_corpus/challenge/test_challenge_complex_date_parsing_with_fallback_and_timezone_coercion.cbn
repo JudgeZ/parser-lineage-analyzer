@@ -1,0 +1,20 @@
+# EXPECTED BEHAVIOR:
+# Tests the date plugin's handling of multiple match patterns combined with timezone
+# coercion and fallback logic. In large parsers, date parsing often attempts several formats
+# and relies on dynamic timezones. The parser should track all potential paths for the
+# @timestamp field and validate the timezone references.
+filter {
+  date {
+    match => [ "timestamp_field", "ISO8601", "yyyy-MM-dd HH:mm:ss", "MMM dd HH:mm:ss" ]
+    timezone => "%{dynamic_tz}"
+    target => "@timestamp"
+  }
+  if "_dateparsefailure" in [tags] {
+    date {
+      match => [ "fallback_timestamp", "UNIX_MS" ]
+      timezone => "UTC"
+      target => "@timestamp"
+      remove_tag => ["_dateparsefailure"]
+    }
+  }
+}

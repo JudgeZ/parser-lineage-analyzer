@@ -1,0 +1,14 @@
+# TEST BEHAVIOR:
+# This test challenges the parser's ability to handle dynamic interpolation
+# inside the key of a mutate/add_field block, specifically when the target
+# itself is an array or object constructed from runtime variables.
+# The parser must recognize that `[%{dynamic_root}][%{dynamic_index}]` 
+# implies a nested map/array structure and correctly establish the lineage
+# from `dynamic_root` and `dynamic_index` to the newly assigned value.
+filter {
+  mutate {
+    add_field => {
+      "[%{tenant_id}_data][users][%{user_index}]" => "%{username}"
+    }
+  }
+}

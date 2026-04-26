@@ -1,0 +1,27 @@
+# EXPECTED BEHAVIOR:
+# This tests deep JSON mapping where a field is parsed as JSON, but then
+# aggressively type-mutated and mapped back to the root, simulating common
+# ELK index mapping conflict resolutions.
+filter {
+  json {
+    source => "raw_json"
+    target => "parsed_json"
+  }
+  
+  if [parsed_json][status_code] {
+    mutate {
+      convert => {
+        "[parsed_json][status_code]" => "integer"
+      }
+    }
+  }
+  
+  if [parsed_json][error_messages] {
+    mutate {
+      join => {
+        "[parsed_json][error_messages]" => " | "
+      }
+      lowercase => [ "[parsed_json][error_messages]" ]
+    }
+  }
+}

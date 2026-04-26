@@ -1,0 +1,24 @@
+# EXPECTED BEHAVIOR:
+# The lexer must not be confused by unbalanced brackets, braces, or parentheses
+# that occur inside string literals. It should correctly maintain string context
+# and not treat them as block or expression delimiters.
+# The parser must successfully process the file without syntax errors.
+
+filter {
+  if [message] == "{" or [message] == "}" {
+    drop {}
+  }
+
+  mutate {
+    add_field => {
+      "unbalanced_brace" => "this has an open { but no close"
+      "unbalanced_bracket" => "array start [ "
+      "unbalanced_parens" => "(()"
+      "json_lookalike" => "{\"key\": \"value\""
+    }
+  }
+
+  if [status] =~ /\[Error/ {
+    mutate { add_tag => ["bracket_regex"] }
+  }
+}

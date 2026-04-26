@@ -1,0 +1,19 @@
+/*
+ * EXPECTED BEHAVIOR:
+ * The parser should handle mutate merge operations where multiple different fields (strings, integers, existing arrays) are merged into a single array field.
+ * It must trace the lineage of the resulting `combined_tags` field back to `syslog_tag`, `app_id`, and `security_labels`.
+ * It should also understand the implicit array coercion that happens when merging into a single field.
+ */
+filter {
+  mutate {
+    add_field => { "combined_tags" => [] }
+  }
+  
+  mutate {
+    merge => {
+      "combined_tags" => "syslog_tag"
+      "combined_tags" => "app_id"
+      "combined_tags" => "security_labels"
+    }
+  }
+}

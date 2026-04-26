@@ -1,0 +1,16 @@
+# Test: Ruby Filter
+# Description: Tests handling of inline ruby code. The parser might not perform static analysis
+# on the ruby code itself, but it MUST NOT crash. It should gracefully handle the ruby block,
+# identify the filter block, and potentially capture the raw ruby code as a node attribute.
+# Future requirement: Detect which fields are being accessed or modified by statically analyzing the ruby code string.
+
+filter {
+  ruby {
+    code => "
+      event.set('new_field', event.get('old_field').to_s.upcase)
+      if event.get('status') == 500
+        event.tag('_ruby_error')
+      end
+    "
+  }
+}

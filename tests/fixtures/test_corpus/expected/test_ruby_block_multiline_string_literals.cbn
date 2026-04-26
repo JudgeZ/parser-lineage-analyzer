@@ -1,0 +1,16 @@
+# EXPECTED BEHAVIOR:
+# 1. The lexer must handle multiline string literals within the ruby `code` block.
+# 2. Specifically, a string with embedded newlines enclosed in quotes, or even heredocs if used, should not break the parser.
+# 3. Lineage tracking should capture `error_log` as being created by the ruby block.
+
+filter {
+  ruby {
+    code => '
+      multiline_message = "This is a
+      multiline string
+      inside a ruby block"
+      
+      event.set("error_log", multiline_message)
+    '
+  }
+}

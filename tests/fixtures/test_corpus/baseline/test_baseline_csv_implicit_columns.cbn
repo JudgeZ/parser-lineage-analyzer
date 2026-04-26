@@ -1,0 +1,12 @@
+# BASELINE REPRODUCTION: CSV Implicit Columns Graceful Fallback
+# Validates that when the `csv` plugin is used without explicitly defining `columns`,
+# the analyzer gracefully handles it by warning about the missing config instead of
+# crashing or creating runaway tokens.
+# The tool MUST continue to surface the `missing_config_key` warning cleanly.
+# EXPECTED BEHAVIOR: `column1` remains unresolved, and a warning is emitted.
+filter {
+  csv {
+    source => "message"
+    separator => ","
+  }
+}

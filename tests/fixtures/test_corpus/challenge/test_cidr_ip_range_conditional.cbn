@@ -1,0 +1,30 @@
+# CHALLENGE: CIDR Filter Logic and State Mutation
+# The `cidr` filter checks if IP addresses fall within specific subnet ranges and applies
+# tags or fields if they do. This is a common network security parsing pattern.
+# EXPECTED BEHAVIOR:
+# The parser must track the conditional state introduced by the `cidr` filter. It needs
+# to understand that `add_tag` and `add_field` inside the `cidr` block only apply if the
+# `address` field evaluates to true against the `network` array. Subsequent `if` statements
+# checking these tags/fields must be logically linked back to the CIDR evaluation.
+
+filter {
+  cidr {
+    address => [ "%{src_ip}", "%{dst_ip}" ]
+    network => [ "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.1/8" ]
+    add_tag => [ "internal_traffic" ]
+    add_field => { "traffic_direction" => "internal_to_internal" }
+  }
+
+  if "internal_traffic" not in [tags] {
+    mutate {
+      add_tag => [ "external_traffic" ]
+      add_field => { "traffic_direction" => "involves_external" }
+    }
+  }
+
+  if [traffic_direction] == "internal_to_internal" {
+    mutate {
+      add_field => { "priority" => "low" }
+    }
+  }
+}

@@ -1,0 +1,22 @@
+# CHALLENGE: KV Recursive Parsing Unpredictability
+# Validates the `kv` plugin when `recursive => "true"` is set.
+# In the 700+ parser corpus, some firewalls or complex applications send key-value pairs
+# where the values themselves contain further key-value pairs.
+# The tool MUST NOT attempt to deeply traverse the infinite tree of potential fields
+# but SHOULD mark the target root as containing recursively parsed dynamic children,
+# preventing false alarms on unmapped fields downstream.
+# EXPECTED BEHAVIOR: `nested_kv` is marked as a dynamic/open-ended structure.
+# Downstream references like `[nested_kv][inner][key]` should be tolerated.
+filter {
+  kv {
+    source => "message"
+    target => "nested_kv"
+    field_split => ","
+    value_split => "="
+    recursive => "true"
+  }
+  
+  if [nested_kv][user][login] == "admin" {
+    mutate { add_tag => ["admin_login"] }
+  }
+}

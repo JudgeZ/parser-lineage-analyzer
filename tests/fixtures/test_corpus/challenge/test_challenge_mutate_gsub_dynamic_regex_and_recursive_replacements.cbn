@@ -1,0 +1,23 @@
+# EXPECTED BEHAVIOR:
+# Tests handling of highly dynamic `gsub` mutations where both the search regex
+# and the replacement string are constructed using dynamic field references.
+# The parser must track that the output field's content is dependent on the
+# state of `regex_pattern`, `replacement_val`, and `original_text`.
+# It should also flag potential issues with unescaped regex characters inside
+# the dynamically substituted `regex_pattern`.
+
+filter {
+  mutate {
+    add_field => { "regex_pattern" => "%{user_input}" }
+    add_field => { "replacement_val" => "USER_%{user_id}" }
+  }
+
+  mutate {
+    # If [user_input] contains regex control characters, this could explode.
+    # The parser needs to model this complex dependency.
+    gsub => [
+      "message", "%{regex_pattern}", "%{replacement_val}",
+      "other_field", "static_pattern", "%{message}"
+    ]
+  }
+}

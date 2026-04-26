@@ -1,0 +1,12 @@
+# BASELINE REPRODUCTION: MAC Address Normalization
+# Validates the mac plugin's ability to standardize MAC address formats.
+# EXPECTED BEHAVIOR:
+# - `aa:bb:cc:dd:ee:ff`, `aa-bb-cc-dd-ee-ff`, and `aabb.ccdd.eeff` should all be 
+#   normalized into a standard IEEE 802 MAC format based on configuration.
+filter {
+  mac {
+    source => "host.mac"
+    target => "host.mac_normalized"
+    format => "IEEE"
+  }
+}

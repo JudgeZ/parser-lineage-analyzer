@@ -1,0 +1,29 @@
+# EXPECTED BEHAVIOR:
+# 1. Parsing must track the transformation of a base64 string into a decoded string,
+#    and then passing that decoded string into a JSON filter.
+# 2. Lineage should link the final JSON fields back to the original base64 payload field.
+# 3. Ensuring sequence of operations is respected.
+
+filter {
+  ruby {
+    code => "
+      require 'base64'
+      if event.get('encoded_data')
+        event.set('decoded_json', Base64.decode64(event.get('encoded_data')))
+      end
+    "
+  }
+
+  if [decoded_json] {
+    json {
+      source => "decoded_json"
+      target => "parsed_payload"
+    }
+  }
+
+  if [parsed_payload][user][id] {
+    mutate {
+      add_field => { "actor_id" => "%{[parsed_payload][user][id]}" }
+    }
+  }
+}

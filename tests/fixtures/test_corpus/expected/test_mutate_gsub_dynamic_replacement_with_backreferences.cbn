@@ -1,0 +1,23 @@
+/*
+ * EXPECTED BEHAVIOR:
+ * The parser must handle mutate gsub operations that use regex capture groups 
+ * (backreferences like `\1`, `\2`) combined with logstash string interpolation 
+ * (like `%{fieldname}`) in the replacement string.
+ * The lineage should map the source field to the mutated field, and recognize 
+ * the dependency on any interpolated fields.
+ */
+filter {
+  mutate {
+    gsub => [
+      # Replace domain in email with a dynamic domain from another field, 
+      # keeping the username via backreference
+      "email", "^([^@]+)@.*$", "\1@%{[metadata][new_domain]}",
+      
+      # Strip out protocol but keep domain and path, while adding a dynamic prefix
+      "url", "^https?://([^/]+)(/.*)$", "%{[app_prefix]}://\1\2",
+      
+      # Complex replacement with unbalanced looking braces in regex and replacement
+      "messy_data", "([{<])([^}>]+)([}>])", "\1%{[clean_value]}\3"
+    ]
+  }
+}

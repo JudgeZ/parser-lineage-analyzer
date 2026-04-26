@@ -1,0 +1,39 @@
+# EXPECTED BEHAVIOR:
+# This test simulates dangerous recursive gsub patterns and dynamic splits that can cause infinite loops
+# or massive resource spikes in real 700+ parser deployments.
+# The parser must recognize the backreferences and capture groups in the `gsub` plugin.
+# It should accurately trace the lineage of the `dynamic_delimiter` being used in the `split` plugin.
+# It should evaluate the order of operations: regex replacement -> split -> array manipulation.
+
+filter {
+  mutate {
+    # Risky gsub: replacing a quote with an escaped quote, potentially recursive if not anchored properly
+    gsub => [
+      "message", "'", "\'",
+      "payload", '(?<=\W)admin(?=\W)', "REDACTED_ADMIN",
+      # Using backreferences in the replacement
+      "complex_field", "(.*)=(.*)", "\1:\2"
+    ]
+  }
+
+  if [message] =~ /delim=/ {
+    grok {
+      match => { "message" => "delim=%{NOTSPACE:dynamic_delimiter}" }
+    }
+  } else {
+    mutate {
+      add_field => { "dynamic_delimiter" => "," }
+    }
+  }
+
+  # Split using a dynamically extracted delimiter
+  mutate {
+    split => { "payload" => "%{dynamic_delimiter}" }
+  }
+
+  if [payload][0] {
+    mutate {
+      uppercase => [ "[payload][0]" ]
+    }
+  }
+}

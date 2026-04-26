@@ -1,0 +1,19 @@
+# CHALLENGE REPRODUCTION: Reserved Field Type Corruption
+# Validates parser integrity when critical system fields are mutated into
+# incompatible data types (e.g., turning `tags` into a string or `@timestamp` to a boolean).
+# EXPECTED BEHAVIOR:
+# - The pipeline MUST either reject the type mutation, coerce it back to an array/date,
+#   or isolate the failure without crashing the indexing stage.
+filter {
+  mutate {
+    replace => { "tags" => "this_is_now_a_string" }
+    convert => { "@version" => "boolean" }
+  }
+  date {
+    match => [ "log_time", "ISO8601" ]
+    target => "@timestamp"
+  }
+  mutate {
+    replace => { "@timestamp" => "corrupted_time_string" }
+  }
+}

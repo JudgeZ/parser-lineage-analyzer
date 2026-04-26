@@ -1,0 +1,40 @@
+# TEST BEHAVIOR:
+# This tests the parser's ability to handle complex Ruby blocks that maintain global/class-level state
+# across multiple events, a common pattern for custom aggregations or rate-limiting in massive configs.
+# The parser MUST properly parse the ruby code, correctly identifying the use of global variables ($state)
+# or class variables (@@map), and correctly simulate or flag potential concurrency issues or state leaks
+# if the reverse-parser performs static analysis. At a minimum, the syntax parsing must succeed.
+
+filter {
+  ruby {
+    init => "
+      @@transaction_cache ||= {}
+      @@cache_mutex = Mutex.new
+      @timeout_seconds = 300
+    "
+    code => "
+      tx_id = event.get('transaction_id')
+      status = event.get('status')
+      timestamp = event.get('@timestamp').to_f
+      
+      if tx_id
+        @@cache_mutex.synchronize do
+          # Evict old entries
+          @@transaction_cache.delete_if { |k, v| timestamp - v[:time] > @timeout_seconds }
+          
+          if status == 'start'
+            @@transaction_cache[tx_id] = { :time => timestamp, :data => event.get('payload') }
+            event.set('tx_state', 'tracked')
+          elsif status == 'end' && @@transaction_cache.key?(tx_id)
+            cached_data = @@transaction_cache.delete(tx_id)
+            event.set('tx_duration', timestamp - cached_data[:time])
+            event.set('original_payload', cached_data[:data])
+          else
+            event.set('tx_state', 'orphaned')
+          end
+        end
+      end
+    "
+    tag_on_exception => "_ruby_agg_exception"
+  }
+}

@@ -1,0 +1,25 @@
+# EXPECTED BEHAVIOR:
+# This test verifies how the translate filter handles implicit type casting between the dictionary keys
+# (which might be defined as strings or integers) and the incoming field type.
+# It also tests the fallback mechanism when a match is not found.
+# In large corpuses, dictionaries are often built dynamically and types can mismatch.
+filter {
+  translate {
+    field => "event_id"
+    destination => "event_name"
+    dictionary => {
+      "4624" => "Logon"
+      "4625" => "Failed Logon"
+      "4688" => "Process Creation"
+      1000   => "Application Crash"
+    }
+    fallback => "Unknown Event (%{event_id})"
+    exact => true
+  }
+
+  if [event_name] =~ /^Unknown/ {
+    mutate {
+      add_tag => ["unmapped_event"]
+    }
+  }
+}

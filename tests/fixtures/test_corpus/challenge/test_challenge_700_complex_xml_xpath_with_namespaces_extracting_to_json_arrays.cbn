@@ -1,0 +1,27 @@
+# EXPECTED BEHAVIOR:
+# 1. Tests XML parsing with massive xpath declarations.
+# 2. Uses XML namespaces heavily.
+# 3. Extracts nodes into arrays, and checks if subsequent mutates can handle these resulting arrays correctly.
+
+filter {
+  xml {
+    source => "raw_xml"
+    target => "parsed_xml"
+    namespaces => {
+      "SOAP-ENV" => "http://schemas.xmlsoap.org/soap/envelope/"
+      "ns1" => "http://www.example.com/api/v1/"
+    }
+    xpath => {
+      "/SOAP-ENV:Envelope/SOAP-ENV:Body/ns1:GetUserDetailsResponse/ns1:User/ns1:Role/text()" => "[user][roles]"
+      "/SOAP-ENV:Envelope/SOAP-ENV:Body/ns1:GetUserDetailsResponse/ns1:User/@id" => "[user][id]"
+    }
+    force_array => true
+  }
+
+  if [user][roles] {
+    mutate {
+      join => { "[user][roles]" => "," }
+      convert => { "[user][id]" => "integer" }
+    }
+  }
+}

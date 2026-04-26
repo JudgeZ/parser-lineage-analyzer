@@ -1,0 +1,22 @@
+# CHALLENGE REPRODUCTION: Ruby Hash Concurrent Modification
+# Validates whether modifying an event's structure while actively iterating over its keys
+# causes a `RuntimeError: can't add a new key into hash during iteration`.
+# EXPECTED BEHAVIOR:
+# - Iterating over `event.to_hash.keys` and modifying `event` must be handled cleanly,
+#   either by duplicating the keys array or safely rescuing the runtime exception.
+filter {
+  ruby {
+    code => "
+      begin
+        event.to_hash.each do |k, v|
+          if k.start_with?('temp_')
+            event.set(\"new_#{k}\", v)
+            event.remove(k)
+          end
+        end
+      rescue RuntimeError => e
+        event.tag('_ruby_iteration_exception')
+      end
+    "
+  }
+}

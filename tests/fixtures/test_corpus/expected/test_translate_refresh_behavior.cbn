@@ -1,0 +1,15 @@
+# EXPECTED BEHAVIOR:
+# Tests the translate plugin with external file referencing and refresh intervals.
+# While the parser cannot access the external file during static analysis,
+# it must correctly model the dependency: 'translated_status' depends on 'status_code'
+# and the external dictionary file conceptually.
+
+filter {
+  translate {
+    field => "status_code"
+    destination => "translated_status"
+    dictionary_path => "/etc/logstash/dictionaries/status_codes.yaml"
+    refresh_interval => 300
+    fallback => "UNKNOWN"
+  }
+}

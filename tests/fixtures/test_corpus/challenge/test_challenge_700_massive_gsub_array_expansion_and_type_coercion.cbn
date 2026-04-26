@@ -1,0 +1,44 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must recognize that the `gsub` operation is being applied to an array field `[tags]`.
+# 2. It must track the modification of the array elements. If the regex matches, elements are modified.
+# 3. Following `gsub`, an `if` condition checks an array intersection or content. The parser must evaluate this based on the *mutated* state of the array.
+# 4. The `mutate { convert => ... }` tries to cast an array of potentially alphanumeric strings to `integer`.
+# 5. The parser should flag this `convert` operation as high risk for throwing an exception or returning `0` depending on the engine, because `gsub` might have left non-numeric characters.
+# 6. It must track the `split` operation on `compound_field`, turning it into an array, and immediately using it in a `join`, which is a common but expensive pattern.
+
+filter {
+  # Assume tags is an array of strings like ["error_123", "warn_456"]
+  mutate {
+    gsub => [
+      "tags", "error_", "err_code_",
+      "tags", "warn_", "warn_code_"
+    ]
+  }
+
+  if "err_code_123" in [tags] {
+    mutate {
+      add_field => { "critical_failure" => "true" }
+    }
+  }
+
+  mutate {
+    # Risky coercion: converting an array of strings to integer. 
+    # The parser needs to understand the type implications.
+    convert => { "tags" => "integer" }
+  }
+
+  if [compound_field] {
+    mutate {
+      split => { "compound_field" => "," }
+    }
+    
+    # Conditional logic based on the newly created array
+    if [compound_field][0] == "SYS" {
+       mutate { add_tag => ["system_event"] }
+    }
+
+    mutate {
+      join => { "compound_field" => "|" }
+    }
+  }
+}

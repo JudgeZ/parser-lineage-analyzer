@@ -1,0 +1,38 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must navigate deeply nested array indexing and object properties within conditions.
+# 2. It encounters `if [events][0][metadata][tags][1] == "drop_me"`. This implies `events` is an array of objects,
+#    `metadata` is an object, `tags` is an array.
+# 3. If the condition is met, an explicit `drop { }` occurs, terminating the parser flow.
+# 4. If the drop condition evaluates to false (e.g., the nested path doesn't exist, or the value doesn't match),
+#    the `else` block executes. 
+# 5. The parser must trace that any logic after the main `if/else` block can only be reached if the event 
+#    was NOT dropped. This means it carries the inverse constraint of the drop condition.
+# 6. A subsequent mutation attempts to append to the array. The parser should recognize `[events][0][metadata][tags]` 
+#    as a structured path and ensure it maintains the array type constraint implicitly defined earlier.
+
+filter {
+  # Assume 'events' array is populated by an earlier JSON parse or split
+  
+  if [events][0][metadata][tags][1] == "drop_me" {
+    drop { }
+  } else {
+    mutate {
+      add_tag => ["survived_deep_drop_check"]
+    }
+  }
+
+  # This logic is only reachable if NOT dropped
+  if "survived_deep_drop_check" in [tags] {
+    mutate {
+      merge => { "[events][0][metadata][tags]" => "extra_tag" }
+    }
+  }
+
+  # Edge case contradiction test:
+  # Check if a field exists that would have triggered a drop if it was evaluated differently.
+  if [events][0][metadata][tags][1] {
+    mutate {
+      add_field => { "was_present_but_not_drop_me" => "true" }
+    }
+  }
+}

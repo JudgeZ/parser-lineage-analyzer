@@ -1,0 +1,26 @@
+# EXPECTED BEHAVIOR:
+# The parser must successfully extract the complete ruby code block despite the presence of
+# multiline comments (=begin ... =end) and complex regex literals (/.../) that could contain braces or quotes.
+# This tests the resilience of the string extraction logic for the `code` parameter.
+filter {
+  ruby {
+    code => "
+=begin
+      This is a multiline comment block inside the ruby code.
+      It might contain braces like { } or quotes like ' ' or double quotes \" \".
+      The parser must ignore these when searching for the end of the code string.
+=end
+      msg = event.get('message')
+      if msg
+        # Regex literal with braces
+        if msg =~ /\{.*\}/
+          event.set('has_braces', true)
+        end
+        # Regex literal with quotes
+        if msg =~ /[\"']/
+          event.set('has_quotes', true)
+        end
+      end
+    "
+  }
+}

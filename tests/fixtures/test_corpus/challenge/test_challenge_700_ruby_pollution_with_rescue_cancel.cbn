@@ -1,0 +1,48 @@
+# EXPECTED BEHAVIOR:
+# The parser must correctly simulate a ruby block where an exception is rescued.
+# Crucially, it must recognize that if `event.cancel` is called inside the rescue
+# block, the event is dropped, and subsequent filters will not execute. The analyzer
+# must also track the scope of instance variables (`@cache`) to ensure they don't
+# leak unintentionally across separate simulated events unless specifically intended.
+filter {
+  ruby {
+    init => "
+      @cache = {}
+      @error_threshold = 5
+    "
+    code => "
+      begin
+        user_id = event.get('user_id')
+        if user_id.nil?
+          raise 'Missing user_id'
+        end
+        
+        if @cache.key?(user_id)
+          event.set('cached_data', @cache[user_id])
+        else
+          # Simulating some state mutation that could fail
+          computed = user_id.to_i * 10
+          @cache[user_id] = computed
+          event.set('cached_data', computed)
+        end
+      rescue => e
+        event.tag('_ruby_exception')
+        event.set('error_message', e.message)
+        @error_threshold -= 1
+        if @error_threshold <= 0
+           event.cancel
+        end
+      end
+    "
+  }
+
+  if "_ruby_exception" in [tags] {
+    mutate {
+      add_field => { "escalation" => "required" }
+    }
+  } else {
+    mutate {
+      add_field => { "escalation" => "none" }
+    }
+  }
+}

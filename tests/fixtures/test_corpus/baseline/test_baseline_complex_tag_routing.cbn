@@ -1,0 +1,17 @@
+# BASELINE REPRODUCTION: Complex Array and Tag Routing
+# Validates handling of array syntax and tags, particularly
+# checking "in" operations, append operations, and deeply nested tag logic.
+# The tool MUST track the lineage of the tags array and successfully parse array inclusion logic.
+# EXPECTED BEHAVIOR: Accurate lineage reporting for the tags array and correct parsing of array literals.
+filter {
+  mutate {
+    add_tag => ["tag1", "tag2"]
+  }
+  
+  if "tag1" in [tags] {
+    mutate {
+      remove_tag => ["tag1"]
+      add_field => { "status" => "processed" }
+    }
+  }
+}

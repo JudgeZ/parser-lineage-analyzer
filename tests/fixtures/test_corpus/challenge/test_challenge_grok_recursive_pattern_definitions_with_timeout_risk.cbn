@@ -1,0 +1,15 @@
+# EXPECTED BEHAVIOR:
+# Tests the parser's ability to detect potential infinite loops or extreme
+# backtracking issues caused by recursive Grok pattern definitions.
+# The parser should either cap the recursion depth or flag this as a
+# high-risk configuration for timeouts.
+
+filter {
+  grok {
+    match => { "message" => "%{RECURSIVE_PATTERN:extracted}" }
+    pattern_definitions => {
+      "RECURSIVE_PATTERN" => "(%{WORD:word} %{RECURSIVE_PATTERN:rest}|%{WORD:last_word})"
+    }
+    timeout_millis => 1000
+  }
+}

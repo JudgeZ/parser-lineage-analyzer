@@ -1,0 +1,19 @@
+# Test: Complex XML with Namespaces
+# Description: Tests the xml filter using xpath and namespaces.
+# The parser should understand the namespace map and trace the destination fields
+# back to the specific xpath queries on the source `xml_payload`.
+
+filter {
+  xml {
+    source => "xml_payload"
+    target => "parsed_xml"
+    namespaces => {
+      "soapenv" => "http://schemas.xmlsoap.org/soap/envelope/"
+      "sec" => "http://security.example.com/schema"
+    }
+    xpath => [
+      "/soapenv:Envelope/soapenv:Body/sec:LoginRequest/sec:Username/text()", "username",
+      "/soapenv:Envelope/soapenv:Body/sec:LoginRequest/sec:Token/text()", "auth_token"
+    ]
+  }
+}

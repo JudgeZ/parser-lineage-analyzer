@@ -1,0 +1,41 @@
+# EXPECTED BEHAVIOR:
+# The parser must handle complex grok logic with multiple patterns and a dynamic
+# target field. It should simulate the combinatorics of pattern failures, breaking
+# on match, and the resulting target extraction. The analyzer must not experience
+# catastrophic backtracking.
+filter {
+  mutate {
+    add_field => { "dynamic_target" => "parsed_%{[log_type]}" }
+  }
+
+  grok {
+    match => {
+      "message" => [
+        "%{SYSLOGTIMESTAMP:syslog_timestamp} %{SYSLOGHOST:syslog_hostname} %{DATA:syslog_program}(?:\[%{POSINT:syslog_pid}\])?: %{GREEDYDATA:syslog_message}",
+        "%{TIMESTAMP_ISO8601:timestamp} %{LOGLEVEL:loglevel} \[%{DATA:thread}\] %{JAVACLASS:class} - %{GREEDYDATA:message}",
+        "%{IPORHOST:clientip} %{USER:ident} %{USER:auth} \[%{HTTPDATE:timestamp}\] \"%{WORD:verb} %{URIPATHPARAM:request} HTTP/%{NUMBER:httpversion}\" %{NUMBER:response} %{NUMBER:bytes}"
+      ]
+    }
+    pattern_definitions => {
+      "CUSTOM_ID" => "[A-Za-z0-9]{10,20}"
+      "COMPLEX_DATA" => "(?:%{WORD:word1}|%{NUMBER:num1})-(?:%{WORD:word2}|%{NUMBER:num2})"
+    }
+    break_on_match => true
+    target => "%{[dynamic_target]}"
+  }
+
+  if "_grokparsefailure" in [tags] {
+    grok {
+      match => {
+        "message" => "%{CUSTOM_ID:id} %{COMPLEX_DATA:complex}"
+      }
+      target => "fallback_data"
+    }
+  }
+  
+  if [fallback_data][complex] {
+    mutate {
+      add_tag => ["complex_fallback_used"]
+    }
+  }
+}

@@ -1,0 +1,9 @@
+# BUG REPRODUCTION: Mutate Split Syntax Misinterpretation
+# The analyzer tries to parse mutate split as if it were the standalone `split { }` filter plugin.
+# It expects `source => "..."` and `separator => "..."`. But Logstash syntax is `field => separator`.
+# The analyzer ends up splitting "" and assigning it to "", ignoring the user's intent.
+# EXPECTED FIX: `user` should be evaluated as an array of constants split by the comma.
+filter {
+  mutate { replace => { "user" => "Alice,Bob" } }
+  mutate { split => { "user" => "," } }
+}

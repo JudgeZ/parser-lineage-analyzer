@@ -1,0 +1,11 @@
+# BASELINE REPRODUCTION: TLD Extraction Plugin
+# Validates extraction of Top Level Domains, registered domains, and subdomains.
+# EXPECTED BEHAVIOR: 
+# - The tld plugin should correctly split a fully qualified domain name
+#   into its constituent parts, respecting complex TLDs like `.co.uk` or `.com.au`.
+filter {
+  tld {
+    source => "fqdn"
+    target => "tld_object"
+  }
+}

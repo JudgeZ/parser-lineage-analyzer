@@ -1,0 +1,11 @@
+# Test: UserAgent Filter
+# Description: Tests the useragent filter which parses browser user agent strings.
+# The parser should recognize that `ua_data` and its sub-fields (name, os, device)
+# are derived from the `http.request.headers.user-agent` field.
+
+filter {
+  useragent {
+    source => "http.request.headers.user-agent"
+    target => "ua_data"
+  }
+}

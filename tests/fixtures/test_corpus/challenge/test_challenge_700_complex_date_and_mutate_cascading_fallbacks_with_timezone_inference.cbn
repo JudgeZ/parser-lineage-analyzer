@@ -1,0 +1,52 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must handle cascading fallbacks across multiple plugins (date -> dissect -> grok) 
+#    where the target of one is the source of the next.
+# 2. It must track the `timezone` field dynamically coerced from an earlier `translate` operation.
+# 3. The `date` plugin must parse multiple matching formats and apply the timezone dynamically 
+#    using `%{dynamic_tz}`.
+# 4. The parser must recognize the implicit dependency: if `date` fails, `_dateparsefailure` triggers 
+#    a fallback to `dissect` and then `grok`, modifying the original `timestamp` string.
+filter {
+  translate {
+    field => "[client][country]"
+    destination => "[dynamic_tz]"
+    dictionary => {
+      "US" => "America/New_York"
+      "UK" => "Europe/London"
+      "JP" => "Asia/Tokyo"
+    }
+    fallback => "UTC"
+  }
+
+  date {
+    match => [ "log_timestamp", "ISO8601", "yyyy-MM-dd HH:mm:ss", "MMM dd HH:mm:ss" ]
+    timezone => "%{[dynamic_tz]}"
+    target => "@timestamp"
+    tag_on_failure => ["_date_parse_failed_phase1"]
+  }
+
+  if "_date_parse_failed_phase1" in [tags] {
+    dissect {
+      mapping => {
+        "log_timestamp" => "%{month} %{day} %{time} %{+time} %{tz}"
+      }
+      tag_on_failure => ["_dissect_failed"]
+    }
+    
+    if "_dissect_failed" not in [tags] {
+      mutate {
+        replace => { "log_timestamp" => "%{month} %{day} %{time}" }
+        remove_tag => ["_date_parse_failed_phase1"]
+      }
+      # Second attempt
+      date {
+        match => [ "log_timestamp", "MMM dd HH:mm:ss" ]
+        timezone => "%{tz}"
+      }
+    } else {
+       grok {
+         match => { "log_timestamp" => "^%{DATA:raw_date}\\s+\\[%{DATA:tz}\\]$" }
+       }
+    }
+  }
+}

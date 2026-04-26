@@ -1,0 +1,13 @@
+# BASELINE REPRODUCTION: Prune Plugin for Data Minimization
+# Validates field removal based on regex allowlists and blocklists.
+# EXPECTED BEHAVIOR:
+# - All fields starting with `secret_` or `sensitive_` should be completely removed.
+# - Only fields matching `^syslog_` or `^network_` should remain if whitelist is applied.
+# - Ensure blacklist and whitelist interactions are correctly prioritized.
+filter {
+  prune {
+    blacklist_names => [ "^secret_", "^sensitive_", "_password$" ]
+    whitelist_names => [ "^syslog_", "^network_", "^event_" ]
+    interpolate => true
+  }
+}

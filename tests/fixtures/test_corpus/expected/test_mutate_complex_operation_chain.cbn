@@ -1,0 +1,14 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must correctly interpret multiple operations within a single mutate block.
+# 2. Although Logstash executes mutate operations in a fixed order (e.g., copy before rename, rename before update/replace), the parser needs to identify all reads and writes accurately regardless of the internal order.
+# 3. `source_field` is read (by copy). `temp_field` is created (by copy) and then read (by rename). `final_field` is created. `old_field` is deleted (by rename).
+# 4. Lineage should reflect the entire transformation chain.
+
+filter {
+  mutate {
+    copy => { "source_field" => "temp_field" }
+    rename => { "temp_field" => "final_field" }
+    lowercase => [ "final_field" ]
+    gsub => [ "final_field", "_", "-" ]
+  }
+}

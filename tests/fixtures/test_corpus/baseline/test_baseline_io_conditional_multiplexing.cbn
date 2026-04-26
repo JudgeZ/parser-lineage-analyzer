@@ -1,0 +1,39 @@
+# BASELINE REPRODUCTION: I/O Conditional Multiplexing
+# Validates the pipeline's ability to ingest from a single source and route
+# the resulting parsed event to multiple disparate outputs based on parsed criteria.
+# EXPECTED BEHAVIOR:
+# - All events go to the `s3` cold-storage output.
+# - High severity events (severity >= 4) also get multiplexed to a `kafka` topic.
+# - Successful parses go to `elasticsearch`.
+input {
+  tcp {
+    port => 514
+    type => "syslog"
+  }
+}
+
+filter {
+  grok { match => { "message" => "<%{POSINT:syslog_pri}>%{GREEDYDATA:syslog_msg}" } }
+  syslog_pri { }
+}
+
+output {
+  s3 {
+    bucket => "secops-cold-storage"
+    prefix => "raw_syslog/"
+  }
+  
+  if [syslog_severity_code] and [syslog_severity_code] <= 3 { # 0-3 are high severity in syslog
+    kafka {
+      topic_id => "secops-alerts-hot"
+      bootstrap_servers => "kafka.local:9092"
+    }
+  }
+
+  if !("_grokparsefailure" in [tags]) {
+    elasticsearch {
+      hosts => ["https://es.local:9200"]
+      index => "syslog-parsed"
+    }
+  }
+}

@@ -1,0 +1,13 @@
+# BASELINE REPRODUCTION: Complex JSON Target and Source Nesting
+# Validates that the JSON filter can read from and write to heavily nested
+# data structures without crashing the identifier lexer.
+# The tool MUST correctly trace lineage from `[raw_data][events][0][payload]`
+# to the implicitly created fields under `[parsed_data][result]`.
+# EXPECTED BEHAVIOR: Fields under `[parsed_data][result]` trace back to `[raw_data][events][0][payload]`.
+filter {
+  json {
+    source => "[raw_data][events][0][payload]"
+    target => "[parsed_data][result]"
+    skip_on_invalid_json => true
+  }
+}

@@ -1,0 +1,14 @@
+# Test: Nested Drop Conditional
+# Description: Tests the `drop {}` filter deeply nested inside conditionals.
+# The parser must correctly compute the control flow path and understand that
+# events taking this specific path will not reach the end of the pipeline.
+
+filter {
+  if [event_type] == "noise" {
+    if [source] == "legacy_system" {
+      if [severity] == "low" or [severity] == "informational" {
+        drop { }
+      }
+    }
+  }
+}

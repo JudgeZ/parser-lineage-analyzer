@@ -1,0 +1,22 @@
+# TEST EXPECTATION:
+# The parser should handle dynamic field references via string interpolation.
+# The 'mutate' block references '%{target_field}' to populate a dynamic key.
+# The parser should infer that 'dynamic_val' is populated from whatever field
+# name is stored in 'target_field'. This is an advanced data-flow challenge.
+
+filter {
+  mutate {
+    add_field => { "target_field" => "user_agent" }
+  }
+
+  # Resolving this requires two passes or symbolic execution
+  mutate {
+    add_field => { "dynamic_val" => "%{[%{target_field}]}" }
+  }
+
+  if [dynamic_val] =~ /Mozilla/ {
+    mutate {
+      add_tag => [ "browser_traffic" ]
+    }
+  }
+}

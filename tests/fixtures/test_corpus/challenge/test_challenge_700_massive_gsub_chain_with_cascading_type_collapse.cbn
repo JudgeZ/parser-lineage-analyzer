@@ -1,0 +1,27 @@
+# EXPECTED BEHAVIOR:
+# 1. Tests multiple gsubs happening in sequence on the same array.
+# 2. Checks if parser tracks the element-wise mutations correctly without collapsing the array into a string unless explicitly requested.
+# 3. Then explicitly checks a scenario where a split happens, creating an array, followed by a join, collapsing it.
+
+filter {
+  mutate {
+    add_field => { "data_array" => ["item 1", "item 2", "item 3"] }
+  }
+
+  mutate {
+    gsub => [
+      "data_array", "item", "val",
+      "data_array", " ", "_"
+    ]
+  }
+
+  mutate {
+    join => { "data_array" => "," }
+  }
+
+  mutate {
+    gsub => [
+      "data_array", "val_1", "START"
+    ]
+  }
+}

@@ -1,0 +1,50 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must correctly interpret the `dictionary` block which contains a mix of exact string matches and regular expressions.
+# 2. It must handle the `regex => true` and `exact => true` flags and understand the precedence if both match.
+# 3. It should process the `fallback` value, especially when it's an interpolation referencing another event field (`%{[default_category]}`).
+# 4. It must track the chained `translate` operations where the output of the first is the input of the second.
+# 5. It should identify if `[action_category]` is mutated correctly across the chain.
+
+filter {
+  mutate {
+    add_field => {
+      "action_code" => "ERR_503_DB"
+      "default_category" => "unclassified"
+    }
+  }
+
+  translate {
+    field => "action_code"
+    destination => "action_category"
+    dictionary => {
+      "AUTH_FAIL" => "authentication"
+      "LOGIN_SUCCESS" => "authentication"
+      "^ERR_5\d\d_.*$" => "server_error"
+      "^ERR_4\d\d_.*$" => "client_error"
+      "TIMEOUT" => "network_error"
+    }
+    exact => true
+    regex => true
+    fallback => "%{[default_category]}"
+  }
+
+  # Chained translate based on the result of the first
+  translate {
+    field => "action_category"
+    destination => "severity"
+    dictionary => {
+      "server_error" => "high"
+      "client_error" => "medium"
+      "authentication" => "low"
+      "network_error" => "high"
+      "unclassified" => "info"
+    }
+    fallback => "unknown"
+  }
+
+  if [severity] == "high" {
+    mutate {
+      add_tag => ["requires_paging"]
+    }
+  }
+}

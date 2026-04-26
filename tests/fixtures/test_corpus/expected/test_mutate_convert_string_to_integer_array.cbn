@@ -1,0 +1,12 @@
+# EXPECTED BEHAVIOR:
+# 1. The mutate plugin is converting a field that is ostensibly an array of strings into integers.
+# 2. The parser should track the type change from `string` (or `array[string]`) to `integer` (or `array[integer]`).
+# 3. The lineage should show `port_numbers` being mutated in place.
+
+filter {
+  mutate {
+    convert => {
+      "port_numbers" => "integer"
+    }
+  }
+}

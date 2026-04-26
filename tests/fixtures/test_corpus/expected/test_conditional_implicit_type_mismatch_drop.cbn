@@ -1,0 +1,33 @@
+# EXPECTED BEHAVIOR:
+# This test checks the parser's logic when evaluating conditions with implicitly mismatched types.
+# It compares a field containing the string "404" against the integer 404, or the string "true" vs boolean true.
+# Logstash/Chronicle typically handles implicit conversions or strict typing depending on the exact engine.
+# The parser must correctly emulate the type casting semantics for equality operators.
+# If the types mismatch and evaluation fails, the event might fall through to the 'drop' block.
+
+filter {
+  # Assume [status_code] is extracted as a string "404" via grok
+  if [status_code] == 404 {
+    mutate {
+      add_tag => ["matched_integer"]
+    }
+  } else if [status_code] == "404" {
+    mutate {
+      add_tag => ["matched_string"]
+    }
+  } else {
+    # If neither match, or if there's a different mismatch
+    drop { }
+  }
+
+  # Testing boolean coercion
+  if [is_admin] == true or [is_admin] == "true" {
+    mutate {
+      add_field => { "escalated" => "yes" }
+    }
+  }
+
+  if "matched_string" not in [tags] and "matched_integer" not in [tags] {
+    drop { }
+  }
+}

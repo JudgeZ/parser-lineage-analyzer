@@ -1,0 +1,33 @@
+# EXPECTED BEHAVIOR:
+# The parser must correctly handle extreme nesting of conditionals without hitting
+# recursion depth limits or losing track of the scope. Variable scope and
+# field existence checks must resolve to the correct level.
+filter {
+  if [level1] {
+    if [level2] {
+      if [level3] {
+        if [level4] {
+          if [level5] {
+            if [level6] {
+              if [level7] {
+                if [level8] {
+                  if [level9] {
+                    if [level10] {
+                      mutate { add_field => { "deep" => "true" } }
+                    } else {
+                      mutate { add_field => { "deep" => "false" } }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  } else if [other_level] == "test" {
+    mutate { add_field => { "other" => "true" } }
+  } else {
+    drop {}
+  }
+}

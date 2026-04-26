@@ -1,0 +1,18 @@
+# Test: Translate Filter with Dictionary
+# Description: Tests the translate filter which maps field values using an inline dictionary.
+# The parser must understand that `translated_status` depends on `status_code` and the dictionary values.
+# The lineage of `translated_status` should point back to `status_code`.
+
+filter {
+  translate {
+    field => "status_code"
+    destination => "translated_status"
+    dictionary => {
+      "200" => "OK"
+      "403" => "Forbidden"
+      "404" => "Not Found"
+      "500" => "Internal Error"
+    }
+    fallback => "Unknown"
+  }
+}

@@ -1,0 +1,18 @@
+# CHALLENGE: Ruby Block Event API Usage
+# Validates the static analysis of ruby code inside the `ruby` plugin.
+# In real parsers, the ruby block is often a black box, but the parser MUST at least
+# attempt to scan for basic `event.set` and `event.get` operations to maintain lineage.
+# The tool SHOULD extract `new_computed_field` as a created field and `base_field`
+# as a dependency, ignoring local ruby variables like `temp_val`.
+# EXPECTED BEHAVIOR: `new_computed_field` is added to lineage. `base_field` is noted as read.
+filter {
+  ruby {
+    code => "
+      temp_val = event.get('base_field')
+      if temp_val
+        processed = temp_val.upcase + '_SUFFIX'
+        event.set('new_computed_field', processed)
+      end
+    "
+  }
+}

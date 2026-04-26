@@ -1,0 +1,20 @@
+/*
+ * EXPECTED BEHAVIOR:
+ * The parser must handle grok plugins that define custom patterns inline (`pattern_definitions`), 
+ * especially when those definitions contain complex regex, escaped quotes, or multiline
+ * strings. It must also correctly parse grok parameters like `timeout_millis` and 
+ * `tag_on_failure` array.
+ * Lineage should map extracted variables based on both standard and custom patterns.
+ */
+filter {
+  grok {
+    match => { "message" => "%{CUSTOM_TIMESTAMP:timestamp} %{LOGLEVEL:level} %{COMPLEX_DATA:data}" }
+    pattern_definitions => {
+      "CUSTOM_TIMESTAMP" => "(?<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)"
+      "COMPLEX_DATA" => "(?m)(?<json>\{.*?\})"
+      "WEIRD_ESCAPES" => "(\"|\\\"|')%{DATA}(\"|\\\"|')"
+    }
+    timeout_millis => 5000
+    tag_on_failure => ["_grok_timeout", "_grokparsefailure", "custom_grok_fail"]
+  }
+}

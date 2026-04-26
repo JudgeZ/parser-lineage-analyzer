@@ -1,0 +1,19 @@
+# TEST EXPECTATION:
+# The parser must correctly implement operator precedence for 'and', 'or', 'in', and 'not in'.
+# The expression `(A or B) and C` is different from `A or (B and C)`.
+# The analyzer should be able to resolve these states without false contradictions.
+
+filter {
+  if ([action] == "login" or [action] == "auth") and [status] == "success" {
+    mutate { add_tag => ["auth_success"] }
+  }
+
+  if [action] == "login" or ([action] == "auth" and [status] == "success") {
+    mutate { add_tag => ["different_logic"] }
+  }
+
+  # Test nested not and in
+  if !([user] in ["admin", "root"]) and [privilege] == "high" {
+    mutate { add_tag => ["suspicious_privilege"] }
+  }
+}

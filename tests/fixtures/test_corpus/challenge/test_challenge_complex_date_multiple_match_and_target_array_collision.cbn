@@ -1,0 +1,18 @@
+# TEST BEHAVIOR:
+# Tests parser's ability to handle Date plugins where the target is an index
+# of an array, and there are many possible match formats. The parser needs
+# to ensure the `[timestamps][0]` field is correctly identified as a date type
+# with multiple potential lineage paths depending on the matching format.
+filter {
+  date {
+    match => [ "log_time", "ISO8601", "MMM dd HH:mm:ss", "yyyy/MM/dd HH:mm:ss Z" ]
+    target => "[timestamps][0]"
+    timezone => "UTC"
+  }
+
+  if [timestamps][0] {
+    mutate {
+      add_field => { "primary_time" => "%{[timestamps][0]}" }
+    }
+  }
+}

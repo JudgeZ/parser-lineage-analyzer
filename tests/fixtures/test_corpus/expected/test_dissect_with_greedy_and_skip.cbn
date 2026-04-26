@@ -1,0 +1,13 @@
+# EXPECTED BEHAVIOR:
+# The parser must correctly handle complex Dissect mappings that utilize advanced field modifiers,
+# including greedy matching (`->`), skip/ignore fields (`?`), append fields (`+`),
+# and combination of modifiers (e.g., `+?` or `?+`).
+# The parser must recognize these syntax variations as valid dissect mapping values.
+filter {
+  dissect {
+    mapping => {
+      "message" => "%{ts} %{+ts} %{+ts} %{?skip_this} %{?skip_this2} %{syslog_pid->} %{msg}"
+      "other_field" => "%{key1} %{+key1/2} %{?ignored_field} %{final_val}"
+    }
+  }
+}

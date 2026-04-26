@@ -1,0 +1,31 @@
+# BASELINE REPRODUCTION: Ruby Plugin Global State Side Effects
+# Validates handling of ruby plugins that initialize global variables or
+# load external libraries within the init block.
+#
+# Some legacy or highly customized secops parsers use `init` to set up
+# cache dictionaries or global API connections.
+#
+# EXPECTED BEHAVIOR: The parser must correctly ingest both `init` and `code`
+# attributes. Static analysis should ideally flag the use of global variables
+# (`$cache_dict`) as potential side-effects or thread-safety hazards, but the
+# AST must form correctly regardless.
+filter {
+  ruby {
+    init => "
+      require 'json'
+      $cache_dict = {}
+      $call_count = 0
+    "
+    code => "
+      $call_count += 1
+      event.set('call_count', $call_count)
+      
+      key = event.get('lookup_key')
+      if $cache_dict.key?(key)
+        event.set('cached_val', $cache_dict[key])
+      else
+        $cache_dict[key] = 'new_val'
+      end
+    "
+  }
+}

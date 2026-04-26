@@ -1,0 +1,21 @@
+# EXPECTED BEHAVIOR:
+# 1. Handling of `mutate { convert => ... }` with multiple fields to various data types.
+# 2. Support for converting to boolean, integer, float, string.
+# 3. Lineage must track the type change and flag if subsequent operations assume wrong type.
+
+filter {
+  mutate {
+    convert => {
+      "status_code" => "integer"
+      "response_time" => "float"
+      "is_authenticated" => "boolean"
+      "user_id" => "string"
+    }
+  }
+
+  if [status_code] == 200 {
+    mutate {
+      add_tag => [ "success" ]
+    }
+  }
+}

@@ -1,0 +1,16 @@
+# EXPECTED BEHAVIOR:
+# When multiple grok matches or multiple grok filters capture to the same field, the default behavior
+# might append to an array or overwrite depending on plugin configuration or Logstash version.
+# The parser should track `shared_field` as potentially being an array or a single overwritten value,
+# and accurately reflect this ambiguity in the generated graph.
+filter {
+  grok {
+    match => { "message" => "%{WORD:shared_field}" }
+  }
+  grok {
+    match => { "another_message" => "%{NUMBER:shared_field}" }
+  }
+  if "123" in [shared_field] {
+    mutate { add_tag => ["found_in_array"] }
+  }
+}

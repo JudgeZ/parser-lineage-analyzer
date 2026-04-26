@@ -1,0 +1,47 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser encounters a `grok` filter with multiple match arrays.
+# 2. Both patterns try to extract a field named `extracted_action`.
+# 3. Because `break_on_match => true` is the default, only the first matched pattern wins.
+# 4. If the first pattern matches, `extracted_action` has one context; if the second, another.
+# 5. Subsequent `if` conditions route based on the value of `extracted_action` and other variables captured by the overlapping patterns.
+# 6. The parser must not hallucinate fields from the second pattern if the first pattern matched.
+# 7. Tests ambiguous token stream resolution, branching, and state isolation within Grok matches.
+
+filter {
+  grok {
+    match => {
+      "message" => [
+        # Pattern 1: Admin action
+        "^ADMIN_AUDIT: user=%{USER:username} action=%{WORD:extracted_action} target=%{HOSTNAME:target_host}$",
+        # Pattern 2: System action
+        "^SYS_EVENT: pid=%{NUMBER:process_id} action=%{WORD:extracted_action} status=%{WORD:status_code}$"
+      ]
+    }
+  }
+
+  if [username] {
+    # This implies Pattern 1 matched
+    if [extracted_action] == "DELETE" {
+      mutate {
+        add_tag => ["critical_admin_action"]
+      }
+    }
+    
+    # Ensure no hallucination of Pattern 2 fields
+    if [process_id] {
+      mutate {
+        add_tag => ["IMPOSSIBLE_STATE"]
+      }
+    }
+  } else if [process_id] {
+    # This implies Pattern 2 matched
+    if [extracted_action] == "CRASH" {
+      mutate {
+        add_tag => ["system_crash"]
+      }
+    }
+  } else {
+    # Neither matched
+    drop { }
+  }
+}

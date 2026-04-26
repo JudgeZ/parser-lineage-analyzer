@@ -1,0 +1,30 @@
+# EXPECTED BEHAVIOR:
+# 1. Parsing of a `translate` filter with a large, multi-line inline dictionary.
+# 2. The dictionary might use various quote styles, numbers as strings, and missing keys.
+# 3. Proper handling of `fallback` and `exact` configuration options.
+# 4. Verifying that the lexer doesn't fail on long hash blocks.
+
+filter {
+  translate {
+    field => "[event][code]"
+    destination => "[event][action]"
+    exact => true
+    fallback => "unknown_action"
+    dictionary => {
+      "100" => "create"
+      "101" => "update"
+      "102" => "delete"
+      "200" => "login"
+      "201" => "logout"
+      "404" => "not_found"
+      "500" => "internal_error"
+      "999" => "system_halt"
+    }
+  }
+
+  if [event][action] == "unknown_action" {
+    mutate {
+      add_tag => [ "unmapped_event_code" ]
+    }
+  }
+}

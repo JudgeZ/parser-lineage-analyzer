@@ -1,0 +1,22 @@
+# TEST BEHAVIOR:
+# Simulates a complex array manipulation pipeline where a string is split
+# into an array, conditionally manipulated based on its content, and then
+# joined back into a string.
+# The parser must correctly map the lineage of `final_path` back to `raw_path`,
+# understanding that the `split` and `join` operations maintain the lineage.
+filter {
+  mutate {
+    split => { "raw_path" => "/" }
+  }
+
+  if "admin" in [raw_path] {
+    mutate {
+      replace => { "is_admin_path" => "true" }
+    }
+  }
+
+  mutate {
+    join => { "raw_path" => "\\" }
+    rename => { "raw_path" => "final_path" }
+  }
+}

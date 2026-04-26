@@ -1,0 +1,13 @@
+# EXPECTED BEHAVIOR:
+# The parser must handle a date block with an extremely long list of match formats,
+# representing the combinatorics of logs from many different devices.
+# It should recognize the fallback timezone coercion and ensure target overrides
+# correctly route the parsed timestamp.
+filter {
+  date {
+    match => [ "syslog_timestamp", "MMM  d HH:mm:ss", "MMM dd HH:mm:ss", "ISO8601", "yyyy-MM-dd HH:mm:ss.SSSZ", "yyyy/MM/dd HH:mm:ss", "dd/MMM/yyyy:HH:mm:ss Z", "UNIX", "UNIX_MS", "EEE MMM dd HH:mm:ss yyyy", "yyyy-MM-dd'T'HH:mm:ss.SSSSSSZ" ]
+    timezone => "UTC"
+    target => "@timestamp"
+    locale => "en"
+  }
+}

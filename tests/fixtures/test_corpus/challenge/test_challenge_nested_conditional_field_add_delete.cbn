@@ -1,0 +1,36 @@
+# TEST OBJECTIVE: Validate the parser's ability to track field lifecycle (addition, deletion, access) across deeply nested and contradictory conditionals.
+# EXPECTED BEHAVIOR:
+# 1. The parser MUST track "temp_field" being added in the first condition.
+# 2. The parser MUST see "temp_field" being deleted in the nested condition.
+# 3. The parser MUST detect that the final `if [temp_field]` might evaluate to false if the nested condition was true.
+# 4. The parser MUST properly model the mutually exclusive states.
+
+filter {
+  if [action] == "start" {
+    mutate {
+      add_field => { "temp_field" => "active" }
+      add_field => { "status" => "processing" }
+    }
+
+    if [user_type] == "admin" {
+      mutate {
+        replace => { "status" => "privileged" }
+      }
+    } else if [user_type] == "guest" {
+      mutate {
+        remove_field => [ "temp_field" ]
+        replace => { "status" => "restricted" }
+      }
+    }
+  }
+
+  if [temp_field] == "active" {
+    mutate {
+      add_tag => ["temp_active"]
+    }
+  } else if ![temp_field] {
+    mutate {
+      add_tag => ["temp_missing"]
+    }
+  }
+}

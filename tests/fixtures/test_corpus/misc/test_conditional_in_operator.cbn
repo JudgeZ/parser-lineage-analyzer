@@ -1,0 +1,13 @@
+# Test: Array Inclusion Check
+# Description: Tests conditionals checking if an element is in an array or string.
+# The parser needs to understand the `in` and `not in` operators.
+# Future requirement: Track that the execution of the block depends on the contents
+# of the `allowed_domains` field/array.
+
+filter {
+  if [domain] in [allowed_domains] {
+    mutate { add_tag => ["authorized"] }
+  } else if "admin" not in [user][roles] {
+    drop { }
+  }
+}

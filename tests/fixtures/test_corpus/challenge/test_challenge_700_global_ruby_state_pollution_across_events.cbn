@@ -1,0 +1,31 @@
+# TEST BEHAVIOR:
+# In a massive 700+ parser environment, multiple teams might contribute ruby blocks.
+# A common mistake is using global variables ($var) or class variables (@@var) to store state,
+# which pollutes state across different events and different parsers.
+# The tool should detect or handle the fact that $global_counter or @@shared_cache
+# persists across event boundaries and can lead to non-deterministic behavior.
+filter {
+  ruby {
+    init => "
+      $global_event_count = 0
+      @@shared_lookup_table = {}
+    "
+    code => "
+      $global_event_count += 1
+      event.set('event_sequence', $global_event_count)
+      
+      app_name = event.get('app_name')
+      if app_name
+        @@shared_lookup_table[app_name] ||= 0
+        @@shared_lookup_table[app_name] += 1
+        event.set('app_frequency', @@shared_lookup_table[app_name])
+      end
+    "
+  }
+  
+  if [event_sequence] > 1000 {
+    mutate {
+      add_tag => [ "high_volume" ]
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "must_resolve_fields": [
+    "split_item",
+    "was_split"
+  ]
+}

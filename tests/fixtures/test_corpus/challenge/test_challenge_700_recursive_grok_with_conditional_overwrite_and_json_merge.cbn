@@ -1,0 +1,44 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must track the `grok` match which captures a string that is expected to be JSON into the `nested_json` field.
+# 2. It must then track the `json` parse operation. If `target` is not specified, or if it is specified and overwrites the root, the parser must track the potential namespace collisions.
+# 3. Inside the conditional logic, it checks if `[parsed_data][type]` equals "wrapped". If so, it expects another layer of `grok` and `json` parsing.
+# 4. The parser must construct a graph where `parsed_data.inner_payload` exists ONLY if the first JSON parse succeeds AND the conditional is true.
+# 5. It must detect that `mutate { merge => ... }` may fail or behave unpredictably if the types of `root_field` and `[parsed_data][extracted_value]` differ (e.g., string vs array).
+# 6. Fallback tags (`_jsonparsefailure`, `_grokparsefailure`) must be accurately mapped to their respective operations to ensure correct control flow.
+
+filter {
+  grok {
+    match => { "message" => "PAYLOAD: %{GREEDYDATA:nested_json}" }
+  }
+
+  if [nested_json] {
+    json {
+      source => "nested_json"
+      target => "parsed_data"
+      skip_on_invalid_json => true
+    }
+
+    if [parsed_data][type] == "wrapped" {
+      grok {
+        match => { "[parsed_data][content]" => "INNER: %{GREEDYDATA:inner_payload}" }
+        tag_on_failure => ["inner_grok_failed"]
+      }
+
+      if "inner_grok_failed" not in [tags] {
+        json {
+          source => "inner_payload"
+          target => "deep_data"
+        }
+      }
+    }
+
+    mutate {
+      # This is risky if root_field is a string and extracted_value is an array, or vice versa
+      merge => { "root_field" => "[parsed_data][extracted_value]" }
+    }
+  } else {
+    mutate {
+      add_tag => ["missing_payload"]
+    }
+  }
+}

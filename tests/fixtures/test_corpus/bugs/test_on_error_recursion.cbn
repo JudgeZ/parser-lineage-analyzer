@@ -1,0 +1,14 @@
+filter {
+  # BUG REPRODUCTION: on_error Stack Overflow DoS
+  # The `_exec_on_error_block` parses its body dynamically but fails to increment the `depth` parameter
+  # when calling `_exec_statements`. This completely bypasses the `MAX_NESTING_DEPTH` guard.
+  # Generating thousands of nested `on_error` blocks will exhaust the Python recursion limit or memory,
+  # causing the static analysis engine to crash uncontrollably.
+  mutate { } on_error {
+    mutate { } on_error {
+      mutate { } on_error {
+        mutate { replace => { "deep" => "value" } }
+      }
+    }
+  }
+}

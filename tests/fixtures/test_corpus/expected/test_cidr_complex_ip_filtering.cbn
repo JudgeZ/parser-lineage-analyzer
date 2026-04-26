@@ -1,0 +1,27 @@
+/*
+ * EXPECTED BEHAVIOR:
+ * The parser must handle CIDR plugin evaluating IP addresses against large lists of networks.
+ * It should track the routing logic where local networks get a specific tag, and loopback gets another.
+ * The parser must connect the `source_ip` field to the resulting `network_type` tags.
+ */
+filter {
+  cidr {
+    add_tag => [ "internal_network" ]
+    address => [ "%{source_ip}" ]
+    network => [ "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16" ]
+  }
+  
+  cidr {
+    add_tag => [ "loopback" ]
+    address => [ "%{source_ip}" ]
+    network => [ "127.0.0.0/8", "::1/128" ]
+  }
+  
+  if "internal_network" in [tags] {
+    mutate { add_field => { "network_zone" => "trusted" } }
+  } else if "loopback" in [tags] {
+    mutate { add_field => { "network_zone" => "local" } }
+  } else {
+    mutate { add_field => { "network_zone" => "untrusted" } }
+  }
+}

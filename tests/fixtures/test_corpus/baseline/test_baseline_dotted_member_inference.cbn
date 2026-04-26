@@ -1,0 +1,11 @@
+# BASELINE REPRODUCTION: Dotted Member Inference
+# Validates that the analyzer successfully tracks dotted member access off of
+# dynamically inferred objects or loop variables. When `alert.name` is referenced,
+# the tool infers that it came from the `alerts` array that the loop iterates over.
+# The tool MUST continue to support `_infer_member_source_for_token`.
+# EXPECTED BEHAVIOR: `dest` should be mapped to the `alerts` array with path `name`.
+filter {
+  for alert in alerts {
+    mutate { replace => { "dest" => "%{alert.name}" } }
+  }
+}

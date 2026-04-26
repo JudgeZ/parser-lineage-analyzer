@@ -1,0 +1,13 @@
+# BASELINE: Nested Logic and Grouping Operators
+# Validates that the parser can handle complex logical conditions involving
+# parentheses for grouping, `and`, `or`, and `not` operators.
+# The tool MUST NOT misinterpret parentheses as function calls or array indices.
+# EXPECTED BEHAVIOR: A single complex conditional node or appropriately structured
+# boolean expression tree that correctly captures the exact logic.
+filter {
+  if (([status] >= 400 and [status] < 500) or ([status] >= 500)) and not ("test" in [tags]) {
+    mutate {
+      add_tag => [ "error_detected" ]
+    }
+  }
+}

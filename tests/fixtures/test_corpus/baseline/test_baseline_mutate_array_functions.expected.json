@@ -1,0 +1,4 @@
+{
+  "must_have_warning_codes": ["unsupported_mutate_operation"],
+  "must_have_unsupported": ["strip"]
+}

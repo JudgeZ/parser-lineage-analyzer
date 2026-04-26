@@ -1,0 +1,30 @@
+# EXPECTED BEHAVIOR:
+# Tests chaining of grok filters where subsequent filters depend on tags
+# added by previous ones. This is common in large 700+ line parsers to route events.
+# The analyzer must correctly trace the conditional dependency:
+# - Grok 1 matches -> adds "stage1_done"
+# - Grok 2 only runs if "stage1_done" is present in tags, adds "stage2_done"
+# - Grok 3 only runs if "stage2_done" is NOT present.
+# The lineage graph should show Grok 2 depends on Grok 1's success.
+
+filter {
+  grok {
+    match => { "message" => "^%{TIMESTAMP_ISO8601:timestamp} \[%{LOGLEVEL:level}\] %{GREEDYDATA:msg}$" }
+    add_tag => [ "stage1_done" ]
+    tag_on_failure => [ "_grokparsefailure_stage1" ]
+  }
+
+  if "stage1_done" in [tags] {
+    grok {
+      match => { "msg" => "User %{USERNAME:user} logged in from %{IP:src_ip}" }
+      add_tag => [ "stage2_done", "login_event" ]
+    }
+  }
+
+  if "stage2_done" not in [tags] and "stage1_done" in [tags] {
+    grok {
+      match => { "msg" => "System error: %{GREEDYDATA:error_details}" }
+      add_tag => [ "system_error" ]
+    }
+  }
+}

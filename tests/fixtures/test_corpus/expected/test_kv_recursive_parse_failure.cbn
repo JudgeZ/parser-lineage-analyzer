@@ -1,0 +1,12 @@
+# test_kv_recursive_parse_failure.cbn
+# EXPECTED BEHAVIOR:
+# Tests key-value pair extraction where values themselves are nested key-value pairs.
+# If recursive is set to true, the parser must handle potential infinite loops or extreme depth and cut off gracefully, adding _kvparsefailure.
+filter {
+  kv {
+    source => "message"
+    field_split => "&"
+    value_split => "="
+    recursive => true
+  }
+}

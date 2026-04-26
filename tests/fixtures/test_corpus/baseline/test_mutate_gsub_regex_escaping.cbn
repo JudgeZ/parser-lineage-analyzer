@@ -1,0 +1,15 @@
+# BASELINE REPRODUCTION: Gsub Regex Escaping
+# Validates that `gsub` string replacements with heavy regex escaping
+# (forward slashes, backslashes, quotes) do not prematurely terminate strings
+# in the lexer and break parsing.
+# The tool MUST correctly consume the entire array `["field", "\/", "_"]`.
+# EXPECTED BEHAVIOR: The parser safely skips over the escaped characters and correctly attributes `field` modification to itself.
+filter {
+  mutate {
+    gsub => [
+      "field", "\/", "_",
+      "field", "\\", "-",
+      "field", "\"", "'"
+    ]
+  }
+}

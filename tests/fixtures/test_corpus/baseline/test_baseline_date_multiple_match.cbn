@@ -1,0 +1,12 @@
+# BASELINE: Date Plugin with Multiple Formats
+# Validates that the `date` plugin is correctly parsed when multiple matching formats
+# are provided for a single field.
+# The tool MUST track that `@timestamp` (or the specified target) is being mutated
+# based on `event_time`. It should handle the array of format strings seamlessly.
+filter {
+  date {
+    match => [ "event_time", "ISO8601", "yyyy-MM-dd HH:mm:ss", "MMM dd yyyy HH:mm:ss" ]
+    target => "@timestamp"
+    timezone => "UTC"
+  }
+}

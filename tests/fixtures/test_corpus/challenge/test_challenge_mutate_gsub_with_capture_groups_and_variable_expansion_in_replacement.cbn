@@ -1,0 +1,41 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must correctly interpret a `mutate` `gsub` operation that utilizes
+#    both regular expression capture groups (`\1`) and logstash-style variable
+#    interpolation (`%{field_name}`) within the replacement string.
+# 2. In this specific case, the original string `[app_id] - [user_id]` is being
+#    transformed. The regex matches `\[(.*?)\] - \[(.*?)\]`.
+# 3. The replacement string `%{tenant_prefix}_\1_user_\2` references a previously
+#    defined field `tenant_prefix` AND the capture groups from the regex.
+# 4. The parser's internal state simulator needs to understand that the final value
+#    of `composite_key` depends on three distinct upstream states:
+#    - The regex matching on the `raw_key` field
+#    - The exact capture groups extracted
+#    - The value of `tenant_prefix` at the exact moment this mutate is evaluated.
+# 5. This tests highly dynamic state mutation and complex interpolation dependency tracking.
+
+filter {
+  mutate {
+    add_field => { "tenant_prefix" => "acme_corp" }
+    add_field => { "raw_key" => "[app-5599] - [usr-9912]" }
+  }
+
+  mutate {
+    gsub => [
+      "raw_key", "\[(.*?)\] - \[(.*?)\]", "%{tenant_prefix}_\1_user_\2"
+    ]
+  }
+
+  mutate {
+    rename => { "raw_key" => "composite_key" }
+  }
+
+  if [composite_key] =~ /^acme_corp_app-\d+_user_usr-\d+$/ {
+    mutate {
+      add_tag => ["valid_composite"]
+    }
+  } else {
+    mutate {
+      add_tag => ["invalid_composite"]
+    }
+  }
+}

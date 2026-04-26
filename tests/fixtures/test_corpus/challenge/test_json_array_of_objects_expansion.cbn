@@ -1,0 +1,22 @@
+# CHALLENGE: JSON Array of Objects Expansion
+# Validates the `json` plugin's behavior when the parsed target is an array of objects.
+# In the 700+ corpus, it's common to receive JSON payloads containing arrays of events.
+# The tool MUST handle the `target` being an array structure and recognize that subsequent
+# operations might iterate over it (e.g., via a `split` filter or implicit array handling).
+# EXPECTED BEHAVIOR: `json_data` is marked as a potentially complex nested structure, 
+# and fields like `[json_data][id]` are correctly tracked even if `json_data` is an array.
+filter {
+  json {
+    source => "message"
+    target => "json_data"
+  }
+  
+  # Often followed by a split in real configs
+  split {
+    field => "json_data"
+  }
+  
+  mutate {
+    add_field => { "record_id" => "%{[json_data][id]}" }
+  }
+}

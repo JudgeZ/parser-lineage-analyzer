@@ -1,0 +1,32 @@
+# EXPECTED BEHAVIOR:
+# 1. Tests date parsing with an array of mixed formats, some of which imply specific timezones and others which rely on dynamic variables.
+# 2. Verifies that `timezone` overrides work correctly even when locales differ.
+# 3. Ensures that if the dynamic timezone field `[%{tz_field}]` is missing, the fallback chain still processes safely.
+
+filter {
+  mutate {
+    add_field => { "tz_field" => "dynamic_tz" }
+  }
+
+  date {
+    match => [ 
+      "timestamp_string", 
+      "yyyy-MM-dd HH:mm:ss.SSS Z", 
+      "MMM dd HH:mm:ss", 
+      "ISO8601", 
+      "UNIX_MS" 
+    ]
+    timezone => "%{[%{tz_field}]}"
+    locale => "en_US"
+    target => "@timestamp"
+    tag_on_failure => ["_dateparsefailure_custom"]
+  }
+
+  if "_dateparsefailure_custom" in [tags] {
+    date {
+      match => [ "backup_time", "yyyy/MM/dd HH:mm:ss" ]
+      timezone => "UTC"
+      target => "backup_timestamp"
+    }
+  }
+}

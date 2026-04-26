@@ -1,0 +1,49 @@
+# EXPECTED BEHAVIOR:
+# 1. The JSON filter parses an unknown payload into a dynamic target field `parsed_data`.
+# 2. This creates an unpredictable schema. The parser must understand `parsed_data` as a 
+#    dynamic object with unknown keys.
+# 3. Subsequent mutates perform type conversions on specific assumed keys inside `parsed_data`,
+#    e.g., `[parsed_data][timestamp]` to string, `[parsed_data][count]` to integer.
+# 4. If `parsed_data` already contained a scalar value (e.g. JSON was just a string), the nested
+#    key reference `[parsed_data][timestamp]` might fail or cause an error depending on the engine.
+#    The parser should flag this type conflict risk.
+# 5. Furthermore, there's a mutate that renames the entire dynamic object, or a nested field,
+#    overwriting an existing static field `message`. The parser must track that `message` is 
+#    now a complex object rather than a string.
+
+filter {
+  json {
+    source => "raw_json"
+    target => "parsed_data"
+    skip_on_invalid_json => true
+  }
+
+  if [parsed_data] {
+    mutate {
+      convert => {
+        "[parsed_data][timestamp]" => "string"
+        "[parsed_data][count]" => "integer"
+      }
+    }
+
+    # Complex conditional involving dynamically generated, type-casted field
+    if [parsed_data][count] and [parsed_data][count] > 100 {
+      mutate {
+        add_tag => ["high_volume"]
+      }
+    }
+
+    # Overwriting a known string field with a dynamic object
+    mutate {
+      rename => { "parsed_data" => "message" }
+    }
+  }
+
+  # This regex match on `message` is now dangerous because `message` might be an object, not a string.
+  # The parser should detect this potential type mismatch.
+  if [message] =~ /error/ {
+    mutate {
+      add_tag => ["error_found"]
+    }
+  }
+}

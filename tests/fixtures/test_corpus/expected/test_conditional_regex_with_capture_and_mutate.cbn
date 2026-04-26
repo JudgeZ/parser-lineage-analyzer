@@ -1,0 +1,22 @@
+/*
+ * EXPECTED BEHAVIOR:
+ * The parser must handle conditionals that perform regex matches and use the resulting capture groups (`$1`, `$2`, etc.) or named captures.
+ * However, logstash doesn't natively expose capture groups directly as variables in subsequent blocks easily unless using named captures or Grok.
+ * Wait, logstash conditionals `=~` don't populate variables like `$1`. They are just truthy.
+ * But users might use grok inside an if block, then mutate.
+ * This test uses conditional grok and then mutates based on the created fields.
+ * The lineage must correctly track `username` and `domain` to the `user_email` field based on the grok pattern inside the conditional.
+ */
+filter {
+  if [user_email] =~ /@/ {
+    grok {
+      match => { "user_email" => "^%{DATA:username}@%{GREEDYDATA:domain}$" }
+    }
+    
+    if [domain] == "internal.corp" {
+      mutate { add_tag => ["internal_user"] }
+    } else {
+      mutate { add_tag => ["external_user"] }
+    }
+  }
+}

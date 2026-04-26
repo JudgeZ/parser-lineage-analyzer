@@ -1,0 +1,17 @@
+# EXPECTED BEHAVIOR:
+# The parser must evaluate mutate options in the correct deterministic order (e.g., rename, update, replace, convert).
+# Here, a cyclic chain of renames and copies exists. The analyzer must track the state at each step without
+# falling into infinite loops or resolving the graph to the wrong final state.
+filter {
+  mutate {
+    rename => {
+      "a" => "b"
+      "b" => "c"
+      "c" => "d"
+    }
+    copy => {
+      "d" => "e"
+      "e" => "a"
+    }
+  }
+}

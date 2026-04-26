@@ -1,0 +1,5 @@
+{
+  "must_have_warning_codes": ["runtime_condition"],
+  "must_not_have_warning_codes": ["malformed_config"],
+  "must_resolve_fields": ["extracted_name", "extracted_id"]
+}

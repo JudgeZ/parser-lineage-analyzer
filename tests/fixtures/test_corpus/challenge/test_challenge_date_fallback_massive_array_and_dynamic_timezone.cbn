@@ -1,0 +1,35 @@
+# EXPECTED BEHAVIOR:
+# Tests the parser's capability to process a massive date filter configuration
+# with a long array of fallback formats and a dynamically resolved timezone.
+# It should correctly identify that the parsed timestamp depends on the cascading
+# evaluation of formats, and that timezone coercion is dependent on `device_tz`.
+
+filter {
+  translate {
+    field => "device_ip"
+    destination => "device_tz"
+    dictionary => {
+      "10.0.0.1" => "America/New_York"
+      "10.0.0.2" => "Europe/London"
+    }
+    fallback => "UTC"
+  }
+
+  date {
+    match => [
+      "timestamp_string",
+      "ISO8601",
+      "yyyy-MM-dd HH:mm:ss",
+      "yyyy/MM/dd HH:mm:ss",
+      "MMM dd yyyy HH:mm:ss",
+      "MMM  d yyyy HH:mm:ss",
+      "dd/MMM/yyyy:HH:mm:ss Z",
+      "UNIX",
+      "UNIX_MS",
+      "TAI64N"
+    ]
+    timezone => "%{device_tz}"
+    target => "@timestamp"
+    tag_on_failure => ["_dateparsefailure", "complex_date_failed"]
+  }
+}

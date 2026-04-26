@@ -1,0 +1,35 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must correctly interpret complex regex within gsub, including unicode characters (\p{L}, \p{N}), 
+#    escaped special characters (\\, \", \n, \t), and non-capturing groups.
+# 2. It must handle cases where gsub modifies multiple fields iteratively.
+# 3. The parser should track the state of `suspicious_payload` across multiple transformations.
+# 4. It must understand the variable expansion in the replacement string, such as `%{domain}`.
+
+filter {
+  mutate {
+    # Extract domain beforehand
+    add_field => { "domain" => "example.com" }
+  }
+
+  mutate {
+    gsub => [
+      # Remove unicode non-printable chars or weird spaces
+      "suspicious_payload", "[\p{C}\p{Z}]+", "_",
+      
+      # Strip out escaped quotes and backslashes
+      "suspicious_payload", "\\\\|\"", "",
+      
+      # Replace complex url-encoded like patterns with a fixed string, injecting a variable
+      "suspicious_payload", "(?:%[0-9A-Fa-f]{2}){3,}", "[OBFUSCATED_IN_%{domain}]",
+      
+      # Clean up multiple underscores
+      "suspicious_payload", "_{2,}", "_"
+    ]
+  }
+
+  if [suspicious_payload] =~ /\[OBFUSCATED_IN_example\.com\]/ {
+    mutate {
+      add_tag => ["heavily_obfuscated"]
+    }
+  }
+}

@@ -1,0 +1,35 @@
+# EXPECTED BEHAVIOR:
+# This test evaluates the parser's ability to handle array splitting and subsequent type-based conditional routing.
+# 1. JSON parses a payload where `mixed_array` contains strings, integers, and nested objects.
+# 2. The `split` plugin iterates over `mixed_array`, creating multiple discrete events.
+# 3. The subsequent conditionals must check the *type* implicitly or explicitly (e.g., checking for nested fields).
+# The parser must accurately represent the 1-to-N event explosion caused by `split` and ensure the conditional logic 
+# applies to the individual elements, correctly handling cases where a field reference might be valid for an object but invalid for a string.
+
+filter {
+  json {
+    source => "message"
+    target => "parsed_json"
+  }
+
+  if [parsed_json][mixed_array] {
+    split {
+      field => "[parsed_json][mixed_array]"
+    }
+
+    if [parsed_json][mixed_array][nested_id] {
+      # This implies the current array element is an object
+      mutate {
+        add_tag => ["is_object"]
+      }
+    } else if [parsed_json][mixed_array] =~ /^\d+$/ {
+      # This implies it's a string representation of an integer
+      mutate {
+        add_tag => ["is_numeric_string"]
+      }
+    } else {
+      # Other types or strings
+      drop {}
+    }
+  }
+}

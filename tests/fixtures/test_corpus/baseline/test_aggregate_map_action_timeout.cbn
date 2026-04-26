@@ -1,0 +1,33 @@
+# BASELINE REPRODUCTION: Aggregate Plugin Control Flow
+# Validates parsing of the aggregate plugin, specifically the inline ruby code
+# within `code`, `map_action`, `end_of_task`, and `timeout_tags`.
+#
+# The aggregate plugin is commonly used in SecOps to correlate multi-line logs
+# or session-based events. It heavily relies on inline Ruby snippets.
+#
+# EXPECTED BEHAVIOR: The parser must correctly delineate the inline Ruby blocks
+# (`code`, `timeout_code`), recognizing them as raw string literals or ruby blocks.
+# Lineage tracking must note that `map` is a mutable shared state between events.
+filter {
+  if [type] == "start" {
+    aggregate {
+      task_id => "%{session_id}"
+      code => "map['events'] = 0; map['start_time'] = event.get('@timestamp')"
+      map_action => "create"
+    }
+  } else if [type] == "update" {
+    aggregate {
+      task_id => "%{session_id}"
+      code => "map['events'] ||= 0; map['events'] += 1"
+      map_action => "update"
+    }
+  } else if [type] == "end" {
+    aggregate {
+      task_id => "%{session_id}"
+      code => "event.set('total_events', map['events'])"
+      map_action => "update"
+      end_of_task => true
+      timeout => 120
+    }
+  }
+}

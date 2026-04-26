@@ -1,0 +1,30 @@
+# CHALLENGE: Complex Key-Value (KV) Parsing with Trimming and Custom Delimiters
+# In large security parsers, raw log lines often contain dynamically generated key-value pairs
+# using unconventional delimiters and surrounding characters (like brackets or quotes).
+# The `kv` filter handles this, but creating an accurate lineage is tough because fields
+# are generated dynamically based on the input string, which isn't statically known.
+# EXPECTED BEHAVIOR:
+# The parser should recognize that `kv` dynamically creates fields under the `target` namespace
+# (or root if not specified). It must handle `field_split` and `value_split` patterns, and
+# account for `trim_key` and `trim_value` operations that sanitize the dynamic variables.
+# It should flag the `parsed_data` prefix as containing dynamically resolved fields.
+
+filter {
+  kv {
+    source => "raw_message"
+    target => "parsed_data"
+    field_split => "&?"
+    value_split => "="
+    trim_key => "<>\[\]"
+    trim_value => "\"'"
+    include_keys => [ "user_id", "session_token", "action" ]
+    exclude_keys => [ "password", "secret" ]
+    allow_duplicate_values => false
+  }
+
+  if [parsed_data][user_id] {
+    mutate {
+      add_field => { "normalized_user" => "%{[parsed_data][user_id]}" }
+    }
+  }
+}

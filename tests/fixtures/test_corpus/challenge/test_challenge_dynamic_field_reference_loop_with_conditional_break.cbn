@@ -1,0 +1,59 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must handle deeply nested dynamic field references where the field name itself is constructed from other fields (e.g., `%{[data][%{[key_name]}]}`).
+# 2. It must detect a simulated loop or recursive structure using conditionals and multiple mutates, a common pattern in complex parsers to emulate looping.
+# 3. It should trace the state of `[loop_counter]` and `[current_key]` to determine the final state of the fields.
+# 4. It should properly expand interpolations inside conditionals.
+
+filter {
+  mutate {
+    add_field => {
+      "[loop_counter]" => "1"
+      "[key_name_1]" => "first_key"
+      "[key_name_2]" => "second_key"
+      "[key_name_3]" => "third_key"
+      "[data][first_key]" => "value1"
+      "[data][second_key]" => "value2"
+      "[data][third_key]" => "value3"
+    }
+  }
+
+  # Pseudo-loop iteration 1
+  if [loop_counter] == "1" {
+    mutate {
+      add_field => { "[current_key]" => "%{[key_name_%{[loop_counter]}]}" }
+    }
+    mutate {
+      add_field => { "[extracted_values]" => "%{[data][%{[current_key]}]}" }
+      replace => { "[loop_counter]" => "2" }
+    }
+  }
+
+  # Pseudo-loop iteration 2
+  if [loop_counter] == "2" {
+    mutate {
+      replace => { "[current_key]" => "%{[key_name_%{[loop_counter]}]}" }
+    }
+    mutate {
+      # Appending to array
+      merge => { "[extracted_values]" => "[data][%{[current_key]}]" }
+      replace => { "[loop_counter]" => "3" }
+    }
+  }
+
+  # Pseudo-loop iteration 3
+  if [loop_counter] == "3" {
+    mutate {
+      replace => { "[current_key]" => "%{[key_name_%{[loop_counter]}]}" }
+    }
+    mutate {
+      merge => { "[extracted_values]" => "[data][%{[current_key]}]" }
+      replace => { "[loop_counter]" => "done" }
+    }
+  }
+
+  if [loop_counter] == "done" {
+    mutate {
+      join => { "[extracted_values]" => "," }
+    }
+  }
+}

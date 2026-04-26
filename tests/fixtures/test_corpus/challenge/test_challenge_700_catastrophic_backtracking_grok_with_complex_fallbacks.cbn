@@ -1,0 +1,48 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must detect the catastrophic backtracking risk in the first grok pattern, 
+#    where multiple `.*` patterns are separated by optional or ambiguous delimiters.
+# 2. It must recognize the `timeout_millis` directive (if supported by the target engine syntax) 
+#    and map the fallback control flow when the regex engine times out or fails to match.
+# 3. Upon failure (or timeout, mapped to failure tag `_grokparsefailure_1`), the conditional 
+#    block executes a completely different extraction strategy (dissect + kv).
+# 4. The parser must maintain two distinct variable extraction graphs based on the condition:
+#    - Path A (Success): `field1`, `field2`, `field3` are populated.
+#    - Path B (Failure): `dissect_1`, `dissect_2`, and dynamically generated keys from `kv` are populated.
+# 5. Subsequent logic that depends on `field1` must be flagged as potentially unsafe if it doesn't
+#    check for `_grokparsefailure_1` or the existence of `field1`.
+
+filter {
+  grok {
+    match => { 
+      "message" => "start %{DATA:field1} .* %{DATA:field2} (?:.*)? %{GREEDYDATA:field3}" 
+    }
+    # Simulate a timeout configuration if the engine supports it
+    timeout_millis => 500
+    tag_on_timeout => ["_groktimeout"]
+    tag_on_failure => ["_grokparsefailure_1"]
+  }
+
+  if "_grokparsefailure_1" in [tags] or "_groktimeout" in [tags] {
+    # Fallback extraction strategy
+    dissect {
+      mapping => {
+        "message" => "start %{dissect_1} - %{dissect_2} | %{rest}"
+      }
+    }
+    if [rest] {
+      kv {
+        source => "rest"
+        field_split => "&"
+        value_split => "="
+        target => "kv_fallback"
+      }
+    }
+  }
+
+  # Ambiguous dependency on field1
+  if [field1] == "critical" {
+    mutate { add_tag => ["critical_event"] }
+  } else if [kv_fallback][status] == "critical" {
+    mutate { add_tag => ["critical_event_fallback"] }
+  }
+}

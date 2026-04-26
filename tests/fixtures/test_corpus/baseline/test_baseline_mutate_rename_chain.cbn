@@ -1,0 +1,18 @@
+# BASELINE REPRODUCTION: Mutate Rename Chaining
+# Validates that a complex sequence of renames and merges in a single mutate block
+# is tracked accurately without losing the lineage of the fields.
+# The tool MUST track the fact that 'initial_field' ends up as 'final_field'
+# and handle the intermediate states (temp1, temp2) correctly.
+# EXPECTED BEHAVIOR: AST formed, lineage analysis can link 'initial_field' to 'final_field'.
+filter {
+  mutate {
+    rename => {
+      "initial_field" => "temp1"
+      "temp1" => "temp2"
+      "temp2" => "final_field"
+    }
+    merge => {
+      "other_field" => "final_field"
+    }
+  }
+}

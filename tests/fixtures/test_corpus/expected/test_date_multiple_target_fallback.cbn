@@ -1,0 +1,13 @@
+# EXPECTED BEHAVIOR:
+# This test checks the date plugin's handling of multiple match patterns
+# and how it updates the @timestamp target. The parser should recognize
+# that @timestamp is mutated and depends on 'log_timestamp'.
+# It also checks if the parser handles timezone field interpolation.
+
+filter {
+  date {
+    match => [ "log_timestamp", "MMM  d HH:mm:ss", "MMM dd HH:mm:ss", "ISO8601" ]
+    target => "@timestamp"
+    timezone => "%{event_timezone}"
+  }
+}

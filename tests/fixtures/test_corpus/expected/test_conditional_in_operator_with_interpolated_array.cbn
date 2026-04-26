@@ -1,0 +1,11 @@
+# EXPECTED BEHAVIOR:
+# The parser must correctly handle an `in` operator where the right-hand side is an array literal
+# containing interpolated string values (e.g., "%{field_name}").
+# It must correctly parse the mixed literal strings and dynamic interpolations within the array structure.
+filter {
+  if [action] in ["allowed", "denied", "%{[default_action]}", "%{user_status}_action"] {
+    mutate {
+      add_tag => ["action_matched"]
+    }
+  }
+}

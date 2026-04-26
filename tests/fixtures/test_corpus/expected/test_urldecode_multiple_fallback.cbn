@@ -1,0 +1,15 @@
+# EXPECTED BEHAVIOR:
+# The parser must handle `urldecode` operating on an array of fields.
+# If some fields don't exist, it shouldn't crash. It should also model
+# the potential modification of `url_field1` and `url_field2` in place.
+filter {
+  urldecode {
+    field => "url_field1"
+  }
+  urldecode {
+    field => "url_field2"
+  }
+  urldecode {
+    all_fields => true
+  }
+}

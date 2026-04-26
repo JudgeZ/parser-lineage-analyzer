@@ -1,0 +1,11 @@
+# test_conditional_complex_nesting_short_circuit.cbn
+# EXPECTED BEHAVIOR:
+# Tests the short-circuiting logic of conditionals where the right side of an AND expression would fail if the left side wasn't evaluated first (e.g., accessing a field on an uninitialized object).
+# The parser should confirm that left-to-right evaluation with short-circuiting protects against null pointer exceptions.
+filter {
+  if [parent] and [parent][child] == "target_value" {
+    mutate {
+      add_tag => ["safe_access"]
+    }
+  }
+}

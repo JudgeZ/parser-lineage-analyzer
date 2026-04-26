@@ -1,0 +1,28 @@
+# CHALLENGE: Grok with Multiple Match Fallbacks
+# The `grok` filter can take an array of `match` patterns. It evaluates them sequentially
+# and stops at the first successful match. This creates a complex logical branching structure
+# because downstream fields depend entirely on WHICH pattern matched.
+# EXPECTED BEHAVIOR:
+# The parser must create a lineage model that represents a logical `OR` or a fallback chain.
+# If downstream logic relies on `extracted_user`, the parser must trace it back to BOTH
+# the first and second grok patterns, handling the ambiguity of which extraction path was taken.
+# It should also correctly track the default `_grokparsefailure` tag if none match.
+
+filter {
+  grok {
+    match => {
+      "message" => [
+        "User %{WORD:extracted_user} logged in from %{IP:source_ip} port %{NUMBER:port}",
+        "Login successful for \[%{USERNAME:extracted_user}\] via %{WORD:protocol} from %{IP:source_ip}",
+        "AUTH_SUCCESS: src=%{IP:source_ip} user=%{WORD:extracted_user}"
+      ]
+    }
+    tag_on_failure => [ "_grok_auth_fail", "auth_parse_error" ]
+  }
+
+  if "_grok_auth_fail" not in [tags] {
+    mutate {
+      add_field => { "normalized_ip" => "%{source_ip}" }
+    }
+  }
+}

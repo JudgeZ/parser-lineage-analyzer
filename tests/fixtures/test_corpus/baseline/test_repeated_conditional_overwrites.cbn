@@ -1,0 +1,21 @@
+# BASELINE REPRODUCTION: Repeated Conditional Overwrites (Shadowing/SSA)
+# Validates that assigning to the same field multiple times within different
+# conditionally nested scopes is correctly managed by the parser's state tracker.
+# The tool MUST handle these static single assignments (SSA) / shadowing without
+# losing track of the possible source derivations.
+# EXPECTED BEHAVIOR: `final_status` can have lineage from multiple string literals based on the branch taken.
+filter {
+  mutate {
+    add_field => { "final_status" => "unknown" }
+  }
+  if [action] == "login" {
+    mutate { replace => { "final_status" => "auth_attempt" } }
+    if [success] == "true" {
+      mutate { replace => { "final_status" => "auth_success" } }
+    } else {
+      mutate { replace => { "final_status" => "auth_failed" } }
+    }
+  } else if [action] == "logout" {
+    mutate { replace => { "final_status" => "auth_terminated" } }
+  }
+}

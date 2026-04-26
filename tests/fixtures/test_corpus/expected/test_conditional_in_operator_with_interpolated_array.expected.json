@@ -1,0 +1,4 @@
+{
+  "must_have_warning_codes": ["runtime_condition"],
+  "must_not_have_warning_codes": ["malformed_config"]
+}

@@ -1,0 +1,14 @@
+# BASELINE REPRODUCTION: Nested Field Reference Mutations
+# Validates that mutations acting on deeply nested dictionary/object fields
+# using the [top][middle][bottom] syntax are parsed correctly.
+# The tool MUST parse the nested field identifiers and assign them properly.
+# EXPECTED BEHAVIOR: AST correctly models the nested field references.
+filter {
+  mutate {
+    add_field => {
+      "[network][destination][ip]" => "%{[dest_ip]}"
+      "[network][destination][port]" => "%{[dest_port]}"
+    }
+    remove_field => [ "dest_ip", "dest_port" ]
+  }
+}

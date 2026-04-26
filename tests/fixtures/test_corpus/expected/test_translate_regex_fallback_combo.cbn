@@ -1,0 +1,18 @@
+# EXPECTED BEHAVIOR:
+# The parser must model the translate filter with `exact => false` and `regex => true`,
+# understanding that partial or regex matches are possible. It must also track
+# the `fallback` value if no match is found, assigning it to the `destination`.
+filter {
+  translate {
+    field => "http_user_agent"
+    destination => "client_type"
+    exact => false
+    regex => true
+    dictionary => {
+      "^Mozilla" => "Browser"
+      "^curl" => "CLI"
+      "bot|crawler" => "Bot"
+    }
+    fallback => "Unknown"
+  }
+}

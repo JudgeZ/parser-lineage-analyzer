@@ -1,0 +1,19 @@
+# BASELINE: Ruby Plugin Inline Code
+# Validates that the `ruby` plugin with an inline `code` block does not break the parser.
+# The `code` block contains ruby syntax (do, end, =, [], etc.) which might confuse the
+# Logstash grammar parser if it tries to parse it as Logstash configuration.
+# The tool MUST treat the `code` string as a single literal and track that the ruby
+# plugin executes opaque code.
+# EXPECTED BEHAVIOR: Parser gracefully skips analyzing the contents of the ruby string,
+# but records the presence of the ruby plugin execution.
+filter {
+  ruby {
+    code => "
+      event.get('tags').each do |tag|
+        if tag == 'special'
+          event.set('is_special', true)
+        end
+      end
+    "
+  }
+}

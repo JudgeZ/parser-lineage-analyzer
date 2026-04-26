@@ -1,0 +1,18 @@
+# BASELINE: Complex Drop Event Control Flow
+# Validates that `drop {}` is correctly handled within deeply nested conditionals.
+# The control flow graph MUST represent that paths reaching `drop {}` terminate
+# and do not proceed to subsequent filters or outputs.
+# EXPECTED BEHAVIOR: Event flow terminates for events matching the condition.
+filter {
+  if [log_level] == "DEBUG" {
+    if "noisy_system" in [tags] or [component] == "heartbeat" {
+      drop { percentage => 100 }
+    } else {
+      mutate { add_tag => [ "kept_debug" ] }
+    }
+  }
+  
+  mutate {
+    add_tag => [ "always_reaches_unless_dropped" ]
+  }
+}

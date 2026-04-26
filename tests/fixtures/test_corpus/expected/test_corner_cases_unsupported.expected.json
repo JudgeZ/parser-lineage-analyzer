@@ -1,0 +1,17 @@
+{
+  "must_not_have_warning_codes": [
+    "malformed_config",
+    "parse_recovery"
+  ],
+  "must_have_warning_codes": [
+    "dynamic_destination",
+    "runtime_condition",
+    "statedump",
+    "unsupported_mutate_operation",
+    "unsupported_plugin"
+  ],
+  "must_have_unsupported": [
+    "some_weird_plugin",
+    "weird_mutate"
+  ]
+}

@@ -1,0 +1,31 @@
+# EXPECTED BEHAVIOR:
+# This test replicates a deeply nested, multi-format payload scenario common in 700+ parser corpuses.
+# The initial payload is a CSV. One of the columns extracted by the CSV parser contains JSON.
+# The JSON parser then extracts a field that contains an XML string.
+# The XML parser finally processes that XML string using XPath.
+# The parser must correctly order these operations based on implicit data dependencies 
+# (CSV -> JSON -> XML) and correctly resolve the final XPath output.
+filter {
+  csv {
+    source => "message"
+    columns => ["timestamp", "host", "json_payload", "status"]
+    separator => "|"
+  }
+
+  json {
+    source => "json_payload"
+    target => "parsed_json"
+  }
+
+  xml {
+    source => "[parsed_json][embedded_xml]"
+    target => "parsed_xml"
+    xpath => {
+      "/root/data/item/text()" => "xml_items"
+    }
+  }
+
+  mutate {
+    remove_field => ["message", "json_payload", "parsed_json"]
+  }
+}

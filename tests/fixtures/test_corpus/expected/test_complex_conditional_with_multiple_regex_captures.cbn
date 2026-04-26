@@ -1,0 +1,18 @@
+# EXPECTED BEHAVIOR:
+# The parser must successfully parse a conditional block that contains multiple consecutive regex matches
+# with capture groups in the `if` and `elsif` conditions. It must recognize the implicit creation of
+# the captured fields and ensure they are available within the respective block's scope.
+filter {
+  if [message] =~ /^(?<action>LOGIN|LOGOUT)\s+(?<user>\w+)/ {
+    mutate {
+      add_field => { "activity" => "%{action}" }
+      add_field => { "username" => "%{user}" }
+    }
+  } elsif [message] =~ /^(?<action>UPLOAD|DOWNLOAD)\s+(?<file>[\w\.]+)\s+(?<size>\d+)/ {
+    mutate {
+      add_field => { "activity" => "%{action}" }
+      add_field => { "filename" => "%{file}" }
+      convert => { "size" => "integer" }
+    }
+  }
+}

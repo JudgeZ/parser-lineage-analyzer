@@ -1,0 +1,17 @@
+# Test: Complex KV Extraction
+# Description: Tests the kv filter with advanced configurations like custom split characters,
+# trimming rules, and specific target objects. The parser must identify that children fields of
+# `kv_data` are dynamically generated from `raw_message` based on these delimiters.
+
+filter {
+  kv {
+    source => "raw_message"
+    target => "kv_data"
+    field_split => "&?"
+    value_split => "="
+    trim_key => "<>\[\], "
+    trim_value => "<>\[\], "
+    whitespace_strict => true
+    allow_duplicate_values => false
+  }
+}

@@ -1,0 +1,11 @@
+# BASELINE REPRODUCTION: On Error Fallback State Merging
+# Validates that `on_error` correctly merges the main execution path with the fallback
+# execution path, ensuring that variables assigned in either path are marked as
+# conditional upon `on_error` and `NOT(on_error)`.
+# The tool MUST continue to support symbolic execution of fallback paths.
+# EXPECTED BEHAVIOR: `user.role` should be conditional, reflecting either Admin or Guest.
+filter {
+  mutate { replace => { "user.role" => "Admin" } } on_error {
+    mutate { replace => { "user.role" => "Guest" } }
+  }
+}

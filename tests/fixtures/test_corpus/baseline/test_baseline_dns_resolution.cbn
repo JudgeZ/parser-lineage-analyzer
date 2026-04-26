@@ -1,0 +1,19 @@
+# BASELINE REPRODUCTION: DNS Resolution Plugin
+# Validates the parser's ability to handle forward and reverse DNS lookups,
+# including behavior when a lookup times out or fails to resolve.
+# EXPECTED BEHAVIOR: 
+# - `source.ip` should resolve to `source.hostname`.
+# - `destination.domain` should resolve to an array of IPs in `destination.ips`.
+# - Unresolvable domains should hit the `failed_cache` or append a `_dnslookupfailure` tag.
+filter {
+  dns {
+    reverse => [ "source.hostname", "source.ip" ]
+    resolve => [ "destination.ips", "destination.domain" ]
+    action => "replace"
+    hit_cache_size => 1000
+    hit_cache_ttl => 300
+    failed_cache_size => 500
+    failed_cache_ttl => 60
+    timeout => 2
+  }
+}

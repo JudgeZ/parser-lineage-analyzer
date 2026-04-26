@@ -1,0 +1,17 @@
+# EXPECTED BEHAVIOR:
+# The parser must properly evaluate the `in` and `not in` operators when checking if a field's value exists within a literal array.
+# The lineage of `is_admin` must point to `user_role` acting as the conditional trigger.
+# The tool must gracefully parse the `["admin", "superuser", "root"]` literal array without confusing it for an array field reference.
+
+filter {
+  if [user_role] in ["admin", "superuser", "root"] {
+    mutate {
+      add_tag => ["privileged_action"]
+      add_field => { "is_admin" => "true" }
+    }
+  } else if [user_role] not in ["guest", "anonymous"] {
+    mutate {
+      add_tag => ["standard_action"]
+    }
+  }
+}

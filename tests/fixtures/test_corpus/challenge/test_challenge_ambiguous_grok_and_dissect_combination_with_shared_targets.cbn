@@ -1,0 +1,44 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must correctly identify the execution order where `dissect` and `grok` target the same nested field `[target][data]`.
+# 2. It must handle the `on_error` fallback in dissect to trigger the grok parsing if dissect fails.
+# 3. It should track that `[target][data]` could be populated by either plugin, and subsequent conditionals on `[target][data]` need to account for both potential schemas.
+# 4. It must properly parse the complex delimiter `}%{` in dissect and the lookahead regex in grok.
+# 5. It should warn about the potential for partial overwrites if both plugins somehow executed or if the target wasn't cleared.
+
+filter {
+  dissect {
+    mapping => {
+      "message" => "%{[@metadata][prefix]} | %{+[@metadata][prefix]} : %{[target][data][id]} }%{ %{[target][data][payload]}"
+    }
+    on_error => "_dissect_failed"
+  }
+
+  if "_dissect_failed" in [tags] {
+    grok {
+      match => {
+        "message" => "^(?:%{WORD:[@metadata][prefix]} \| )+.*?:\s*(?<[target][data][id]>\d+)\s*}\%{\s*(?<[target][data][payload]>.*(?:(?=\s+END)|$))"
+      }
+      overwrite => [ "[target][data][id]", "[target][data][payload]" ]
+      tag_on_failure => [ "_grok_fallback_failed" ]
+    }
+  }
+
+  if "_grok_fallback_failed" not in [tags] and "_dissect_failed" in [tags] {
+    mutate {
+      add_tag => [ "parsed_via_grok" ]
+      remove_tag => [ "_dissect_failed" ]
+    }
+  } else if "_dissect_failed" not in [tags] {
+    mutate {
+      add_tag => [ "parsed_via_dissect" ]
+    }
+  }
+
+  if [target][data][payload] =~ /\{.*\}/ {
+    json {
+      source => "[target][data][payload]"
+      target => "[target][data][parsed_payload]"
+      skip_on_invalid_json => true
+    }
+  }
+}

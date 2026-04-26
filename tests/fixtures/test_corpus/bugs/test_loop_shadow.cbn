@@ -1,0 +1,12 @@
+# BUG REPRODUCTION: Static Loop Variable Shadowing Deletion
+# This file tests semantic variable scoping in static `for` loops.
+# The static loop `for user in [...]` assigns values directly to `state.tokens["user"]`.
+# After the loop, `_exec_static_string_loop` calls `pop("user")`, destroying the outer scope's "Alice" value.
+# EXPECTED FIX: `principal.user` should evaluate to "Alice". Currently evaluates to unresolved `user`.
+filter {
+  mutate { replace => { "user" => "Alice" } }
+  for user in ["Bob", "Charlie"] {
+     mutate { replace => { "target.user" => "%{user}" } }
+  }
+  mutate { replace => { "event.idm.read_only_udm.principal.user" => "%{user}" } }
+}

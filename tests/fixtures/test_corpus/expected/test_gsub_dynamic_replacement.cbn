@@ -1,0 +1,29 @@
+# EXPECTED BEHAVIOR:
+# 1. Handling of `gsub` where the regex or replacement might look complex or contain
+#    escape sequences.
+# 2. Tracking multiple gsub operations on the same field in order, and how the state 
+#    of the field evolves through these replacements.
+# 3. Handling arrays of gsub instructions like `[ "field", "regex", "replace", ... ]`
+
+filter {
+  mutate {
+    gsub => [
+      "message", "\\\\", "/",
+      "message", "\r", "",
+      "url_path", "%20", "_"
+    ]
+  }
+
+  mutate {
+    # Subsequent mutate block ensures this happens after the previous gsubs
+    gsub => [
+      "message", "\n", " "
+    ]
+  }
+
+  if [message] =~ /ERROR/ {
+    mutate {
+      add_tag => [ "contains_error" ]
+    }
+  }
+}

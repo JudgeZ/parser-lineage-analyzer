@@ -1,0 +1,16 @@
+/*
+ * EXPECTED BEHAVIOR:
+ * The parser must handle `gsub` operations that use regex capture groups (`\1`, `\2`) in the replacement string.
+ * It needs to understand that `\[%{field}\]` syntax in target might be evaluated.
+ * In the first gsub, it extracts the domain from an email and wraps it in brackets.
+ * In the second gsub, it uses a complex regex to format a phone number.
+ * The static analyzer should record the regex used and note the structural changes, even if it cannot statically resolve the dynamic replacement completely.
+ */
+filter {
+  mutate {
+    gsub => [
+      "email", ".*@(.*)", "[\1]",
+      "phone", "^(\d{3})(\d{3})(\d{4})$", "(\1) \2-\3"
+    ]
+  }
+}

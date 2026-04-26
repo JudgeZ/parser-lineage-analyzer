@@ -1,0 +1,35 @@
+# EXPECTED BEHAVIOR:
+# Evaluates how the parser handles Ruby blocks that might attempt to use class
+# variables (@@) or global variables ($) to share state across events, and also
+# how it handles local Ruby variables shadowing Logstash event fields.
+# The parser must recognize that `@@shared_state` persists across executions,
+# while local variable `message` does not affect `event.get('message')` unless
+# explicitly set via `event.set`.
+
+filter {
+  ruby {
+    init => "@@event_counter = 0; @@shared_cache = {}"
+    code => "
+      @@event_counter += 1
+      
+      # Shadowing event field with local variable
+      message = event.get('message')
+      message = message.upcase
+      
+      # Using shared state
+      if @@event_counter % 10 == 0
+        @@shared_cache.clear
+      end
+      
+      if @@shared_cache[message]
+        event.tag('cache_hit')
+      else
+        @@shared_cache[message] = true
+        event.set('message_upper', message)
+      end
+      
+      # This should NOT change the actual 'message' field in the event
+      # because we didn't call event.set('message', message)
+    "
+  }
+}

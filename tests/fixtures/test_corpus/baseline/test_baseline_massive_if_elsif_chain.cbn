@@ -1,0 +1,42 @@
+# EXPECTED BEHAVIOR:
+# The parser must correctly handle an extremely long chain of `else if` conditions
+# without stack overflows or incorrect AST construction. It should properly route
+# execution and track the data lineage for each distinct branch, resolving the correct
+# tag application based on the final matched condition.
+# This mimics the routing tables found in 700+ line production parsers.
+
+filter {
+  if [log_type] == "cisco_ios" {
+    mutate { add_tag => ["cisco"] }
+  } else if [log_type] == "panw_traffic" {
+    mutate { add_tag => ["panw"] }
+  } else if [log_type] == "aws_vpc_flow" {
+    mutate { add_tag => ["aws", "vpc"] }
+  } else if [log_type] == "aws_cloudtrail" {
+    mutate { add_tag => ["aws", "cloudtrail"] }
+  } else if [log_type] == "gcp_vpc_flow" {
+    mutate { add_tag => ["gcp", "vpc"] }
+  } else if [log_type] == "azure_nsg" {
+    mutate { add_tag => ["azure", "nsg"] }
+  } else if [log_type] == "checkpoint_fw" {
+    mutate { add_tag => ["checkpoint"] }
+  } else if [log_type] == "fortinet_fw" {
+    mutate { add_tag => ["fortinet"] }
+  } else if [log_type] == "juniper_srx" {
+    mutate { add_tag => ["juniper"] }
+  } else if [log_type] == "f5_bigip" {
+    mutate { add_tag => ["f5"] }
+  } else if [log_type] == "bluecoat_proxy" {
+    mutate { add_tag => ["bluecoat"] }
+  } else if [log_type] == "zscaler_nss" {
+    mutate { add_tag => ["zscaler"] }
+  } else if [log_type] == "crowdstrike_fdrs" {
+    mutate { add_tag => ["crowdstrike"] }
+  } else if [log_type] == "carbon_black" {
+    mutate { add_tag => ["carbon_black"] }
+  } else if [log_type] == "sentinelone" {
+    mutate { add_tag => ["sentinelone"] }
+  } else {
+    mutate { add_tag => ["unknown_log_type", "needs_triage"] }
+  }
+}

@@ -1,0 +1,27 @@
+# TEST OBJECTIVE: Simulate cascading grok failures where tags are added, checked, removed, and new tags are added.
+# EXPECTED BEHAVIOR:
+# 1. The parser MUST track the addition of default `_grokparsefailure`.
+# 2. It MUST handle the conditional checking for `_grokparsefailure`.
+# 3. It MUST handle the removal of `_grokparsefailure` and execution of a fallback grok.
+# 4. It MUST track custom failure tags like `custom_grok_fail`.
+# 5. It MUST model the final state where an event might have `custom_grok_fail` but NOT `_grokparsefailure`.
+
+filter {
+  grok {
+    match => { "message" => "%{SYSLOGBASE} %{GREEDYDATA:syslog_message}" }
+  }
+
+  if "_grokparsefailure" in [tags] {
+    mutate {
+      remove_tag => ["_grokparsefailure"]
+    }
+    grok {
+      match => { "message" => "%{TIMESTAMP_ISO8601:timestamp} %{GREEDYDATA:syslog_message}" }
+      tag_on_failure => ["custom_grok_fail"]
+    }
+  }
+
+  if "custom_grok_fail" in [tags] {
+    drop { }
+  }
+}

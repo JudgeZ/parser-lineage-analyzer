@@ -1,0 +1,11 @@
+# test_conditional_regex_capture_overwrite_existing.cbn
+# EXPECTED BEHAVIOR:
+# Tests conditional regex captures where the target capture field already exists as a non-string type (e.g., an array or object).
+# The parser should either coerce the existing field, replace it, or append to it depending on type collision rules, without causing a type exception.
+filter {
+  if [message] =~ /(?<existing_field>error_code_\d+)/ {
+    mutate {
+      add_tag => ["captured_error"]
+    }
+  }
+}

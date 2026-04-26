@@ -1,0 +1,61 @@
+# TEST FIXTURE: Convoluted Plugin Ordering and State Mutations
+# PURPOSE: To verify that the parser respects the strict sequential ordering of plugins within 
+# a filter block and correctly tracks field state mutations across them. In complex configs, 
+# a field might be renamed, parsed, split, and joined back in rapid succession.
+#
+# EXPECTED BEHAVIOR:
+# 1. State changes MUST reflect the exact order of operations (e.g., if a field is renamed, 
+#    the old name is no longer available to subsequent plugins).
+# 2. Multiple blocks of the same plugin type (e.g., two `mutate` blocks) MUST NOT be merged 
+#    if they are separated by conditionals or other plugins, as this changes semantics.
+# 3. The AST MUST correctly serialize these ordered operations.
+
+filter {
+  # Step 1: Initial string operation
+  mutate {
+    strip => ["raw_message"]
+    lowercase => ["raw_message"]
+  }
+
+  # Step 2: Extraction
+  grok {
+    match => { "raw_message" => "%{TIMESTAMP_ISO8601:timestamp} %{LOGLEVEL:level} \[%{DATA:module}\] %{GREEDYDATA:msg}" }
+  }
+
+  # Step 3: Conditional on extraction
+  if [module] == "AuthService" {
+    # Step 4: Mutate rename BEFORE split
+    mutate {
+      rename => { "msg" => "auth_details" }
+      # This gsub applies to the NEW name, testing implicit ordering within mutate (if supported, else it's a bug simulation)
+      gsub => [ "auth_details", "\s+", "_" ] 
+    }
+
+    # Step 5: Split the renamed field
+    mutate {
+      split => { "auth_details" => "_" }
+    }
+
+    # Step 6: Iterate over array (simulated via another plugin)
+    if "FAILED" in [auth_details] {
+      mutate {
+        add_tag => ["auth_failure"]
+        # Join back
+        join => { "auth_details" => "-" }
+      }
+    }
+  }
+
+  # Step 7: Final cleanup
+  if [msg] {
+    # This should ONLY execute if module != "AuthService", because 'msg' was renamed above!
+    mutate {
+      add_field => { "unprocessed_msg" => "%{msg}" }
+      remove_field => ["msg"]
+    }
+  } else if [auth_details] {
+    mutate {
+      add_field => { "processed_auth" => "true" }
+    }
+  }
+}

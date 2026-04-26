@@ -1,0 +1,33 @@
+# TEST BEHAVIOR:
+# Advanced use cases in large environments often involve ruby blocks that aggregate data
+# over time windows or buffer events, acting as pseudo-aggregators.
+# The analyzer must understand that these blocks hold events or delay execution,
+# affecting the synchronous flow of the pipeline.
+filter {
+  ruby {
+    init => "
+      @@buffer = []
+      @@last_flush = Time.now.to_i
+    "
+    code => "
+      @@buffer << event.to_hash
+      current_time = Time.now.to_i
+      
+      if @@buffer.length > 100 || (current_time - @@last_flush) > 60
+        event.set('flush_trigger', true)
+        event.set('aggregated_events', @@buffer.clone)
+        @@buffer.clear
+        @@last_flush = current_time
+      else
+        event.cancel # Drop the current event, it's buffered
+      end
+    "
+  }
+
+  if [flush_trigger] {
+    mutate {
+      add_tag => [ "batch_processed" ]
+    }
+    # Send the massive array of hashes to an output or further processing
+  }
+}

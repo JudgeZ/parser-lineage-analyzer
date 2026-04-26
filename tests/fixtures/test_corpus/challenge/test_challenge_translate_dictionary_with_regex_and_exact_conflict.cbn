@@ -1,0 +1,19 @@
+# EXPECTED BEHAVIOR:
+# Evaluates translate plugin behavior when both regex and exact matching might apply.
+# Tests whether the analyzer understands the precedence (exact match before regex match in Logstash)
+# and how it models the output field.
+filter {
+  translate {
+    field => "status_code"
+    destination => "status_message"
+    dictionary => {
+      "200" => "OK"
+      "404" => "Not Found"
+      "^5\\d\\d$" => "Server Error"
+      "500" => "Internal Server Error" # Conflict: exact match vs regex match
+    }
+    exact => true
+    regex => true
+    fallback => "Unknown Status"
+  }
+}

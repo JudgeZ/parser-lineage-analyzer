@@ -1,0 +1,12 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must handle nested field interpolations, where the field name itself is resolved via interpolation: `%{[foo][%{dynamic_key}]}`.
+# 2. Lineage tracking must capture that the final value of `resolved_value` depends on both `[foo][...]` and `dynamic_key`.
+# 3. Ensure the lexer correctly pairs the nested brackets and curlies.
+
+filter {
+  mutate {
+    add_field => {
+      "resolved_value" => "Value is: %{[foo][%{dynamic_key}]}"
+    }
+  }
+}

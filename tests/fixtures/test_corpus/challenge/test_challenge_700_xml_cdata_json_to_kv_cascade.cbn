@@ -1,0 +1,29 @@
+# EXPECTED BEHAVIOR:
+# In 700+ parser corpuses, payloads are often wrapped multiple times.
+# This tests the cascade of parsing an XML document where a specific field
+# contains JSON, and inside that JSON, a field contains KV pairs.
+# The parser must correctly map the implicit dependencies: xml -> json -> kv.
+filter {
+  xml {
+    source => "raw_xml"
+    target => "parsed_xml"
+    store_xml => true
+    force_array => false
+  }
+  
+  if [parsed_xml][nested_json_payload] {
+    json {
+      source => "[parsed_xml][nested_json_payload]"
+      target => "parsed_json"
+    }
+  }
+  
+  if [parsed_json][kv_string] {
+    kv {
+      source => "[parsed_json][kv_string]"
+      field_split => "&"
+      value_split => "="
+      target => "final_kv"
+    }
+  }
+}

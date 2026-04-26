@@ -1,0 +1,12 @@
+# BASELINE REPRODUCTION: Complex Grok with Multiple Captures of Same Name
+# Validates how the parser handles a grok pattern that captures multiple values
+# into the same field name. In Logstash, this results in an array.
+# The tool MUST recognize that `duplicate_field` becomes an array or aggregate of multiple matches.
+# EXPECTED BEHAVIOR: `duplicate_field` traces back to multiple locations in `message`.
+filter {
+  grok {
+    match => {
+      "message" => "First: %{WORD:duplicate_field} Second: %{WORD:duplicate_field}"
+    }
+  }
+}

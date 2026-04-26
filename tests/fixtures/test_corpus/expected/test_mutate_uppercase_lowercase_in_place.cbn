@@ -1,0 +1,19 @@
+# EXPECTATION:
+# The `uppercase` and `lowercase` mutate operations modify a field in-place.
+# The parser must track this state mutation. A subsequent conditional 
+# relying on exact case match will only trigger if the mutation is correctly analyzed.
+filter {
+  mutate {
+    add_field => { "status" => "ErRoR" }
+  }
+
+  mutate {
+    lowercase => ["status"]
+  }
+
+  if [status] == "error" {
+    mutate {
+      add_tag => ["normalized_error"]
+    }
+  }
+}

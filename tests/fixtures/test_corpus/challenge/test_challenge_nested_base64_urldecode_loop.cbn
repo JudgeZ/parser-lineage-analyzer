@@ -1,0 +1,25 @@
+# CHALLENGE REPRODUCTION: Nested Base64 and URL Decode
+# Validates chained decoding of a payload that is URL-encoded, then Base64-encoded,
+# then contains a JSON string.
+# EXPECTED BEHAVIOR:
+# - The payload must be correctly unwrapped layer by layer.
+# - Failure at any layer must halt the unwrapping cleanly without crashing.
+filter {
+  urldecode {
+    field => "encoded_payload"
+  }
+  ruby {
+    code => "
+      begin
+        require 'base64'
+        event.set('decoded_payload', Base64.decode64(event.get('encoded_payload')))
+      rescue
+        event.tag('_base64parsefailure')
+      end
+    "
+  }
+  json {
+    source => "decoded_payload"
+    target => "final_json"
+  }
+}

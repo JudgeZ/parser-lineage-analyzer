@@ -1,0 +1,12 @@
+{
+  "must_not_have_warning_codes": [
+    "malformed_config",
+    "parse_recovery"
+  ],
+  "must_have_warning_codes": [
+    "drop",
+    "dynamic_destination",
+    "mutate_ordering_drift",
+    "runtime_condition"
+  ]
+}

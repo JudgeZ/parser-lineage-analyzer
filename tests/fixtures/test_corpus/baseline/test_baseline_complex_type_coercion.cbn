@@ -1,0 +1,21 @@
+# BASELINE REPRODUCTION: Complex Type Coercion
+# Validates the parser can handle consecutive type conversions
+# where a field changes type multiple times within the same block or consecutive blocks.
+# The tool MUST track the type transformation correctly to identify type mismatches in later operations.
+# EXPECTED BEHAVIOR: AST formed, convert operations are correctly parsed.
+filter {
+  mutate {
+    convert => {
+      "metric_val" => "integer"
+      "status_code" => "string"
+      "is_active" => "boolean"
+    }
+  }
+  if [metric_val] > 100 {
+    mutate {
+      convert => {
+        "metric_val" => "string"
+      }
+    }
+  }
+}

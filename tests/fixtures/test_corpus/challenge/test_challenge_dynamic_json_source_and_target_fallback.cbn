@@ -1,0 +1,28 @@
+# TEST OBJECTIVE: Validate behavior when JSON plugin source and target are dynamically evaluated from fields, with fallbacks.
+# EXPECTED BEHAVIOR:
+# 1. The parser MUST recognize that the JSON plugin uses "%{json_source_field}" as its source.
+# 2. It MUST trace that the JSON plugin uses "%{json_target_field}" as its target.
+# 3. It MUST handle the case where these fields are not defined, possibly falling back or tagging an error.
+
+filter {
+  mutate {
+    add_field => {
+      "json_source_field" => "raw_data"
+      "json_target_field" => "parsed_json"
+    }
+  }
+
+  if [payload_format] == "json" {
+    json {
+      source => "%{json_source_field}"
+      target => "%{json_target_field}"
+      skip_on_invalid_json => true
+    }
+  }
+
+  if ["%{json_target_field}"][status] == "error" {
+    mutate {
+      add_tag => ["json_payload_error"]
+    }
+  }
+}

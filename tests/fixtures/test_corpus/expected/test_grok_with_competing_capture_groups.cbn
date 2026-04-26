@@ -1,0 +1,15 @@
+# EXPECTED BEHAVIOR:
+# The parser must correctly handle grok matching where multiple patterns are provided in an array,
+# and these patterns reuse the same capture group names but assign different structures or types to them.
+# The tool should model how the fields would be populated depending on which pattern matches.
+filter {
+  grok {
+    match => {
+      "message" => [
+        "^(?<user_info>admin): (?<id>\d+)$",
+        "^(?<user_info>[A-Za-z]+) \((?<role>\w+)\): (?<id>[A-Z0-9]+)$",
+        "^System: (?<id>\d+) - (?<user_info>.*)$"
+      ]
+    }
+  }
+}

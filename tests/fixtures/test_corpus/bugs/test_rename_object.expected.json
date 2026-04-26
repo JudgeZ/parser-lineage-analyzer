@@ -1,0 +1,10 @@
+{
+  "must_resolve_fields": [
+    "target.user",
+    "target.user.name"
+  ],
+  "must_not_have_warning_codes": [
+    "malformed_config",
+    "parse_recovery"
+  ]
+}

@@ -1,0 +1,36 @@
+# EXPECTED BEHAVIOR:
+# The parser must correctly evaluate deeply nested boolean logic involving
+# NOT, AND, OR, IN, and regex match operators. It must respect operator
+# precedence rules (e.g. AND before OR) and correctly handle the short-circuiting
+# logic. The tool must infer the possible outcomes and the fields generated
+# (like `alert_escalated` and `drop_reason`).
+filter {
+  mutate {
+    add_field => { "eval_field" => "%{[src_ip]}:%{[dest_port]}" }
+  }
+
+  if ( ([action] == "deny" or [action] == "reject") and !([src_ip] in ["10.0.0.1", "10.0.0.2"]) ) or ( [eval_field] =~ /.*:22$/ and [status] != "success" ) {
+    
+    if [user_agent] =~ /(?i)curl/ and !([user] == "admin" or [user] == "system") {
+      mutate {
+        add_tag => ["suspicious_activity"]
+      }
+    } else if [action] == "permit" {
+      # This is a contradiction based on the outer `if`, unless `[eval_field] =~ /.*:22$/` is true
+      # The analyzer should not flag this block as dead code entirely.
+      mutate {
+        add_field => { "alert_escalated" => "true" }
+      }
+    }
+
+  } else if !([status] == "success" or [status] == "informational") and [bytes_out] > 10000 {
+    mutate {
+      add_tag => ["large_failed_transfer"]
+    }
+  } else {
+    mutate {
+      add_field => { "drop_reason" => "noise" }
+    }
+    drop { }
+  }
+}

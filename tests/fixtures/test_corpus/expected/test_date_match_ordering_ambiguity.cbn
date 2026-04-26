@@ -1,0 +1,17 @@
+# EXPECTED BEHAVIOR:
+# Date formats in the `match` array are evaluated in order.
+# The parser needs to capture this ordered dependency because an overlapping format (like `yy-MM-dd` vs `yyyy-MM-dd`)
+# can shadow subsequent formats if placed incorrectly. The lineage must show this exact order as a critical sequence.
+filter {
+  date {
+    match => [ 
+      "timestamp", 
+      "MMM dd yyyy HH:mm:ss",
+      "MMM  d yyyy HH:mm:ss", 
+      "ISO8601",
+      "UNIX"
+    ]
+    target => "@timestamp"
+    timezone => "UTC"
+  }
+}

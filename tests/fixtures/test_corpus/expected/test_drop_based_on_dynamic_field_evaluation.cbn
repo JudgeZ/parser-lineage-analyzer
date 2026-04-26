@@ -1,0 +1,9 @@
+# test_drop_based_on_dynamic_field_evaluation.cbn
+# EXPECTED BEHAVIOR:
+# Tests a drop filter enclosed in a conditional that evaluates a dynamically constructed field reference.
+# The parser needs to resolve the dynamic interpolation before evaluating the condition.
+filter {
+  if [action_%{dynamic_suffix}] == "DROP" {
+    drop {}
+  }
+}

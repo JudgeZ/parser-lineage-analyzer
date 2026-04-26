@@ -1,0 +1,40 @@
+filter {
+  // Case 1: Multiline Regex with brackets
+  // The scanner stops looking for the end of a regex literal at the newline.
+  // Because it fails to parse as a regex, the `{` and `}` inside the regex
+  // throw off `find_matching()`, corrupting the AST structure entirely.
+  if [message] =~ /multi
+    line
+    regex \{
+    with bracket/ {
+      mutate { replace => { "event.idm.read_only_udm.target.ip" => "1.1.1.1" } }
+  }
+
+  // Case 2: Trailing inline comments outside of a plugin block
+  // Because it's not the first token on the line, the scanner leaves it.
+  // The statement parser (Lark) will consume it as an UNKNOWN statement.
+  if [action] == "ALLOW" { // This inline comment trips up the statement grammar
+    mutate { replace => { "event.idm.read_only_udm.security_result.action" => "ALLOW" } }
+  } // And so does this one
+
+  // Case 3: Bare file path misinterpreted as a Regex literal
+  // The scanner sees a slash after `=`, and another slash on the same line.
+  // It treats `/var/log/` as a regex, leaving `syslog` dangling.
+  // This breaks the `config_parser` expecting key-value pairs.
+  mutate {
+    replace => { "event.idm.read_only_udm.target.file.full_path" => /var/log/syslog }
+  }
+
+  // Case 4: Dissect Indirect Fields
+  // Logstash indirect fields use `&{field}`. The analyzer strips the `&`
+  // and mistakenly reports lineage as if "dynamic_key" is the literal name.
+  dissect {
+    mapping => { "message" => "%{?skip_this} %{&dynamic_key}" }
+  }
+
+  // Case 5: Deeply Nested Interpolation
+  // The analyzer bails out of trying to resolve nested %{ %{} } syntax.
+  mutate {
+    replace => { "event.idm.read_only_udm.%{parent_%{child_token}}" => "nested_value" }
+  }
+}

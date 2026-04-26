@@ -1,0 +1,21 @@
+filter {
+  # TRIPWIRE 4: Escaped Quotes in Conditionals.
+  # parser.py's find_next_unquoted function completely ignores backslash escaping.
+  # When it encounters \", it toggles the string state off.
+  # Then it sees the { inside the string and thinks it's a block opening, ruining the AST.
+  if [message] == "this string has an escaped \" quote with a fake { brace" {
+    mutate { replace => { "event.idm.read_only_udm.target.ip" => "4.4.4.4" } }
+  }
+
+  # TRIPWIRE 5: Escaped Quotes in Mutate bodies.
+  # config_parser.py's parse_value function uses a naive text.find('"', pos + 1).
+  # This stops at the backslash-escaped quote, leaving the rest of the string hanging.
+  # It will totally fail to parse this key-value pair!
+  mutate {
+    replace => {
+      "event.idm.read_only_udm.target.hostname" => "host with \" quote"
+    }
+  }
+
+  mutate { merge => { "@output" => "event" } }
+}

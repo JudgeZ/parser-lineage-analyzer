@@ -1,0 +1,29 @@
+filter {
+  dissect {
+    mapping => {
+      "message" => "id=%{req_id} payload=%{enc_payload}"
+    }
+  }
+  
+  if [enc_payload] != "" {
+    base64 {
+      field => "enc_payload"
+    }
+    url_decode {
+      field => "enc_payload"
+    }
+    
+    mutate {
+      replace => {
+        "event.idm.read_only_udm.network.http.method" => "%{req_id}"
+        "event.idm.read_only_udm.network.application_protocol" => "%{enc_payload}"
+      }
+    }
+  }
+  
+  mutate {
+    merge => {
+      "@output" => "event"
+    }
+  }
+}

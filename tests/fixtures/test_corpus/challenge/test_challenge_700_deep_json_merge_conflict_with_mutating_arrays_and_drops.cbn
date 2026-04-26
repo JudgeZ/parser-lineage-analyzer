@@ -1,0 +1,33 @@
+# EXPECTED BEHAVIOR:
+# 1. JSON parsing target overwrites or merges with existing fields.
+# 2. The existing `[payload]` is an array, but the JSON parsing targets `[payload]`.
+# 3. Depending on the parser engine, this might overwrite the array with an object, or merge them.
+# 4. Subsequent conditional checks if `[payload][status]` exists (which only makes sense if it's an object).
+# 5. Tests structural validation of changing types mid-flight.
+
+filter {
+  mutate {
+    add_field => {
+      "payload" => ["initial", "array", "data"]
+    }
+  }
+
+  json {
+    source => "json_string"
+    target => "payload"
+    skip_on_invalid_json => true
+  }
+
+  if [payload][status] == "critical" {
+    drop { }
+  } else if "initial" in [payload] {
+    # This implies payload is still an array or the array elements were preserved
+    mutate {
+      add_tag => ["array_preserved"]
+    }
+  } else {
+    mutate {
+      add_tag => ["object_overwrite"]
+    }
+  }
+}

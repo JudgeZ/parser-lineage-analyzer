@@ -1,0 +1,5 @@
+{
+  "must_not_have_warning_codes": [
+    "malformed_config"
+  ]
+}

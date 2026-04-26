@@ -1,0 +1,4 @@
+{
+  "must_have_warning_codes": ["regex_over_escape", "runtime_condition"],
+  "must_not_have_warning_codes": ["malformed_config", "parse_recovery"]
+}

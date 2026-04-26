@@ -1,0 +1,15 @@
+// EXPECTED BEHAVIOR:
+// The kv filter parses key-value pairs into a specific target `[kv_data]`, with a prefix `parsed_`.
+// The parser must deduce that any fields created will be under `[kv_data][parsed_*]`.
+// Recursive parsing adds complexity to the tree. The analysis should mark `[kv_data]` as heavily mutated/dynamic.
+
+filter {
+  kv {
+    source => "raw_kv"
+    target => "kv_data"
+    field_split => "&?"
+    value_split => "="
+    prefix => "parsed_"
+    recursive => "true"
+  }
+}

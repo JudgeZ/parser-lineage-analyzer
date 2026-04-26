@@ -1,0 +1,14 @@
+# CHALLENGE REPRODUCTION: Grok Explicit Timeout Enforcement
+# Validates that catastrophic backtracking is explicitly halted by user-defined timeouts.
+# EXPECTED BEHAVIOR:
+# - A complex, backtracking-prone regex executed against a long string MUST abort 
+#   strictly within the 10-millisecond threshold.
+# - A `_groktimeout` tag must be appended to the event.
+filter {
+  grok {
+    match => {
+      "payload" => "([a-zA-Z]+)*$"
+    }
+    timeout_millis => 10
+  }
+}

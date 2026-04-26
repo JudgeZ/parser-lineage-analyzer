@@ -1,0 +1,59 @@
+# EXPECTED BEHAVIOR:
+# This test simulates a massive nested conditional structure combined with complex grok patterns
+# and regex overwrites, common in monolithic 700+ parser environments.
+# The parser must correctly identify the scope of each nested block, ensure that variables
+# created by inner grok blocks are accessible to subsequent conditionals, and handle
+# implicit type coercions when comparing extracted string values to integers or booleans.
+# It should not fail on catastrophic backtracking scenarios and must maintain the correct
+# AST hierarchy up to 10 levels deep.
+
+filter {
+  if [log_type] == "network" {
+    if [protocol] == "tcp" {
+      grok {
+        match => { "message" => "%{IP:client_ip}:%{NUMBER:client_port} -> %{IP:server_ip}:%{NUMBER:server_port} \[%{WORD:status}\]" }
+        overwrite => [ "message" ]
+      }
+      if [status] == "ESTABLISHED" or [status] == "SYN_SENT" {
+        if [client_port] > 1024 {
+          mutate {
+            add_tag => ["high_port_client"]
+            convert => { "client_port" => "integer" }
+          }
+          if [server_port] == 80 or [server_port] == 443 {
+            mutate {
+              add_tag => ["web_traffic"]
+            }
+            if [client_ip] =~ /^192\.168\./ {
+              drop { }
+            } else if [client_ip] =~ /^10\./ {
+              mutate {
+                add_field => { "network_zone" => "internal_vpc" }
+              }
+            } else {
+              mutate {
+                add_field => { "network_zone" => "external_public" }
+              }
+              if [network_zone] == "external_public" and [status] == "SYN_SENT" {
+                grok {
+                  match => { "message" => ".*flags=(?<tcp_flags>[A-Z]+).*" }
+                  tag_on_failure => ["_grok_tcp_flags_failure"]
+                }
+              }
+            }
+          }
+        }
+      } else {
+        mutate {
+          add_tag => ["non_established_tcp"]
+        }
+      }
+    } else if [protocol] == "udp" {
+      if [message] =~ /dns/i {
+        mutate { add_tag => ["dns_traffic"] }
+      }
+    }
+  } else {
+    mutate { add_field => { "unmatched_log" => "true" } }
+  }
+}

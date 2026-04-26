@@ -1,0 +1,16 @@
+# EXPECTED BEHAVIOR:
+# The parser must handle mutate operations that force array coercion and subsequent merges
+# that may conflict in type (e.g., merging a string into an array of integers or vice-versa).
+# The tool must correctly represent the final type and structure of the mutated fields.
+filter {
+  mutate {
+    # Coerce to array
+    split => { "tags_string" => "," }
+    # Rename a string field to an array field (this should overwrite or convert depending on behavior)
+    rename => { "single_tag" => "tags_string" }
+    # Merge an array of ints into a string field
+    merge => { "description" => "error_codes_array" }
+    # Merge a string into an array
+    merge => { "tags_string" => "status_string" }
+  }
+}

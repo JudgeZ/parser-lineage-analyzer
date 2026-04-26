@@ -1,0 +1,12 @@
+# Test: CIDR Filter
+# Description: Tests the cidr filter which checks if an IP is in a specific subnet.
+# The parser needs to recognize the `address` field being evaluated against the `network` list.
+# It should track the conditional application of tags based on this evaluation.
+
+filter {
+  cidr {
+    address => [ "%{client_ip}" ]
+    network => [ "192.168.0.0/16", "10.0.0.0/8", "172.16.0.0/12" ]
+    add_tag => [ "internal_ip" ]
+  }
+}

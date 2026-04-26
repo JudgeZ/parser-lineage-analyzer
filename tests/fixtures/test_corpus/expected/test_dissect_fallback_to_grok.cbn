@@ -1,0 +1,32 @@
+# EXPECTED BEHAVIOR:
+# 1. A common performance pattern where `dissect` is tried first for speed, 
+#    and if it fails (via `_dissectfailure` tag or similar), it falls back to `grok`.
+# 2. The parser needs to track control flow relying on plugin failure tags.
+# 3. Lineage must understand that the fields could originate from either dissect or grok.
+
+filter {
+  dissect {
+    mapping => {
+      "message" => "%{timestamp} [%{loglevel}] %{pid} - %{msg}"
+    }
+  }
+
+  if "_dissectfailure" in [tags] {
+    # If dissect fails (e.g., format slightly off), fall back to more flexible grok
+    mutate {
+      remove_tag => [ "_dissectfailure" ]
+    }
+    
+    grok {
+      match => { 
+        "message" => "%{TIMESTAMP_ISO8601:timestamp}\s+\[%{LOGLEVEL:loglevel}\]\s+(?:%{NUMBER:pid})?\s*-\s*%{GREEDYDATA:msg}" 
+      }
+    }
+  }
+
+  if [loglevel] == "ERROR" {
+    mutate {
+      add_tag => [ "error_detected" ]
+    }
+  }
+}

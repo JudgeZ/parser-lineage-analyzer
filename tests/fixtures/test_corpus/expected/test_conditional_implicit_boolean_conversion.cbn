@@ -1,0 +1,16 @@
+# EXPECTED BEHAVIOR:
+# Conditionals testing for field existence vs boolean truthiness.
+# `if [flag]` is true if the field exists and is not boolean false.
+# `if [flag] == "true"` is a strict string comparison.
+# The parser must differentiate between existence checks and type-specific value checks.
+filter {
+  if [is_admin] {
+    mutate { add_tag => ["admin_exists_or_true"] }
+  }
+  if [is_admin] == "true" {
+    mutate { add_tag => ["admin_string_true"] }
+  }
+  if [is_admin] == true {
+    mutate { add_tag => ["admin_boolean_true"] }
+  }
+}

@@ -1,0 +1,19 @@
+# BASELINE REPRODUCTION: Redundant and Conflicting Data Types
+# Validates that assigning a field to a string, then treating it as an object, 
+# then back to an array in the same flow does not crash the type inference engine.
+# The tool MUST handle these collisions gracefully, typically by keeping the last assigned type 
+# or marking it as ambiguous type.
+# EXPECTED BEHAVIOR: Field `dynamic_field` type transitions gracefully without causing panic.
+filter {
+  mutate {
+    add_field => { "dynamic_field" => "just a string" }
+  }
+  
+  mutate {
+    add_field => { "[dynamic_field][sub_field]" => "now it's an object" }
+  }
+  
+  mutate {
+    split => { "dynamic_field" => "," }
+  }
+}

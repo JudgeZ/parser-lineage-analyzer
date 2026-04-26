@@ -1,0 +1,27 @@
+# TEST EXPECTATION:
+# The parser must correctly trace implicit dependencies across multiple plugins and nested control flow.
+# The `split` operation depends on the outcome of the `gsub` operation, which in turn depends on the `grok` match.
+# The lineage tracker must capture that the final array elements in `tags` have their origin in the raw `message` string, modified by both grok and mutate.
+
+filter {
+  grok {
+    match => { "message" => "%{WORD:action} %{GREEDYDATA:raw_tags}" }
+  }
+
+  if [action] == "update" {
+    if [raw_tags] {
+      # Implicit dependency: gsub modifies the field extracted by grok
+      mutate {
+        gsub => [
+          "raw_tags", "\\|", ","
+        ]
+      }
+      
+      # Implicit dependency: split relies on the gsub having normalized the delimiters
+      mutate {
+        split => { "raw_tags" => "," }
+        rename => { "raw_tags" => "tags" }
+      }
+    }
+  }
+}

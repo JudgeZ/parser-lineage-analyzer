@@ -1,0 +1,44 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must correctly map the control flow paths involving the `drop` filter.
+# 2. If `status` is "404", an explicit `drop` occurs, halting execution for that event.
+# 3. Subsequent filters (like the grok and mutate at the end) should be logically unreachable 
+#    if `status` was "404". The parser should track that any dependencies on fields extracted 
+#    by the final grok are only valid if `status != 404`.
+# 4. Furthermore, there's a mutate that renames `status` to `http.status`. The parser must
+#    understand that if the flow reaches this mutate, `status` might have been originally
+#    something else, or it bypassed the drop.
+# 5. This tests complex control flow graph resolution and short-circuiting logic handling.
+
+filter {
+  grok {
+    match => { "message" => "%{IP:client_ip} - - \[%{HTTPDATE:timestamp}\] \"%{WORD:method} %{URIPATHPARAM:request} HTTP/%{NUMBER:httpversion}\" %{NUMBER:status} %{NUMBER:bytes}" }
+  }
+
+  if [status] == "404" {
+    if [request] =~ /^\/admin/ {
+      mutate {
+        add_tag => ["admin_scan_attempt"]
+      }
+      # Do not drop admin scans, we want to log them
+    } else {
+      drop { }
+    }
+  } else if [status] == "500" {
+    mutate {
+      add_tag => ["server_error"]
+    }
+  }
+
+  mutate {
+    rename => { "status" => "http.status" }
+    rename => { "request" => "http.request.url" }
+  }
+
+  # This logic only executes for non-dropped events
+  if "admin_scan_attempt" not in [tags] {
+    grok {
+      match => { "http.request.url" => "/%{WORD:app_context}/.*" }
+      tag_on_failure => ["_no_app_context"]
+    }
+  }
+}

@@ -1,0 +1,43 @@
+filter {
+  json {
+    source => "message"
+    on_error => "json_failure"
+    array_function => "split_columns"
+  }
+
+  grok {
+    match => {
+      "network" => "%{IP:srcAddr}:%{INT:srcPort} -> %{IP:dstAddr}:%{INT:dstPort}"
+    }
+    on_error => "grok_failure"
+  }
+
+  mutate {
+    convert => {
+      "srcPort" => "integer"
+      "dstPort" => "integer"
+    }
+  }
+
+  mutate {
+    replace => {
+      "event.idm.read_only_udm.principal.ip" => "%{srcAddr}"
+      "event.idm.read_only_udm.target.ip" => "%{dstAddr}"
+      "event.idm.read_only_udm.network.target.port" => "%{dstPort}"
+      "event.idm.read_only_udm.metadata.event_type" => "NETWORK_CONNECTION"
+    }
+  }
+
+  mutate {
+    merge => {
+      "event.idm.read_only_udm.observer.ip" => "device.ips.0"
+      "event.idm.read_only_udm.observer.ip" => "device.ips.1"
+    }
+  }
+
+  mutate {
+    merge => {
+      "@output" => "event"
+    }
+  }
+}

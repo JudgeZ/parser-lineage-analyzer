@@ -1,0 +1,21 @@
+# BASELINE REPRODUCTION: Empty Control Blocks and Plugins
+# Validates that when a configuration has an empty filter block,
+# an empty conditional, or an empty plugin definition, the parser
+# doesn't fail on missing tokens but instead processes them as no-ops.
+# The tool MUST gracefully parse and continue without generating syntax errors.
+# EXPECTED BEHAVIOR: Empty blocks are parsed cleanly as no-op nodes.
+filter {
+  # empty top-level filter
+}
+
+filter {
+  if [field] == "value" {
+    # empty condition
+  } else if [field] == "other" {
+    mutate {
+      # empty plugin
+    }
+  } else {
+    
+  }
+}

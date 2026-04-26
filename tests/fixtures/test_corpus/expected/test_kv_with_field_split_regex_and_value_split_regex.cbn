@@ -1,0 +1,14 @@
+# EXPECTED BEHAVIOR:
+# The parser must correctly interpret KV filters where both `field_split_pattern` and `value_split_pattern`
+# use regular expressions. The parser needs to correctly identify these as regex literals or strings containing regex.
+# It should handle cases where the regex contains escaped characters and lookarounds.
+filter {
+  kv {
+    source => "message"
+    field_split_pattern => "(?:\s+\|\s+|\t)"
+    value_split_pattern => "(?:[:=]\s*)"
+    trim_key => "\s"
+    trim_value => "\s\""
+    include_keys => ["username", "src_ip", "status"]
+  }
+}

@@ -1,0 +1,21 @@
+# EXPECTED BEHAVIOR:
+# Evaluates how the parser handles a translate dictionary containing both
+# exact keys and regex keys (enabled via `exact => true` and `regex => true`).
+# The parser must understand that overlapping keys might lead to ambiguous
+# matches depending on the plugin's internal evaluation order.
+
+filter {
+  translate {
+    field => "error_message"
+    destination => "severity"
+    exact => true
+    regex => true
+    dictionary => {
+      "Connection reset by peer" => "HIGH"
+      "^Connection.*" => "MEDIUM"
+      "Timeout" => "LOW"
+      "^Time.*" => "INFO"
+    }
+    fallback => "UNKNOWN"
+  }
+}

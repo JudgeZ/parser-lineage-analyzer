@@ -1,0 +1,27 @@
+# EXPECTED BEHAVIOR:
+# 1. The `@timestamp` field is special in Logstash.
+# 2. Parsers must track mutations, date filter extractions into `@timestamp`, 
+#    and explicit renaming to/from `@timestamp`.
+# 3. Ensure that assigning a string to `@timestamp` outside of the date filter 
+#    is flagged or handled according to Logstash semantics.
+
+filter {
+  # Default target for date is @timestamp
+  date {
+    match => [ "raw_timestamp", "ISO8601", "yyyy-MM-dd HH:mm:ss" ]
+    timezone => "UTC"
+  }
+
+  if "_dateparsefailure" in [tags] {
+    mutate {
+      # Sometimes users manually override the timestamp if parsing fails
+      replace => { "@timestamp" => "%{backup_timestamp}" }
+      add_tag => [ "used_backup_timestamp" ]
+    }
+  }
+
+  # Exporting timestamp to another field
+  mutate {
+    add_field => { "event_time" => "%{@timestamp}" }
+  }
+}

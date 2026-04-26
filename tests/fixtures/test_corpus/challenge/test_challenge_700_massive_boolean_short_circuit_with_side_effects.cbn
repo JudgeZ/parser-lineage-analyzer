@@ -1,0 +1,24 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser must accurately map the boolean operator precedence (AND vs OR) and understand short-circuit evaluation.
+# 2. It must recognize that `[message] =~ /(?<dynamic_capture>critical_error_code_\d+)/` has a side effect: it populates `dynamic_capture` ONLY if it is evaluated AND matches.
+# 3. Because of short-circuiting, if `[status] == "FATAL"` is true, the regex might never evaluate. Thus, `dynamic_capture` may be uninitialized in the true branch.
+# 4. The downstream conditional `if [dynamic_capture]` must be flagged as potentially accessing an uninitialized variable depending on *which* part of the `if` condition triggered the block.
+# 5. It must handle deep nesting of parentheses in the boolean expression.
+
+filter {
+  if ( [status] == "FATAL" or ( [type] == "syslog" and [message] =~ /(?<dynamic_capture>critical_error_code_\d+)/ ) ) and ( [priority] < 3 or [emergency] == true ) {
+    mutate {
+      add_tag => ["high_priority_alert"]
+    }
+
+    if [dynamic_capture] {
+      mutate {
+        add_field => { "extracted_code" => "%{dynamic_capture}" }
+      }
+    } else {
+      mutate {
+        add_field => { "extracted_code" => "unknown_due_to_short_circuit" }
+      }
+    }
+  }
+}

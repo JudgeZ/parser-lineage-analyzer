@@ -1,0 +1,4 @@
+{
+  "must_have_warning_codes": ["drop", "runtime_condition"],
+  "must_resolve_fields": ["tags", "login_user"]
+}

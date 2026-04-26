@@ -1,0 +1,51 @@
+# EXPECTED BEHAVIOR:
+# 1. The parser should recognize that the field `[data]` can be populated as an Array in one branch and an Object (hash) in another branch depending on the log source.
+# 2. Subsequent operations like `split`, `mutate { merge }`, or deep field access (`[data][username]`) should flag a potential type conflict or implicit coercion issue.
+# 3. The tool should handle the complex conditional routing that leads to these conflicting states.
+# 4. It must parse the `json` plugin inside conditionals and track the resulting schema divergence.
+
+filter {
+  if [log][type] == "array_payload" {
+    json {
+      source => "message"
+      target => "parsed_json"
+    }
+    # parsed_json is expected to be {"data": [1, 2, 3]}
+    mutate {
+      rename => { "[parsed_json][data]" => "[data]" }
+    }
+  } else if [log][type] == "object_payload" {
+    json {
+      source => "message"
+      target => "parsed_json"
+    }
+    # parsed_json is expected to be {"data": {"user": "admin", "id": 1}}
+    mutate {
+      rename => { "[parsed_json][data]" => "[data]" }
+    }
+  } else {
+    # Default to string
+    mutate {
+      add_field => { "[data]" => "unparsed string payload" }
+    }
+  }
+
+  # This conditional attempts to access an object key, which will fail if [data] is an array or string
+  if [data][user] {
+    mutate {
+      add_field => { "extracted_user" => "%{[data][user]}" }
+    }
+  }
+
+  # This mutate attempts to merge, assuming [data] is an array, which will cause issues if it's an object or string
+  mutate {
+    merge => { "all_data" => "[data]" }
+  }
+
+  # This attempts to split a string, which fails if [data] is an object or array
+  if [log][type] == "unknown" {
+    mutate {
+      split => { "[data]" => " " }
+    }
+  }
+}

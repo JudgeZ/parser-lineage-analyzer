@@ -1,0 +1,21 @@
+# TEST BEHAVIOR:
+# Overwriting the same field multiple times within different grok blocks
+# or within the same block if it has multiple patterns. The parser must
+# correctly link the latest overwrite to the final field lineage.
+filter {
+  grok {
+    match => { "message" => "%{WORD:status} %{GREEDYDATA:rest}" }
+    overwrite => ["status"]
+  }
+
+  if [status] == "PENDING" {
+    grok {
+      match => { "rest" => "%{WORD:status} %{GREEDYDATA:rest_again}" }
+      overwrite => ["status"]
+    }
+  }
+
+  mutate {
+    add_field => { "final_status" => "%{status}" }
+  }
+}

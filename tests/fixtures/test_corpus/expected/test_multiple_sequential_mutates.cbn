@@ -1,0 +1,24 @@
+# EXPECTED BEHAVIOR:
+# 1. Logstash `mutate` blocks have a specific internal execution order.
+# 2. To force a specific order (e.g., rename then lowercase, which internally 
+#    might run in reverse if in the same block), authors will write 
+#    multiple sequential `mutate` blocks.
+# 3. The parser's lineage and state tracking must execute them sequentially, not merge them.
+
+filter {
+  # Block 1
+  mutate {
+    rename => { "Source IP" => "src_ip" }
+    rename => { "Dest IP" => "dest_ip" }
+  }
+
+  # Block 2 - This depends on Block 1 finishing
+  mutate {
+    add_field => { "connection" => "%{src_ip}:%{dest_ip}" }
+  }
+
+  # Block 3 - This depends on Block 2 finishing
+  mutate {
+    lowercase => [ "connection" ]
+  }
+}

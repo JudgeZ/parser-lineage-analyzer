@@ -1,0 +1,11 @@
+# Test: Base64 Decoding
+# Description: Tests the base64 filter. The parser should track that `decoded_payload`
+# is derived from the base64 decoding of `encoded_payload`.
+
+filter {
+  base64 {
+    source => "encoded_payload"
+    target => "decoded_payload"
+    action => "decode"
+  }
+}

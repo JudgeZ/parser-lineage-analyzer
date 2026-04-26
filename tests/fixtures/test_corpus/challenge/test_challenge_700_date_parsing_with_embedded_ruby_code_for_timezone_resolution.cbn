@@ -1,0 +1,25 @@
+# EXPECTED BEHAVIOR:
+# 1. Uses a ruby block to perform complex timezone lookup logic, possibly involving external IP/Geo mapping conceptually.
+# 2. Stores the result in a field, which the date plugin then uses.
+# 3. Tests the implicit dependency edge case where ruby code dictates how the date plugin behaves later.
+
+filter {
+  ruby {
+    code => "
+      ip = event.get('client_ip')
+      tz = 'UTC'
+      if ip && ip.start_with?('10.')
+        tz = 'America/New_York'
+      elsif ip && ip.start_with?('192.')
+        tz = 'Europe/London'
+      end
+      event.set('dynamic_tz', tz)
+    "
+  }
+
+  date {
+    match => [ "timestamp", "ISO8601" ]
+    timezone => "%{dynamic_tz}"
+    target => "@timestamp"
+  }
+}

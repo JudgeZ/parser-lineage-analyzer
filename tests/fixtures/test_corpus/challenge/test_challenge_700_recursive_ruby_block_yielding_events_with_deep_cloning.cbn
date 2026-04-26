@@ -1,0 +1,28 @@
+# EXPECTED BEHAVIOR:
+# 1. Tests ruby blocks that yield new events.
+# 2. Checks if cloning handles nested objects properly (deep vs shallow clone).
+# 3. Ensures the original event and the cloned events follow expected control flows independently.
+
+filter {
+  ruby {
+    code => "
+      items = event.get('items')
+      if items.is_a?(Array)
+        items.each do |item|
+          new_event = event.clone
+          new_event.set('current_item', item)
+          new_event.set('items', nil) # Remove the array from the clone to prevent explosion
+          new_event.tag('split_event')
+          yield new_event
+        end
+        event.cancel # Drop the original event
+      end
+    "
+  }
+
+  if "split_event" in [tags] {
+    mutate {
+      convert => { "[current_item][value]" => "integer" }
+    }
+  }
+}

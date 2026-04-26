@@ -1,0 +1,13 @@
+# EXPECTED BEHAVIOR:
+# The parser must understand that `init` block defines state (like `@count`)
+# that is available to the `code` block across multiple event executions.
+# It should model the scope of instance variables initialized in `init`.
+filter {
+  ruby {
+    init => "@count = 0"
+    code => "
+      @count += 1
+      event.set('event_count', @count)
+    "
+  }
+}

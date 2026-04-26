@@ -1,0 +1,46 @@
+# TEST BEHAVIOR:
+# Simulates an extreme array mutation scenario where gsub is applied to an array of strings,
+# and some of those strings are transformed into delimiters, then split, joined, and compacted.
+# The parser MUST track the array's dimensionality and the implicit loops triggered by
+# running gsub over array elements, ensuring that types collapse back to the expected state.
+
+filter {
+  mutate {
+    # Create an array
+    add_field => { "data_stream" => ["item1_A_B", "item2_C", "item3_A_D_E"] }
+  }
+
+  mutate {
+    # Gsub applied to every element in the array
+    gsub => [
+      "data_stream", "_A_", "|",
+      "data_stream", "_", "|"
+    ]
+  }
+
+  # Join the array into a single string
+  mutate {
+    join => { "data_stream" => "||" }
+  }
+
+  # Split it back into a larger array
+  mutate {
+    split => { "data_stream" => "|" }
+  }
+
+  # Translate the array elements
+  translate {
+    field => "data_stream"
+    destination => "translated_stream"
+    dictionary => {
+      "item1" => "I1"
+      "item2" => "I2"
+      "item3" => "I3"
+      "B" => "beta"
+      "C" => "gamma"
+      "D" => "delta"
+      "E" => "epsilon"
+    }
+    fallback => "unknown"
+  }
+}

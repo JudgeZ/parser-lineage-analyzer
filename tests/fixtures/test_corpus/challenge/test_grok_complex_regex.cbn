@@ -1,0 +1,18 @@
+# CHALLENGE: Grok Complex Backtracking Simulation
+# Validates that the parser can handle extremely dense, complex regular expressions in `grok`
+# without causing excessive parsing times (simulating prevention of ReDoS during static analysis).
+# The tool MUST parse the literal regexes, extract capture groups safely, and maintain
+# its AST generation without hanging.
+# EXPECTED BEHAVIOR: Fast successful parse. Capture groups `user` and `domain` are extracted
+# and added to lineage.
+filter {
+  grok {
+    match => {
+      "message" => "^(?:[a-zA-Z0-9]+(?:[\w.-]+)*)@(?<domain>[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\s+User:\s*(?<user>(?:[a-zA-Z0-9_]+)*)$"
+    }
+    # Some older configurations might have massive inline patterns
+    pattern_definitions => {
+      "COMPLEX_IP" => "(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)"
+    }
+  }
+}

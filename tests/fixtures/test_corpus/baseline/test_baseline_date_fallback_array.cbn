@@ -1,0 +1,19 @@
+# TEST EXPECTATION:
+# The parser should understand that the 'date' filter can take an array of match patterns.
+# It should track that 'event_timestamp' (the default target if not specified, or explicitly 'target')
+# is populated by 'log_time'. It should also recognize that multiple formats are attempted in order.
+# The analyzer should record the potential timezones as context for this field.
+
+filter {
+  date {
+    match => [ "log_time", "ISO8601", "yyyy-MM-dd HH:mm:ss", "MMM dd HH:mm:ss" ]
+    target => "@timestamp"
+    timezone => "UTC"
+  }
+
+  if [@timestamp] {
+    mutate {
+      add_tag => [ "time_parsed" ]
+    }
+  }
+}

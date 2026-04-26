@@ -1,0 +1,14 @@
+# EXPECTED BEHAVIOR:
+# 1. The lexer must handle escaped newline `\n` and carriage return `\r` characters within the gsub string array.
+# 2. The regex literal `[\r\n]+` should be parsed as a valid regex pattern for substitution.
+# 3. The replacement string `" "` (space) should be correctly paired with the target regex.
+# 4. The field `raw_message` should be tracked as both a read and write dependency.
+
+filter {
+  mutate {
+    gsub => [
+      "raw_message", "[\r\n]+", " ",
+      "raw_message", "\t", "  "
+    ]
+  }
+}
