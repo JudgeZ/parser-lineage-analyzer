@@ -622,21 +622,35 @@ def _ir_concat_many(parts: list[_IR]) -> _IR:
 # Logstash uses Oniguruma named-capture syntax `(?<name>...)`; Python's
 # stdlib regex uses `(?P<name>...)`. They're semantically identical for
 # matching (capture names are immaterial here), so we rewrite before
-# handing the body to ``sre_parse``. Two negative cases the regex must
-# avoid:
+# handing the body to ``sre_parse``. Two negative cases the rewrite
+# must avoid:
 #   * Lookbehind ``(?<=`` / ``(?<!`` — handled by the lookahead
 #     ``(?=[A-Za-z_])`` requiring an identifier char after ``<``.
-#   * Escaped left-paren ``\(?<...>`` — a literal ``(`` followed by an
-#     unrelated ``?<...``. The fixed-length lookbehind ``(?<!\\)``
-#     skips the rewrite when the ``(`` is preceded by a backslash.
-#     Without it the rewrite produces a body Python's ``re`` rejects
-#     as a syntax error, costing us a precision regression where the
-#     algebra returns UNKNOWN on a body Onigmo would accept.
-_ONIGURUMA_NAMED_CAPTURE_RE = re.compile(r"(?<!\\)\(\?<(?=[A-Za-z_])")
+#   * Escaped left-paren ``\(?<...>`` — a literal ``(`` followed by
+#     unrelated ``?<...``. We rewrite only when an *even* number of
+#     backslashes precedes the ``(`` (zero counts as even); odd means
+#     the ``(`` itself is escaped. Python regex lookbehind is
+#     fixed-length, so the parity check happens in a callback that
+#     scans the preceding chars. Naive ``(?<!\\)`` would mis-handle
+#     ``\\(?<x>...`` (two backslashes = literal ``\`` then real named
+#     capture), leaving it unconverted.
+_NAMED_CAPTURE_HEAD_RE = re.compile(r"\(\?<(?=[A-Za-z_])")
 
 
 def _normalize_oniguruma(body: str) -> str:
-    return _ONIGURUMA_NAMED_CAPTURE_RE.sub("(?P<", body)
+    def _rewrite(match: re.Match[str]) -> str:
+        # Count backslashes immediately preceding the match. Odd ⇒
+        # ``(`` is escaped (literal paren), don't rewrite.
+        backslashes = 0
+        i = match.start() - 1
+        while i >= 0 and body[i] == "\\":
+            backslashes += 1
+            i -= 1
+        if backslashes % 2 == 1:
+            return match.group(0)
+        return "(?P<"
+
+    return _NAMED_CAPTURE_HEAD_RE.sub(_rewrite, body)
 
 
 # Additional ``sre_parse`` opcodes used by Phase 1 lowering. Phase 0
@@ -786,7 +800,16 @@ def _lower_pattern_to_ir(body: str, flags: str) -> _IR | None:
     if not starts_anchored:
         parts.append(sigma_star)
     parts.append(inner_ir)
-    if not ends_anchored:
+    if ends_anchored:
+        # Ruby/Oniguruma (and Python ``re`` in default mode) let ``$``
+        # match *either* end-of-string *or* just before a final ``\n``.
+        # Without the optional newline below, the algebra would
+        # unsoundly answer YES for pairs like ``^a?$`` ∩ ``.[^a\r]$``
+        # where both actually match ``"a\n"`` (``^a?$`` accepts ``a``
+        # followed by trailing newline; the second pattern accepts
+        # ``a`` then ``\n`` since ``\n`` is neither ``a`` nor ``\r``).
+        parts.append(_ir_optional(_IRChar(_CharSet(frozenset({0x0A}), False))))
+    else:
         parts.append(sigma_star)
     return _ir_concat_many(parts)
 

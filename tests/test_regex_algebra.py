@@ -1014,20 +1014,51 @@ class TestReviewFindings:
         assert not errors, f"concurrent worker raised: {errors[0]!r}"
         assert len(algebra._DEFINITIVE_DISJOINT_CACHE) <= algebra._DEFINITIVE_CACHE_MAX
 
-    def test_oniguruma_named_capture_rewrite_skips_escaped_paren(self) -> None:
-        """The ``\\(?<x>`` shape (literal ``(`` followed by ``?<x>``)
-        is *not* an Oniguruma named capture — the ``(`` is escaped.
-        ``_normalize_oniguruma`` must not rewrite it; otherwise the
-        body becomes ``\\(?P<x>...`` which Python's ``re`` rejects as
-        a syntax error, and the algebra returns UNKNOWN on a body
-        Onigmo would actually parse fine.
+    @pytest.mark.parametrize(
+        "body,expected,reason",
+        [
+            (r"(?<x>foo)", r"(?P<x>foo)", "0 backslashes — bare named capture, rewrite"),
+            (r"\(?<x>foo)", r"\(?<x>foo)", "1 backslash — escaped paren, skip"),
+            (r"\\(?<x>foo)", r"\\(?P<x>foo)", "2 backslashes — literal \\ then real capture"),
+            (r"\\\(?<x>foo)", r"\\\(?<x>foo)", "3 backslashes — escaped paren, skip"),
+            (r"\\\\(?<x>foo)", r"\\\\(?P<x>foo)", "4 backslashes — literal \\\\ then real capture"),
+            (r"(?<=foo)bar", r"(?<=foo)bar", "lookbehind ``=`` — untouched"),
+            (r"(?<!foo)bar", r"(?<!foo)bar", "negative lookbehind ``!`` — untouched"),
+        ],
+    )
+    def test_oniguruma_rewrite_handles_backslash_parity(self, body: str, expected: str, reason: str) -> None:
+        """The rewrite must count *all* preceding backslashes for
+        parity, not just check the immediately preceding char.
+
+        The naive ``(?<!\\\\)`` lookbehind got 2-backslash bodies wrong:
+        ``\\\\(?<x>...`` is "literal backslash + real named capture"
+        but the lookbehind sees the closer of the two backslashes,
+        skips the rewrite, and ``_lower_pattern_to_ir`` then fails on
+        unconverted ``(?<x>`` syntax — costing a precision regression
+        on a body Onigmo would parse fine.
         """
-        # Direct rewrite: untouched.
-        assert _normalize_oniguruma(r"\(?<x>foo)") == r"\(?<x>foo)"
-        # Real Oniguruma named capture: rewritten to Python syntax.
-        assert _normalize_oniguruma(r"(?<x>foo)") == r"(?P<x>foo)"
-        # Lookbehind shapes: untouched (``=`` / ``!`` after ``<``,
-        # not an identifier char, so the lookahead in the regex
-        # already prevents the rewrite).
-        assert _normalize_oniguruma(r"(?<=foo)bar") == r"(?<=foo)bar"
-        assert _normalize_oniguruma(r"(?<!foo)bar") == r"(?<!foo)bar"
+        assert _normalize_oniguruma(body) == expected, reason
+
+    def test_dollar_anchor_matches_before_trailing_newline(self) -> None:
+        """Ruby/Oniguruma (and Python ``re`` in default mode) let
+        ``$`` match end-of-string *or* just before a final ``\\n``.
+        Without modeling that, the algebra unsoundly answers YES for
+        pairs like ``^a?$`` ∩ ``.[^a\\r]$`` even though both match
+        ``"a\\n"``.
+        """
+        # The exact pair from the review.
+        assert regex_languages_disjoint("^a?$", "", r".[^a\r]$", "") != Trilean.YES
+        # A clearer pair that's only "not disjoint" because of the
+        # trailing-newline rule: ``^A$`` matches ``"A\n"`` and
+        # ``^A\n$`` only matches ``"A\n"``/``"A\n\n"``. Without the
+        # rule, we'd say they're disjoint.
+        assert regex_languages_disjoint("^A$", "", r"^A\n$", "") == Trilean.NO
+        # Membership: ``"A\n"`` is in ``L(^A$)`` under the rule.
+        assert literal_in_regex_language("A\n", "^A$", "") == Trilean.YES
+        # And the strict cases still hold: ``"A"`` is in ``L(^A$)``
+        # but ``"AB"`` is not.
+        assert literal_in_regex_language("A", "^A$", "") == Trilean.YES
+        assert literal_in_regex_language("AB", "^A$", "") == Trilean.NO
+        # ``"A\n\n"`` is *not* in ``L(^A$)`` — only one trailing \n
+        # is permitted, not arbitrarily many.
+        assert literal_in_regex_language("A\n\n", "^A$", "") == Trilean.NO
