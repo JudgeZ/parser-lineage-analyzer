@@ -9,7 +9,11 @@ from __future__ import annotations
 
 import pytest
 
-from parser_lineage_analyzer._analysis_condition_facts import _normalize_condition
+from parser_lineage_analyzer._analysis_condition_facts import (
+    _normalize_condition,
+    _split_top_level_and,
+    _split_top_level_or,
+)
 
 
 def _slow_normalize(condition: object) -> str:
@@ -64,3 +68,43 @@ def test_non_string_input_uses_str() -> None:
 
 def test_empty_string_returns_empty_string() -> None:
     assert _normalize_condition("") == ""
+
+
+# Regression tests for `_split_top_level`: an over-restrictive boundary
+# check used to drop splits when the first character of the right-hand
+# operand was an identifier char (e.g. ``and NOT(...)``, ``and present``,
+# ``and android(...)``). The separator's leading + trailing spaces are
+# already the word boundaries; the separate identifier-char guard was
+# redundant and lossy. Conjuncts that fail to split are silently merged,
+# which weakens regex-algebra contradiction detection.
+@pytest.mark.parametrize(
+    "condition,expected",
+    [
+        ('[a]=="x" and NOT([b]=="y")', ['[a]=="x"', 'NOT([b]=="y")']),
+        ('[a]=="x" and present', ['[a]=="x"', "present"]),
+        ("x and android(z)", ["x", "android(z)"]),
+        ("a and b and c", ["a", "b", "c"]),
+        ("branding", ["branding"]),
+        ("x andX y", ["x andX y"]),
+        ("a and (b or c)", ["a", "(b or c)"]),
+        ('"a and b"', ['"a and b"']),
+        ("/a and b/", ["/a and b/"]),
+    ],
+)
+def test_split_top_level_and_handles_identifier_rhs(condition: str, expected: list[str]) -> None:
+    assert _split_top_level_and(condition) == expected
+
+
+@pytest.mark.parametrize(
+    "condition,expected",
+    [
+        ('[a]=="x" or NOT([b]=="y")', ['[a]=="x"', 'NOT([b]=="y")']),
+        ('[a]=="x" or present', ['[a]=="x"', "present"]),
+        ("a or b or c", ["a", "b", "c"]),
+        ("origin", ["origin"]),
+        ("x orX y", ["x orX y"]),
+        ("a or (b and c)", ["a", "(b and c)"]),
+    ],
+)
+def test_split_top_level_or_handles_identifier_rhs(condition: str, expected: list[str]) -> None:
+    assert _split_top_level_or(condition) == expected

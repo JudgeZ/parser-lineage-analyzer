@@ -18,6 +18,8 @@ _PUBLIC_EXPORTS = (
     "WarningReason",
     "DiagnosticRecord",
     "SyntaxDiagnostic",
+    "AnalysisSummaryDict",
+    "CompactAnalysisSummaryDict",
 )
 if not TYPE_CHECKING:
     for _export in _PUBLIC_EXPORTS:
@@ -27,6 +29,8 @@ if not TYPE_CHECKING:
 if TYPE_CHECKING:
     from .analyzer import ReverseParser as ReverseParser
     from .model import (
+        AnalysisSummaryDict as AnalysisSummaryDict,
+        CompactAnalysisSummaryDict as CompactAnalysisSummaryDict,
         DiagnosticRecord as DiagnosticRecord,
         IOAnchor as IOAnchor,
         Lineage as Lineage,
@@ -57,6 +61,8 @@ _MODEL_EXPORTS = {
     "WarningReason",
     "DiagnosticRecord",
     "SyntaxDiagnostic",
+    "AnalysisSummaryDict",
+    "CompactAnalysisSummaryDict",
 }
 
 

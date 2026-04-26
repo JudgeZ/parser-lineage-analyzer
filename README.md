@@ -74,8 +74,8 @@ Mappings:
 
 ## Install
 
-Requires Python 3.10+. Runtime dependencies: `lark>=1.1,<2`,
-`pydantic>=2,<3`.
+Requires Python 3.10+. Runtime dependencies: `lark>=1.3.1,<2`,
+`pydantic>=2.13.3,<3`.
 
 ```bash
 pip install .             # installs the parser-lineage-analyzer CLI
@@ -142,15 +142,18 @@ Public exports from `parser_lineage_analyzer`:
 |---|---|
 | `ReverseParser` | Analyzer entry point. Construct with parser source, then call `.query(udm_field)` or `.analyze()`. |
 | `QueryResult` | Result of `.query(...)`, including `mappings` and an aggregate `status`. |
+| `QueryResultAggregate` | Snapshot of every cross-mapping derived field returned by `QueryResult.aggregate()`. |
 | `Lineage` | One static path the parser could use to populate the field. |
 | `LineageStatus` | Per-mapping status — see [Output statuses](#output-statuses). |
 | `QueryStatus` | Aggregate status across all mappings. |
-| `Status` | Legacy alias for `LineageStatus`. |
 | `SourceRef` | A source location (raw field, capture, JSON path, XPath, KV key, etc.). |
 | `OutputAnchor` | The `@output` event(s) the field is emitted on. |
+| `IOAnchor` | Top-level Logstash-style input/output plugin instance. |
 | `TaintReason` | Structured reason a path is uncertain. |
 | `WarningReason` | Structured reason for a parser-level warning. |
 | `DiagnosticRecord`, `SyntaxDiagnostic` | Parser/analyzer diagnostics. |
+| `AnalysisSummaryDict` | `TypedDict` shape returned by `ReverseParser.analysis_summary()`. |
+| `CompactAnalysisSummaryDict` | `TypedDict` shape returned by `ReverseParser.analysis_summary(compact=True)`. |
 
 Modules whose names start with `_` are private. `QueryResult.status` reports
 the dominant outcome — dynamic or unresolved uncertainty takes precedence
