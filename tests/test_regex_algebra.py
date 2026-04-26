@@ -828,6 +828,33 @@ class TestReviewFindings:
         expired = _Budget(deadline=0.0)
         assert _complete_and_complement_dfa(dfa, expired) is None
 
+    def test_non_ascii_letter_under_caseless_flag_is_unsupported(self) -> None:
+        """Phase 1's case-folding only handles ASCII letter pairs.
+        Non-ASCII letters with Unicode case (``é``↔``É``, ``α``↔``Α``,
+        ``ß``↔``ẞ``, ...) would be folded by Onigmo but not by us;
+        leaving them unchanged would let the algebra return YES based
+        on a language that's strictly smaller than the real one.
+
+        Concrete bug this guards: ``regex_languages_disjoint('^é$',
+        'i', '^É$', '')`` would return YES (proven disjoint) under
+        the broken implementation because Phase 1 sees ``{é}`` vs
+        ``{É}`` while Onigmo's ``(?i)`` makes ``^é$`` match both.
+        """
+        # Direct case from the review.
+        assert regex_languages_disjoint("^é$", "i", "^É$", "") == Trilean.UNKNOWN
+        assert language_subset("^é$", "i", "^É$", "") == Trilean.UNKNOWN
+        assert literal_in_regex_language("É", "^é$", "i") == Trilean.UNKNOWN
+        # A handful more scripts to make sure the rule is general.
+        for body in ("^α$", "^ß$", "^Й$"):
+            assert regex_languages_disjoint(body, "i", "^X$", "") == Trilean.UNKNOWN, body
+        # ASCII-only with /i still honored — fold pair {a,A} works fine.
+        assert regex_languages_disjoint("^a$", "i", "^A$", "") == Trilean.NO
+        assert literal_in_regex_language("A", "^a$", "i") == Trilean.YES
+        # Non-ASCII *without* case (snowman, digit, symbol) passes
+        # through unchanged because Onigmo doesn't fold it either.
+        assert literal_in_regex_language("☃", "^☃$", "i") == Trilean.YES
+        assert literal_in_regex_language("1", "^1$", "i") == Trilean.YES
+
     def test_inline_caseless_flag_is_unsupported_not_globally_folded(self) -> None:
         """Logstash uses Onigmo, where ``(?i)`` is scoped to its
         enclosing group. Phase 1's IR has no way to model mid-pattern
@@ -856,6 +883,49 @@ class TestReviewFindings:
         # any string containing a case-insensitive ``foo``.
         assert literal_in_regex_language("alert_FOO_msg", "(?i:foo)", "") == Trilean.YES
         assert literal_in_regex_language("alert_BAR_msg", "(?i:foo)", "") == Trilean.NO
+
+    def test_unknown_results_are_not_cached(self) -> None:
+        """A transient cap hit (cold caches under load, slow CI, etc.)
+        can make ``regex_languages_disjoint`` return ``UNKNOWN`` for
+        an input that would resolve to YES/NO with a fresh budget.
+        Caching that ``UNKNOWN`` would let one slow run mask a
+        definitive result for the rest of the process — definitively
+        unsound for precision (still sound for correctness, since
+        ``UNKNOWN`` only ever drops branches conservatively).
+
+        This test forces an UNKNOWN by handing the algebra a
+        zero-budget call (via patching), then verifies a normal call
+        afterward still returns the correct definitive answer.
+        """
+        from parser_lineage_analyzer import _regex_algebra as algebra
+
+        # Use a unique pair so other tests can't have populated the
+        # definitive cache for these bodies.
+        body_a = "^uncached_test_disjoint_a$"
+        body_b = "^uncached_test_disjoint_b$"
+
+        # Clear caches up front so the test is independent.
+        algebra._DEFINITIVE_DISJOINT_CACHE.clear()
+
+        # Force an UNKNOWN by patching the BFS to bail. We do this by
+        # temporarily replacing ``_intersect_empty_nfa`` with a stub.
+        original = algebra._intersect_empty_nfa
+        algebra._intersect_empty_nfa = lambda *_args, **_kwargs: Trilean.UNKNOWN
+        try:
+            result_unknown = regex_languages_disjoint(body_a, "", body_b, "")
+        finally:
+            algebra._intersect_empty_nfa = original
+        assert result_unknown == Trilean.UNKNOWN
+
+        # The UNKNOWN must NOT be in the definitive cache.
+        canonical_key = (body_a, "", body_b, "") if (body_a, "") <= (body_b, "") else (body_b, "", body_a, "")
+        assert canonical_key not in algebra._DEFINITIVE_DISJOINT_CACHE
+
+        # A subsequent call with the real BFS gets the right answer.
+        result_real = regex_languages_disjoint(body_a, "", body_b, "")
+        assert result_real == Trilean.YES  # different anchored literals
+        # And NOW the definitive answer IS cached.
+        assert algebra._DEFINITIVE_DISJOINT_CACHE.get(canonical_key) == Trilean.YES
 
     def test_language_subset_does_not_exceed_5x_budget(self) -> None:
         """End-to-end soak: hand :func:`language_subset` a pair

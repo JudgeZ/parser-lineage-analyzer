@@ -660,26 +660,48 @@ class _LoweringContext:
     case_fold: bool
 
 
-def _case_fold_chars(chars: frozenset[int]) -> frozenset[int]:
-    """ASCII case-fold: each letter becomes the pair {upper, lower}.
+def _case_fold_chars(chars: frozenset[int]) -> frozenset[int] | None:
+    """ASCII case-fold: each ASCII letter becomes the pair {upper, lower}.
 
-    Non-ASCII letters are left as-is — Phase 1 explicitly does not model
-    Unicode case folding (which is locale-dependent and unbounded).
-    Bodies that combine ``(?i)`` with non-ASCII letters in literals
-    take a conservative path because ``_PERMITTED_INLINE_FLAGS`` rejects
-    inline flags entirely; ``(?i)`` arrives only via the trailing
-    ``flags`` argument here.
+    Returns ``None`` if any code point in ``chars`` is a *non-ASCII*
+    letter with Unicode case (e.g. ``é``↔``É``, ``α``↔``Α``,
+    ``ß``↔``ẞ``). Phase 1 does not model Unicode case folding —
+    leaving such characters unchanged would let the algebra return
+    definitive ``YES``/``NO`` answers based on a language Onigmo
+    actually folds (``regex_languages_disjoint("^é$", "i", "^É$", "")``
+    would unsoundly come back ``YES``). Callers propagate the ``None``
+    as ``Trilean.UNKNOWN``.
+
+    ASCII non-letters and non-ASCII characters *without* case (digits,
+    punctuation, symbols, emoji, ``☃``) are passed through unchanged —
+    Onigmo doesn't fold them either.
+
+    Case folding can be requested via the trailing ``/i`` flag (always
+    applies to the whole pattern) or — for scoped subexpressions only —
+    via ``(?i:...)`` SUBPATTERN ``add_flags``. Unscoped inline ``(?i)``
+    in the body is rejected upstream in :func:`_lower_pattern_to_ir`.
     """
     out: set[int] = set()
     for c in chars:
         if 0x41 <= c <= 0x5A:  # A-Z
             out.add(c)
             out.add(c + 0x20)
-        elif 0x61 <= c <= 0x7A:  # a-z
+            continue
+        if 0x61 <= c <= 0x7A:  # a-z
             out.add(c)
             out.add(c - 0x20)
-        else:
+            continue
+        if c <= 0x7F:
+            # ASCII non-letter — no case mapping to track.
             out.add(c)
+            continue
+        # Non-ASCII: pass through only if Unicode considers it
+        # uncased. Anything with a different upper/lower mapping
+        # would be folded by Onigmo but not by us, so we bail.
+        ch = chr(c)
+        if ch.lower() != ch.upper():
+            return None
+        out.add(c)
     return frozenset(out)
 
 
@@ -778,12 +800,18 @@ def _lower_node(node: tuple, ctx: _LoweringContext, depth: int) -> _IR | None:
     if op == _LITERAL:
         chars = frozenset({arg})
         if ctx.case_fold:
-            chars = _case_fold_chars(chars)
+            folded = _case_fold_chars(chars)
+            if folded is None:
+                return None  # non-ASCII letter under (?i) — unsupported
+            chars = folded
         return _IRChar(_CharSet(chars, False))
     if op == _NOT_LITERAL:
         chars = frozenset({arg})
         if ctx.case_fold:
-            chars = _case_fold_chars(chars)
+            folded = _case_fold_chars(chars)
+            if folded is None:
+                return None
+            chars = folded
         return _IRChar(_CharSet(chars, True))
     if op == _ANY:
         # Logstash uses Ruby/Oniguruma, where ``.`` matches any char
@@ -856,8 +884,13 @@ def _lower_in(items: list, ctx: _LoweringContext) -> _IR | None:
     if ctx.case_fold:
         # Case-fold a character class by folding its positive char set;
         # for negated classes we fold first then complement to preserve
-        # ``[^A]`` ≡ ``[^aA]`` under ``(?i)``.
-        chars = _CharSet(_case_fold_chars(chars.chars), chars.negated)
+        # ``[^A]`` ≡ ``[^aA]`` under ``(?i)``. ``_case_fold_chars``
+        # returns None when any non-ASCII letter would require Unicode
+        # folding we don't model — propagate as unsupported.
+        folded = _case_fold_chars(chars.chars)
+        if folded is None:
+            return None
+        chars = _CharSet(folded, chars.negated)
     if negated:
         chars = chars.complement()
     return _IRChar(chars)
@@ -1286,7 +1319,52 @@ def _ir_for(body: str, flags: str) -> _IR | None:
 
 @lru_cache(maxsize=4096)
 def _ir_for_cached(body: str, flags: str) -> _IR | None:
+    # IR lowering is purely structural — bounded by ``MAX_*`` caps but
+    # has no wall-clock budget, so its result is path-independent and
+    # always safe to cache (including ``None`` for unsupported bodies).
     return _lower_pattern_to_ir(body, flags)
+
+
+# Definitive-only caches for the time-bounded algebra primitives below.
+# ``_intersect_empty_nfa`` / ``_intersect_empty_dfa`` /
+# ``_complete_and_complement_dfa`` may return ``Trilean.UNKNOWN`` due
+# to a transient cap hit (cold caches under CI load, GC pauses,
+# etc.) — caching that ``UNKNOWN`` would let a one-off slow run mask a
+# definitive YES/NO for the rest of the process. We therefore cache
+# only ``YES`` / ``NO`` results and recompute on ``UNKNOWN`` so a
+# subsequent call gets a fresh budget and a fresh chance.
+#
+# Hand-rolled because ``functools.lru_cache`` has no "skip storing
+# this result" hook. Insertion-ordered ``dict`` provides FIFO eviction
+# (close enough to LRU for our access pattern); ``move_to_end`` on
+# hits would give true LRU but adds overhead on the hot path.
+
+_DEFINITIVE_DISJOINT_CACHE: dict[tuple[str, str, str, str], Trilean] = {}
+_DEFINITIVE_SUBSET_CACHE: dict[tuple[str, str, str, str], Trilean] = {}
+_DEFINITIVE_CACHE_MAX = 4096
+
+
+def _definitive_get(
+    cache: dict[tuple[str, str, str, str], Trilean],
+    key: tuple[str, str, str, str],
+) -> Trilean | None:
+    return cache.get(key)
+
+
+def _definitive_put(
+    cache: dict[tuple[str, str, str, str], Trilean],
+    key: tuple[str, str, str, str],
+    value: Trilean,
+) -> None:
+    if value == Trilean.UNKNOWN:
+        return
+    if key in cache:
+        return
+    if len(cache) >= _DEFINITIVE_CACHE_MAX:
+        # FIFO eviction: drop the oldest entry. ``next(iter(cache))``
+        # returns the first inserted key under Python's dict ordering.
+        cache.pop(next(iter(cache)))
+    cache[key] = value
 
 
 def regex_languages_disjoint(body_a: str, flags_a: str, body_b: str, flags_b: str) -> Trilean:
@@ -1308,11 +1386,16 @@ def regex_languages_disjoint(body_a: str, flags_a: str, body_b: str, flags_b: st
     # dispatch in ``_facts_contradict`` currently does this).
     if (body_a, flags_a) > (body_b, flags_b):
         body_a, flags_a, body_b, flags_b = body_b, flags_b, body_a, flags_a
-    return _disjoint_cached(body_a, flags_a, body_b, flags_b)
+    key = (body_a, flags_a, body_b, flags_b)
+    cached = _definitive_get(_DEFINITIVE_DISJOINT_CACHE, key)
+    if cached is not None:
+        return cached
+    result = _disjoint_compute(body_a, flags_a, body_b, flags_b)
+    _definitive_put(_DEFINITIVE_DISJOINT_CACHE, key, result)
+    return result
 
 
-@lru_cache(maxsize=4096)
-def _disjoint_cached(body_a: str, flags_a: str, body_b: str, flags_b: str) -> Trilean:
+def _disjoint_compute(body_a: str, flags_a: str, body_b: str, flags_b: str) -> Trilean:
     ir_a = _ir_for(body_a, flags_a)
     if ir_a is None:
         return Trilean.UNKNOWN
@@ -1337,11 +1420,16 @@ def language_subset(body_a: str, flags_a: str, body_b: str, flags_b: str) -> Tri
     detection: if ``L(A) ⊆ L(B)`` and ``B`` is forbidden, then ``A``
     cannot hold either.
     """
-    return _subset_cached(body_a, flags_a, body_b, flags_b)
+    key = (body_a, flags_a, body_b, flags_b)
+    cached = _definitive_get(_DEFINITIVE_SUBSET_CACHE, key)
+    if cached is not None:
+        return cached
+    result = _subset_compute(body_a, flags_a, body_b, flags_b)
+    _definitive_put(_DEFINITIVE_SUBSET_CACHE, key, result)
+    return result
 
 
-@lru_cache(maxsize=4096)
-def _subset_cached(body_a: str, flags_a: str, body_b: str, flags_b: str) -> Trilean:
+def _subset_compute(body_a: str, flags_a: str, body_b: str, flags_b: str) -> Trilean:
     ir_a = _ir_for(body_a, flags_a)
     if ir_a is None:
         return Trilean.UNKNOWN
