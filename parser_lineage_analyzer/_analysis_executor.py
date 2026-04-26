@@ -7,6 +7,7 @@ from ._analysis_flow import FlowExecutorMixin
 from ._analysis_resolution import ResolutionMixin
 from ._plugins_extractors import ExtractorPluginMixin
 from ._plugins_mutate import MutatePluginMixin
+from ._plugins_signature import SignaturePluginMixin
 from ._plugins_transforms import TransformPluginMixin
 
 _EXECUTOR_COMPONENTS = (
@@ -16,6 +17,7 @@ _EXECUTOR_COMPONENTS = (
     ExtractorPluginMixin,
     TransformPluginMixin,
     MutatePluginMixin,
+    SignaturePluginMixin,
 )
 
 
@@ -41,5 +43,6 @@ class AnalysisExecutor(
     ExtractorPluginMixin,
     TransformPluginMixin,
     MutatePluginMixin,
+    SignaturePluginMixin,
 ):
     """Concrete execution context used by ``ReverseParser``."""

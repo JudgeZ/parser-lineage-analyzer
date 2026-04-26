@@ -221,7 +221,9 @@ The suite covers the documented features end-to-end and a corpus of
 intentionally tricky fixtures (escaped quotes, regex containing `#`, nested
 interpolation, drop semantics, malformed parsers, etc.). See
 [ARCHITECTURE.md](docs/ARCHITECTURE.md) for the parser frontend, native
-acceleration build/runtime flags, and fixture inventory.
+acceleration build/runtime flags, and fixture inventory. To teach the
+analyzer about custom (org-specific) plugins via a small TOML file, see
+[plugin-signatures.md](docs/plugin-signatures.md).
 
 ## References
 

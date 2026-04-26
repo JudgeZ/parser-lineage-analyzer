@@ -1,0 +1,6 @@
+[acme_geo_enrich]
+semantic_class = "enricher"
+source_keys = ["source"]
+dest_keys = ["target"]
+lineage_status = "derived"
+taint_hint = "derived"

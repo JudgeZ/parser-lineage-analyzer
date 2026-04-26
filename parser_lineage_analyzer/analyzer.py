@@ -9,6 +9,7 @@ from ._analysis_executor import AnalysisExecutor
 from ._analysis_query import AnalysisQueryMixin
 from ._analysis_state import AnalyzerState
 from ._grok_patterns import GrokLibrary, bundled_library, load_library_from_paths
+from ._plugin_signatures import PluginSignatureRegistry
 from .model import Lineage, SourceRef
 from .parser import parse_code_with_diagnostics
 
@@ -30,6 +31,7 @@ class ReverseParser(AnalysisQueryMixin, AnalysisExecutor):
         max_parser_bytes: int = MAX_PARSER_BYTES,
         mutate_canonical_order: bool = False,
         grok_patterns_dir: Sequence[Path | str] | None = None,
+        plugin_signatures: PluginSignatureRegistry | None = None,
     ):
         """Construct a static lineage engine over a SecOps/Chronicle parser.
 
@@ -50,6 +52,11 @@ class ReverseParser(AnalysisQueryMixin, AnalysisExecutor):
         argument order determines merge order with last-write-wins (matches
         Logstash ``patterns_dir`` semantics). The bundled library is always
         loaded first as the base layer.
+
+        ``plugin_signatures`` is an optional :class:`PluginSignatureRegistry`
+        teaching the analyzer how to model unknown plugins. When ``None``
+        (the default), unknown plugins fall through to the ``unsupported_plugin``
+        taint path — preserving pre-F3 behavior byte-for-byte.
 
         Raises ``TypeError`` if ``parser_code`` is not a ``str`` and
         ``ValueError`` if the encoded size exceeds ``max_parser_bytes``.
@@ -76,6 +83,11 @@ class ReverseParser(AnalysisQueryMixin, AnalysisExecutor):
         if grok_patterns_dir:
             user_paths = [Path(p) for p in grok_patterns_dir]
             self.grok_library = self.grok_library.merge(load_library_from_paths(user_paths))
+        # F3 (PR-D): plugin signature registry. Read by ``_exec_plugin``
+        # in the unknown-plugin fallback to route to a generic handler
+        # instead of the ``unsupported_plugin`` taint path. ``None``
+        # preserves pre-F3 behavior.
+        self.plugin_signatures: PluginSignatureRegistry | None = plugin_signatures
         self._init_state()
         for diag in self.parse_diagnostics:
             warning = (
