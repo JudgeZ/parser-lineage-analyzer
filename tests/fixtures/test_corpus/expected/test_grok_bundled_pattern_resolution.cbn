@@ -1,0 +1,30 @@
+# EXPECTED BEHAVIOR:
+# Validates that PR-B's grok pattern resolver expands bundled Logstash
+# patterns at extraction time. Captures `src_ip` (an IP), `client_port`
+# (an INT), and `request_path` (URIPATH) — three patterns the bundled
+# legacy library ships. After analysis:
+#
+#   * src_ip / client_port / request_path lineages exist.
+#   * Each capture's `SourceRef.details` carries a `resolved_pattern_name`
+#     (e.g. "IP") and `resolved_pattern_body` (the inlined regex).
+#   * No `grok_pattern_definitions` warning is emitted (the parser uses
+#     ONLY bundled patterns; no inline pattern_definitions).
+#   * No malformed_config / parse_recovery warnings.
+#
+# Per-fixture sidecar asserts the public-surface pieces (resolved fields
+# + warning-code absence). Detailed structure of `details` is asserted in
+# the unit test `test_resolved_body_attached_to_grok_capture_details`.
+filter {
+  grok {
+    match => {
+      "message" => "%{IP:src_ip}:%{INT:client_port} %{URIPATH:request_path}"
+    }
+  }
+  mutate {
+    replace => {
+      "event.idm.read_only_udm.principal.ip" => "%{src_ip}"
+      "event.idm.read_only_udm.network.client.port" => "%{client_port}"
+      "event.idm.read_only_udm.network.http.parsed_user_agent.uri" => "%{request_path}"
+    }
+  }
+}

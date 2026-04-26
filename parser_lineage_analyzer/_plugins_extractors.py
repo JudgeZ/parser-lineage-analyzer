@@ -10,6 +10,7 @@ from ._analysis_details import (
     capture_upstream_details,
     csv_column_details,
     csv_extraction_details,
+    grok_capture_details,
     json_extraction_details,
     kv_extraction_details,
     xml_line_details,
@@ -40,6 +41,7 @@ from ._analysis_helpers import (
     _strip_ref,
 )
 from ._analysis_state import AnalyzerState, ExtractionHint
+from ._grok_patterns import GrokLibrary, expand_pattern
 from ._plugin_config_models import (
     CsvPluginConfig,
     DissectPluginConfig,
@@ -601,10 +603,45 @@ class ExtractorPluginMixin:
             stmt, state, GrokPluginConfig, {"match": match_values, "pattern_definitions": pattern_definitions}
         )
         loc = _location(stmt.line, "grok.match")
+
+        # Build the effective grok library for this call: the bundled
+        # Logstash legacy patterns merged with any inline ``pattern_definitions``
+        # the parser supplied. ``self.grok_library`` is set by ``ReverseParser``
+        # and may itself include user-supplied patterns from
+        # ``--grok-patterns-dir``. Inline ``pattern_definitions`` win on
+        # conflicts, matching upstream Logstash semantics.
+        effective_library = getattr(self, "grok_library", None)
+        user_pattern_names: list[str] = []
         if pattern_definitions:
-            warning = static_limit_warning(loc, "grok pattern_definitions")
-            state.add_warning(warning, code="grok_pattern_definitions", message=warning, parser_location=loc)
-            state.add_taint("grok_pattern_definitions", "grok pattern_definitions are symbolic", loc)
+            user_patterns: dict[str, str] = {}
+            for value in pattern_definitions:
+                for k, v in as_pairs(value):
+                    if isinstance(k, str) and isinstance(v, str):
+                        user_patterns[k] = v
+            if user_patterns:
+                user_pattern_names = list(user_patterns)
+                user_lib = GrokLibrary(user_patterns)
+                effective_library = effective_library.merge(user_lib) if effective_library is not None else user_lib
+
+        # PR-B taint downgrade: pre-resolver, every ``pattern_definitions``
+        # block was tainted as symbolic. With the resolver in place we only
+        # taint when expansion of a user-defined pattern actually fails —
+        # i.e. when the analyzer truly cannot reason about the user's body
+        # (cycle, depth bound, byte bound, or unresolved sub-reference).
+        # Sound on both sides: a clean expansion can only improve
+        # downstream reasoning; a failed expansion preserves prior
+        # behavior.
+        if user_pattern_names:
+            unresolved = [n for n in user_pattern_names if expand_pattern(n, effective_library) is None]
+            if unresolved:
+                unresolved_desc = ", ".join(sorted(unresolved))
+                warning = static_limit_warning(loc, f"grok pattern_definitions: {unresolved_desc}")
+                state.add_warning(warning, code="grok_pattern_definitions", message=warning, parser_location=loc)
+                state.add_taint(
+                    "grok_pattern_definitions",
+                    f"grok pattern_definitions are symbolic: {unresolved_desc}",
+                    loc,
+                )
         for match in match_values:
             captured_tokens: dict[str, list[Lineage]] = {}
             for source_token, patterns in as_pairs(match):
@@ -613,7 +650,13 @@ class ExtractorPluginMixin:
                     if not isinstance(pattern, str):
                         continue
                     self._extract_grok_captures(
-                        str(source_token), pattern, stmt.line, state, conditions, captured_tokens
+                        str(source_token),
+                        pattern,
+                        stmt.line,
+                        state,
+                        conditions,
+                        captured_tokens,
+                        effective_library,
                     )
             for token, captures in captured_tokens.items():
                 self._extractor_assign(token, captures, state)
@@ -629,6 +672,7 @@ class ExtractorPluginMixin:
         state: AnalyzerState,
         conditions: list[str],
         captured_tokens: dict[str, list[Lineage]],
+        library: GrokLibrary | None,
     ) -> None:
         loc = _location(line, "grok.capture", f"source={source_token}")
         source_lineages, _source_resolved = self._resolve_extractor_source("grok", source_token, state, loc)
@@ -637,8 +681,20 @@ class ExtractorPluginMixin:
             if not token:
                 continue
             fragment = m.group(0)
+            pattern_name = m.group("pattern")
+            resolved_body = expand_pattern(pattern_name, library) if library is not None else None
             captured_tokens.setdefault(token, []).extend(
-                self._capture_lineages("grok_capture", source_token, token, fragment, source_lineages, loc, conditions)
+                self._capture_lineages(
+                    "grok_capture",
+                    source_token,
+                    token,
+                    fragment,
+                    source_lineages,
+                    loc,
+                    conditions,
+                    pattern_name=pattern_name,
+                    resolved_body=resolved_body,
+                )
             )
         for m in _REGEX_NAMED_RE.finditer(pattern):
             token = m.group("token")
@@ -656,6 +712,9 @@ class ExtractorPluginMixin:
         source_lineages: list[Lineage],
         loc: str,
         conditions: list[str],
+        *,
+        pattern_name: str | None = None,
+        resolved_body: str | None = None,
     ) -> list[Lineage]:
         out: list[Lineage] = []
         outer_conditions = _dedupe_strings(conditions) if conditions else []
@@ -680,6 +739,11 @@ class ExtractorPluginMixin:
                 parser_locations = _dedupe_strings(source_locations)
             else:
                 parser_locations = _dedupe_strings(list(source_locations) + [loc])
+            details = (
+                grok_capture_details(source_lin.sources, pattern_name, resolved_body)
+                if pattern_name is not None
+                else capture_upstream_details(source_lin.sources)
+            )
             out.append(
                 Lineage(
                     status=status,
@@ -689,7 +753,7 @@ class ExtractorPluginMixin:
                             source_token=source_token,
                             capture_name=capture_name,
                             pattern=pattern,
-                            details=capture_upstream_details(source_lin.sources),
+                            details=details,
                         )
                     ],
                     expression=capture_name,

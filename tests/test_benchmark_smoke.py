@@ -75,3 +75,40 @@ def test_native_modes_benchmark_fails_cleanly_when_runner_times_out(monkeypatch,
     captured = capsys.readouterr()
     assert result == 1
     assert "fake-mode timed out after 3.000s" in captured.err
+
+
+# Catastrophic-blowup watchdog for the grok pattern resolver. The bundled
+# library is loaded once per process; this test triggers a fresh load by
+# clearing the module-level cache, then exercises the largest patterns
+# (URI, IPV6, COMMONAPACHELOG) cold + 100 cached lookups each. The 50ms
+# budget is intentionally generous (5x typical local timing on M-series)
+# to absorb CI-runner noise without becoming a flaky timing assertion.
+GROK_RESOLVER_BUDGET_SECONDS = 0.050
+
+
+def test_grok_resolver_cold_plus_cached_within_budget(monkeypatch) -> None:
+    import time
+
+    from parser_lineage_analyzer import _grok_patterns
+
+    # Clear the module-level cache to force a fresh library load + cold
+    # expansion path. The LRU cache on `_expand_pattern_cached` is also
+    # reset so cached lookups truly count as cold first, then warm.
+    monkeypatch.setattr(_grok_patterns, "_BUNDLED_LIBRARY_CACHE", None)
+    _grok_patterns._expand_pattern_cached.cache_clear()
+
+    targets = ("URI", "IPV6", "COMMONAPACHELOG", "TIMESTAMP_ISO8601", "IP")
+    start = time.perf_counter()
+    for name in targets:
+        body = _grok_patterns.expand_pattern(name)
+        assert body is not None, f"bundled pattern {name} should expand cleanly"
+    # 100 cached lookups per pattern — the LRU should be warm.
+    for _ in range(100):
+        for name in targets:
+            _grok_patterns.expand_pattern(name)
+    elapsed = time.perf_counter() - start
+
+    assert elapsed < GROK_RESOLVER_BUDGET_SECONDS, (
+        f"grok resolver cold-load + cached lookups exceeded "
+        f"{GROK_RESOLVER_BUDGET_SECONDS * 1000:.0f}ms budget: {elapsed * 1000:.1f}ms"
+    )

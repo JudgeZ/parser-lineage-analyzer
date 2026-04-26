@@ -1,0 +1,18 @@
+parser-lineage-analyzer vendors the Logstash grok pattern library from
+the logstash-plugins/logstash-patterns-core project.
+
+  Upstream:  https://github.com/logstash-plugins/logstash-patterns-core
+  Path:      patterns/legacy/
+  Revision:  f01f3f34cfab13a28b0822bdba33db41823cb1d8 (2022-06-17)
+  License:   Apache License, Version 2.0
+
+The full upstream license text is preserved verbatim in the LICENSE file
+adjacent to this NOTICE. Pattern data files in this directory carry no
+modifications from upstream — they are byte-identical copies of the
+files at the revision above. Any future re-vendoring should refresh this
+NOTICE with the new upstream revision.
+
+The parser-lineage-analyzer project as a whole is licensed under the MIT
+License (see ../../LICENSE at the repository root). MIT is compatible
+with Apache-2.0 under NOTICE retention; this file fulfils that
+obligation.
