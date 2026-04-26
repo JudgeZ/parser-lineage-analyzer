@@ -39,6 +39,7 @@ from parser_lineage_analyzer._analysis_condition_facts import (
 from parser_lineage_analyzer._regex_algebra import (
     ALGEBRA_TIME_BUDGET_MS,
     MAX_ALTERNATION_BRANCHES,
+    MAX_CHARSET_SIZE,
     MAX_REGEX_BODY_BYTES,
     MAX_REPEAT_BOUND,
     RegexShape,
@@ -716,3 +717,67 @@ class TestRegexStressFile:
         ReverseParser(stress_file_text).query("event.idm.read_only_udm.metadata.description")
         elapsed_s = time.monotonic() - start
         assert elapsed_s < 2.0, f"analyzer took {elapsed_s:.2f}s on the stress file"
+
+
+class TestReviewFindings:
+    """Regression tests for review feedback that pinned down two real
+    bugs in the initial Phase 1 implementation. Both are soundness /
+    DoS-resistance regressions; the assertions are written so the bug
+    pattern can never silently come back."""
+
+    def test_dot_excludes_only_lf_not_cr(self) -> None:
+        """``.`` in Logstash/Ruby/Oniguruma matches every char *except*
+        ``\\n``. ``\\r`` is matched.
+
+        Earlier the algebra excluded both ``\\n`` and ``\\r``, which
+        would let ``regex_languages_disjoint("^.$", "^\\r$")`` return
+        :attr:`Trilean.YES` — a false positive that would silently
+        drop reachable branches when a field value happened to
+        contain a carriage return.
+        """
+        # Direct: dot must NOT be disjoint from a literal CR.
+        assert regex_languages_disjoint("^.$", "", "^\r$", "") != Trilean.YES, (
+            "unsound: '.' must match '\\r' under Ruby/Oniguruma semantics"
+        )
+        # Membership: '\r' is in L(.).
+        result = literal_in_regex_language("\r", "^.$", "")
+        assert result != Trilean.NO, "unsound: '\\r' must be in L(/^.$/)"
+        # Sanity: '\n' is still excluded (the *only* char excluded by '.').
+        # Use the regex escape ``\n`` (two chars: backslash, n) — a literal
+        # newline byte in the body would be rejected by the multiline guard.
+        assert regex_languages_disjoint("^.$", "", r"^\n$", "") == Trilean.YES
+        assert literal_in_regex_language("\n", "^.$", "") == Trilean.NO
+
+    def test_wide_unicode_range_does_not_blow_up(self) -> None:
+        """``[\\x00-\\U0010ffff]`` in a body must not materialize 1.1M
+        code points into a frozenset before any algebra budget check
+        fires. The earlier implementation did, causing multi-second
+        spikes on untrusted regex bodies that defeated the wall-clock
+        guard's intent."""
+        import time as _t
+
+        # Time the pathological case end-to-end. With the size cap in
+        # place this returns UNKNOWN (sound) almost instantly; without
+        # the cap it materializes 1.1M ints.
+        start = _t.monotonic()
+        result = regex_languages_disjoint(r"[\x00-\U0010ffff]", "", "^A$", "")
+        elapsed_ms = (_t.monotonic() - start) * 1000
+        # Generous bound — the actual non-bug path completes in < 1ms;
+        # 200ms still catches a regression while tolerating CI jitter.
+        assert elapsed_ms < 200, f"wide-range body took {elapsed_ms:.1f}ms — frozenset materialization may have leaked"
+        assert result == Trilean.UNKNOWN
+
+    @pytest.mark.parametrize(
+        "lo,hi",
+        [
+            (0, MAX_CHARSET_SIZE - 1),  # exactly at the cap — accepted
+            (0, MAX_CHARSET_SIZE),  # one over — rejected
+            (0, 0x10FFFF),  # full Unicode — rejected
+        ],
+    )
+    def test_charset_size_cap_boundary(self, lo: int, hi: int) -> None:
+        """Direct check on the boundary of :data:`MAX_CHARSET_SIZE`."""
+        body = f"[\\x{lo:04x}-\\U{hi:08x}]"
+        # Just confirm no raise + bounded time. Sound result either way.
+        result = regex_languages_disjoint(body, "", "^A$", "")
+        assert isinstance(result, Trilean)

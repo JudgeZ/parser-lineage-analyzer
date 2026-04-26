@@ -72,6 +72,13 @@ MAX_DFA_STATES = 4096
 MAX_PRODUCT_STATES = 16384
 MAX_ALPHABET_PARTITIONS = 256
 MAX_REPEAT_BOUND = 64  # `{n,m}` with m above this => UNKNOWN
+# Cap on the number of code points materialized into a single
+# ``_CharSet`` from a literal range like ``[lo-hi]``. Without it,
+# ``[\x00-\U0010ffff]`` would allocate ~1.1M ints in
+# ``_charset_from_range`` *before* any algebra budget check fires.
+# 1024 is generous enough for typical real-world classes (ASCII,
+# Latin-1, single Unicode block) but rejects pathological wide ranges.
+MAX_CHARSET_SIZE = 1024
 ALGEBRA_TIME_BUDGET_MS = 25
 _TIME_CHECK_INTERVAL = 256
 
@@ -471,15 +478,27 @@ def _charset_from_chars(chars: tuple[int, ...]) -> _CharSet:
     return _CharSet(frozenset(chars), False)
 
 
-def _charset_from_range(lo: int, hi: int) -> _CharSet:
-    """Inclusive ``[lo, hi]`` range to a CharSet."""
+def _charset_from_range(lo: int, hi: int) -> _CharSet | None:
+    """Inclusive ``[lo, hi]`` range to a CharSet, or ``None`` if the
+    range exceeds :data:`MAX_CHARSET_SIZE`.
+
+    The size check happens *before* materializing the frozenset so
+    pathological inputs like ``[\\x00-\\U0010ffff]`` can't burn time
+    or memory enumerating 1.1M code points before any algebra budget
+    check fires. The caller treats ``None`` as "unsupported", which
+    propagates as :attr:`Trilean.UNKNOWN` from the public API.
+    """
+    if hi < lo:
+        return _EMPTY_CHARSET
+    if hi - lo + 1 > MAX_CHARSET_SIZE:
+        return None
     return _CharSet(frozenset(range(lo, hi + 1)), False)
 
 
 # Common shorthand classes (ASCII semantics — Phase 1 does not honor
 # Unicode-aware ``\d``/``\w``/``\s`` to keep the alphabet finite and the
 # soundness model simple).
-_DIGIT_CHARSET = _charset_from_range(ord("0"), ord("9"))
+_DIGIT_CHARSET = _CharSet(frozenset(range(ord("0"), ord("9") + 1)), False)
 _WORD_CHARSET = _CharSet(
     frozenset(
         list(range(ord("0"), ord("9") + 1))
@@ -748,12 +767,13 @@ def _lower_node(node: tuple, ctx: _LoweringContext, depth: int) -> _IR | None:
             chars = _case_fold_chars(chars)
         return _IRChar(_CharSet(chars, True))
     if op == _ANY:
-        # Logstash ``.`` matches any char *except* newline. We've already
-        # rejected bodies containing literal newlines, but the MATCHED
-        # *value* could contain anything at runtime — so model ``.`` as
-        # "any code point except \n and \r" for soundness with Logstash
-        # default semantics.
-        return _IRChar(_CharSet(frozenset({0x0A, 0x0D}), True))
+        # Logstash uses Ruby/Oniguruma, where ``.`` matches any char
+        # *except* line feed (``\n`` / 0x0A). Carriage return (``\r``)
+        # *is* matched. Excluding ``\r`` here would be unsound: it
+        # would let the algebra declare ``^.$`` and ``^\r$`` disjoint,
+        # which they aren't, and would silently drop reachable
+        # branches when a field value happens to contain ``\r``.
+        return _IRChar(_CharSet(frozenset({0x0A}), True))
     if op == _IN:
         return _lower_in(arg, ctx)
     if op in (_MAX_REPEAT, _MIN_REPEAT):
@@ -802,7 +822,10 @@ def _lower_in(items: list, ctx: _LoweringContext) -> _IR | None:
             cs = _CharSet(frozenset({arg}), False)
         elif op == _RANGE:
             lo, hi = arg
-            cs = _charset_from_range(lo, hi)
+            range_cs = _charset_from_range(lo, hi)
+            if range_cs is None:
+                return None
+            cs = range_cs
         elif op == _CATEGORY:
             maybe_cs = _category_charset(arg)
             if maybe_cs is None:
