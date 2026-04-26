@@ -285,16 +285,22 @@ def test_same_field_same_op_same_body_is_compatible(body: str, is_match: bool) -
 @given(_maybe_alternation())
 @_HYP_SETTINGS
 def test_pos_and_neg_same_body_contradict(body: str) -> None:
-    """``[t] =~ /A/`` ∧ ``[t] !~ /A/`` must be contradicted whenever
-    L(A) is non-empty AND the algebra can reason about it. Non-empty
-    is verified via the bounded enumeration; UNKNOWN is skipped."""
-    nonempty = any(_matches_via_re(body, s) for s in _ALL_STRINGS)
-    assume(nonempty)
+    """``[t] =~ /A/`` ∧ ``[t] !~ /A/`` must be PROVABLY contradicted
+    whenever the algebra can reason about ``A`` at all.
+
+    Gating criterion: ``language_subset(A, A)`` returning YES proves the
+    algebra can reach a definitive answer for ``A``-vs-``A`` queries.
+    Whenever it can, ``conditions_are_compatible([=~A, !~A])`` MUST
+    return False — that is the precision claim of the pos/neg dispatch
+    arm. UNKNOWN here would silently regress that arm without tripping
+    the soundness oracle in ``test_compatible_false_means_no_witness``."""
+    if language_subset(body, "", body, "") != Trilean.YES:
+        # Algebra can't analyze this body; UNKNOWN-as-compatible is sound
+        # but uninformative for this precision check.
+        assume(False)
     pos = f"[t] =~ /{body}/"
     neg = f"[t] !~ /{body}/"
-    # Compatibility could be False (proven) or True (unsupported body).
-    # When it's False, the soundness oracle in test_compatible_false_means_no_witness
-    # already covers the property. We just assert the algebra's result is sound:
-    if not conditions_are_compatible([pos, neg]):
-        # Already covered by oracle above; included for explicit shape coverage.
-        pass
+    assert not conditions_are_compatible([pos, neg]), (
+        f"precision regression: algebra proves L({body!r}) ⊆ L({body!r}) but "
+        f"failed to contradict [=~ /{body}/, !~ /{body}/]"
+    )
