@@ -1,4 +1,21 @@
-"""Conservative literal-fact extraction for branch conditions."""
+"""Conservative fact extraction for branch conditions.
+
+Two fact flavors:
+
+* :class:`LiteralFact` — ``[field] == "x"``, ``[field] != "x"``, and the
+  Phase 0 reduction of ``[field] =~ /^literal$/`` to a value-equality
+  fact. Comparisons among LiteralFacts are pure string ops; this is the
+  fast path the analyzer hits the most.
+* :class:`RegexFact` — ``[field] =~ /body/flags`` for any regex body
+  *not* already reducible to a LiteralFact. Comparisons consult the
+  Phase 1 algebra in :mod:`_regex_algebra`, which returns
+  :class:`Trilean` and only ever drops branches when the answer is
+  provably ``YES`` (sound under the false-positives-are-not-OK rule).
+
+The public surface (``condition_is_contradicted``,
+``conditions_are_compatible``, ``is_exact_literal_regex_condition``)
+is unchanged; the new fact type is internal.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +23,16 @@ import re
 from dataclasses import dataclass
 from functools import lru_cache
 from itertools import product
+
+from ._regex_algebra import (
+    Trilean,
+    exact_literal_value as _regex_exact_literal_value,
+    extract_regex_literal,
+    is_exact_literal_regex as _regex_is_exact_literal,
+    language_subset,
+    literal_in_regex_language,
+    regex_languages_disjoint,
+)
 
 
 @dataclass(frozen=True)
@@ -18,9 +45,25 @@ class LiteralFact:
         return LiteralFact(self.field, self.value, not self.is_equal)
 
 
+@dataclass(frozen=True)
+class RegexFact:
+    """A ``[field] =~ /body/flags`` constraint that is not (or not yet)
+    reducible to a LiteralFact. Contradiction checks consult the
+    symbolic regex algebra."""
+
+    field: str
+    body: str
+    flags: str
+    # ``True`` for ``=~``; ``False`` for ``!~`` (reserved — not yet
+    # produced by ``_regex_fact_from_normalized_condition``).
+    is_match: bool = True
+
+
+Fact = LiteralFact | RegexFact
+
+
 _EQ_RE = re.compile(r'^(?P<field>(?:\[[^\]]+\])+)\s*==\s*"(?P<value>(?:\\.|[^"\\])*)"$')
 _NE_RE = re.compile(r'^(?P<field>(?:\[[^\]]+\])+)\s*!=\s*"(?P<value>(?:\\.|[^"\\])*)"$')
-_EXACT_REGEX_RE = re.compile(r"^(?P<field>(?:\[[^\]]+\])+)\s*=~\s*/\^(?P<value>[A-Za-z0-9_ .:@-]+)\$/[A-Za-z]*$")
 _NEGATED_RE = re.compile(r"^NOT\((?P<inner>.*)\)$")
 # Used by _normalize_condition's fast path to detect non-space whitespace
 # (\t, \n, \r, etc.) that would be collapsed to a single space by the
@@ -64,9 +107,10 @@ def _literal_fact_from_normalized_condition(condition: str) -> LiteralFact | Non
     m = _NE_RE.match(condition)
     if m:
         return LiteralFact(m.group("field"), _decode_condition_string(m.group("value")), False)
-    m = _EXACT_REGEX_RE.match(condition)
-    if m:
-        return LiteralFact(m.group("field"), m.group("value"))
+    regex_literal = _regex_exact_literal_value(condition)
+    if regex_literal is not None:
+        field, value = regex_literal
+        return LiteralFact(field, value)
     return None
 
 
@@ -80,12 +124,29 @@ def negated_literal_fact_from_condition(condition: str) -> LiteralFact | None:
     return fact.negated()
 
 
+def _regex_fact_from_normalized_condition(condition: str) -> RegexFact | None:
+    """Produce a :class:`RegexFact` for ``[t] =~ /body/flags`` when the
+    body does *not* reduce to a literal (Phase 0 already handled those).
+    Returns ``None`` for non-``=~`` conditions or oversized bodies; the
+    Phase 1 algebra returns :attr:`Trilean.UNKNOWN` for unsupported
+    bodies (which propagates as "compatible" — sound)."""
+    extracted = extract_regex_literal(condition)
+    if extracted is None:
+        return None
+    return RegexFact(extracted.field, extracted.body, extracted.flags, is_match=True)
+
+
 @lru_cache(maxsize=8192)
-def _fact_from_condition(condition: str) -> LiteralFact | None:
+def _fact_from_condition(condition: str) -> Fact | None:
     condition = _normalize_condition(condition)
-    return _literal_fact_from_normalized_condition(condition) or _negated_literal_fact_from_normalized_condition(
+    literal = _literal_fact_from_normalized_condition(condition) or _negated_literal_fact_from_normalized_condition(
         condition
     )
+    if literal is not None:
+        return literal
+    # Phase 1: a ``=~`` whose body wasn't reducible to a LiteralFact
+    # becomes a RegexFact for the symbolic algebra to reason about.
+    return _regex_fact_from_normalized_condition(condition)
 
 
 def _split_top_level(condition: str, separator: str) -> list[str]:
@@ -181,14 +242,14 @@ def _split_top_level_or(condition: str) -> list[str]:
 
 
 @lru_cache(maxsize=8192)
-def _facts_for_condition(condition: str) -> tuple[LiteralFact, ...]:
+def _facts_for_condition(condition: str) -> tuple[Fact, ...]:
     """Extract one fact per top-level ``and``-conjunct.
 
     Returns ``()`` if no conjunct yields a fact. Conjuncts that can't be parsed
     into a fact are silently dropped — the analyzer is conservative, and a
     partial fact set is still useful for contradiction detection.
     """
-    facts: list[LiteralFact] = []
+    facts: list[Fact] = []
     for conjunct in _split_top_level_and(_normalize_condition(condition)):
         fact = _fact_from_condition(conjunct)
         if fact is not None:
@@ -197,7 +258,7 @@ def _facts_for_condition(condition: str) -> tuple[LiteralFact, ...]:
 
 
 @lru_cache(maxsize=8192)
-def _disjunctive_facts_for_condition(condition: str) -> tuple[tuple[LiteralFact, ...], ...]:
+def _disjunctive_facts_for_condition(condition: str) -> tuple[tuple[Fact, ...], ...]:
     """Return condition's facts in DNF form: outer tuple = OR alternatives,
     inner tuple = AND-conjuncts within that alternative.
 
@@ -212,7 +273,7 @@ def _disjunctive_facts_for_condition(condition: str) -> tuple[tuple[LiteralFact,
     """
     normalized = _normalize_condition(condition)
     disjuncts = _split_top_level_or(normalized)
-    out: list[tuple[LiteralFact, ...]] = []
+    out: list[tuple[Fact, ...]] = []
     for disjunct in disjuncts:
         facts = _facts_for_condition(disjunct)
         if facts:
@@ -230,13 +291,55 @@ def _negated_literal_fact_from_normalized_condition(condition: str) -> LiteralFa
     return fact.negated()
 
 
-def _facts_contradict(left: LiteralFact, right: LiteralFact) -> bool:
+def _facts_contradict(left: Fact, right: Fact) -> bool:
     if left.field != right.field:
         return False
-    if left.is_equal and right.is_equal:
-        return left.value != right.value
-    if left.is_equal != right.is_equal:
-        return left.value == right.value
+
+    # Fast path: both literal facts. This is the hottest comparison —
+    # pure string equality, no algebra invocation.
+    if isinstance(left, LiteralFact) and isinstance(right, LiteralFact):
+        if left.is_equal and right.is_equal:
+            return left.value != right.value
+        if left.is_equal != right.is_equal:
+            return left.value == right.value
+        return False
+
+    # Mixed literal + regex: the literal's singleton language is checked
+    # for membership in the regex's language. ``Trilean.NO`` (proven not
+    # in language) is the only return that justifies declaring a
+    # contradiction.
+    if isinstance(left, LiteralFact) and isinstance(right, RegexFact):
+        return _literal_vs_regex_contradicts(left, right)
+    if isinstance(left, RegexFact) and isinstance(right, LiteralFact):
+        return _literal_vs_regex_contradicts(right, left)
+
+    # Both regex: defer to the symbolic algebra.
+    assert isinstance(left, RegexFact) and isinstance(right, RegexFact)
+    if left.is_match and right.is_match:
+        return regex_languages_disjoint(left.body, left.flags, right.body, right.flags) == Trilean.YES
+    if left.is_match != right.is_match:
+        # Positive vs negative: contradicted iff L(positive) ⊆ L(negative).
+        positive, negative = (left, right) if left.is_match else (right, left)
+        return language_subset(positive.body, positive.flags, negative.body, negative.flags) == Trilean.YES
+    # Both negative: never provably contradicts (something can satisfy
+    # neither pattern simultaneously by lying outside both languages).
+    return False
+
+
+def _literal_vs_regex_contradicts(literal: LiteralFact, regex: RegexFact) -> bool:
+    if not regex.is_match:
+        # ``[t] == "x"`` and ``[t] !~ /A/`` contradict iff ``"x"`` *is*
+        # in L(A) (which would force a !~ violation). Symmetrically for
+        # ``!=``.
+        if literal.is_equal:
+            return literal_in_regex_language(literal.value, regex.body, regex.flags) == Trilean.YES
+        return False  # `[t] != "x"` and `[t] !~ /A/`: no general contradiction
+    # Positive regex match.
+    if literal.is_equal:
+        # ``[t] == "x"`` and ``[t] =~ /A/`` contradict iff "x" not in L(A).
+        return literal_in_regex_language(literal.value, regex.body, regex.flags) == Trilean.NO
+    # ``[t] != "x"`` and ``[t] =~ /A/``: contradict iff L(A) = {"x"}.
+    # Hard to prove in general (would need language equality); skip.
     return False
 
 
@@ -253,7 +356,7 @@ def condition_is_contradicted(condition: str, prior_conditions: list[str]) -> bo
 _MAX_DISJUNCTIVE_COMBINATIONS = 256
 
 
-def _conjunction_is_self_consistent(facts: list[LiteralFact]) -> bool:
+def _conjunction_is_self_consistent(facts: list[Fact]) -> bool:
     """True iff a single AND-conjunction of facts is internally satisfiable."""
     for i, left in enumerate(facts):
         for right in facts[i + 1 :]:
@@ -285,7 +388,7 @@ def _condition_is_contradicted_cached(condition: str, prior_conditions: tuple[st
     if not current_alternatives:
         return False  # nothing parseable; can't conclude anything
 
-    prior_alternatives_per_condition: list[tuple[tuple[LiteralFact, ...], ...]] = []
+    prior_alternatives_per_condition: list[tuple[tuple[Fact, ...], ...]] = []
     total = len(current_alternatives)
     for prior in prior_conditions:
         prior_alts = _disjunctive_facts_for_condition(prior)
@@ -299,7 +402,7 @@ def _condition_is_contradicted_cached(condition: str, prior_conditions: tuple[st
     # Try every combination of (one current disjunct + one disjunct per prior).
     # If any combination is self-consistent, the condition is satisfiable.
     for combo in product(current_alternatives, *prior_alternatives_per_condition):
-        merged: list[LiteralFact] = []
+        merged: list[Fact] = []
         for facts in combo:
             merged.extend(facts)
         if _conjunction_is_self_consistent(merged):
@@ -313,14 +416,30 @@ def conditions_are_compatible(conditions: list[str]) -> bool:
 
 @lru_cache(maxsize=65536)
 def _conditions_are_compatible_cached(conditions: tuple[str, ...]) -> bool:
+    """Returns False iff the conjunction of all ``conditions`` is provably
+    unsatisfiable.
+
+    The literal-only path uses per-field equal/not-equal dicts for O(n)
+    detection of pure-literal contradictions; this is the hot path and
+    handles the vast majority of conditions in real corpora. RegexFacts
+    are collected and resolved in a second pairwise pass via the
+    symbolic algebra — only when one or more is present, so literal-only
+    workloads pay zero algebra cost.
+    """
     equal_by_field: dict[str, str] = {}
     not_equal_by_field: dict[str, set[str]] = {}
+    regex_facts: list[RegexFact] = []
+    literal_facts_by_field: dict[str, list[LiteralFact]] = {}
     for condition in conditions:
         if not condition:
             continue
         # Each condition may be a single fact or a top-level `and`-conjunction
         # of multiple facts; ingest every conjunct.
         for fact in _facts_for_condition(condition):
+            if isinstance(fact, RegexFact):
+                regex_facts.append(fact)
+                continue
+            literal_facts_by_field.setdefault(fact.field, []).append(fact)
             if fact.is_equal:
                 prior_equal = equal_by_field.get(fact.field)
                 if prior_equal is not None and prior_equal != fact.value:
@@ -333,8 +452,25 @@ def _conditions_are_compatible_cached(conditions: tuple[str, ...]) -> bool:
             if prior_equal == fact.value:
                 return False
             not_equal_by_field.setdefault(fact.field, set()).add(fact.value)
+
+    if not regex_facts:
+        return True
+
+    # Phase 1: regex-fact pairwise check. Only same-field pairs can
+    # contradict, so partition first.
+    by_field: dict[str, list[RegexFact]] = {}
+    for rf in regex_facts:
+        by_field.setdefault(rf.field, []).append(rf)
+    for field, rfs in by_field.items():
+        for i, left in enumerate(rfs):
+            for right in rfs[i + 1 :]:
+                if _facts_contradict(left, right):
+                    return False
+            for lf in literal_facts_by_field.get(field, ()):
+                if _facts_contradict(left, lf):
+                    return False
     return True
 
 
 def is_exact_literal_regex_condition(condition: str) -> bool:
-    return _EXACT_REGEX_RE.match(_normalize_condition(condition)) is not None
+    return _regex_is_exact_literal(_normalize_condition(condition))
