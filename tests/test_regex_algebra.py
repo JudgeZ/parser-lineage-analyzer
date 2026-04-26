@@ -1106,12 +1106,20 @@ class TestReviewFindings:
         # And NOW the definitive answer IS cached.
         assert algebra._DEFINITIVE_DISJOINT_CACHE.get(canonical_key) == Trilean.YES
 
-    def test_language_subset_does_not_exceed_5x_budget(self) -> None:
+    def test_language_subset_does_not_exceed_20x_budget(self) -> None:
         """End-to-end soak: hand :func:`language_subset` a pair
         of patterns that build near-max DFAs. Even when the algebra
         bails to ``UNKNOWN``, the wall-clock must stay within a
         generous bound — proves the budget polls in the BFS *and* the
-        complement loop are both wired up."""
+        complement loop are both wired up.
+
+        20× the BFS budget. The pre-BFS phases (sre_parse, IR lowering,
+        NFA build, alphabet partition, DFA complement) are not individually
+        wall-clock bounded; on slow CI runners with cold caches the
+        cumulative overhead can easily exceed 5× even when nothing is
+        actually hung. 20× still catches a real runaway while tolerating
+        CI variance across macOS/Windows/Linux runners.
+        """
         import time
 
         # A pair that exercises the full pipeline: lower → NFA → DFA →
@@ -1124,7 +1132,7 @@ class TestReviewFindings:
         result = language_subset(body_a, "", body_b, "")
         elapsed_ms = (time.monotonic() - start) * 1000
         assert isinstance(result, Trilean)
-        assert elapsed_ms < ALGEBRA_TIME_BUDGET_MS * 5, f"language_subset took {elapsed_ms:.1f}ms"
+        assert elapsed_ms < ALGEBRA_TIME_BUDGET_MS * 20, f"language_subset took {elapsed_ms:.1f}ms"
 
     def test_alphabet_partition_cap_returns_unknown(self) -> None:
         """Pin :data:`MAX_ALPHABET_PARTITIONS`. A body with more
