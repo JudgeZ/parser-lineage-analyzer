@@ -1528,12 +1528,14 @@ def test_analyzer_state_clone_uses_per_kind_cow_for_extractor_hint_index():
         clones.append(c)
     elapsed = time.perf_counter() - start
 
-    # Budget gives ~3x headroom over the post-fix wall (~0.8s on the same
-    # hardware that produces ~4s for the pre-fix all-kinds eager copy). 2.5s
-    # is loose enough to absorb slow CI runners while still catching a
-    # regression to the eager-copy path, which would balloon to >4s and trip
-    # the budget by a wide margin.
-    assert elapsed < 2.5
+    # Budget tuned for slow shared CI runners: post-fix wall is ~0.8s on a
+    # local dev machine and ~3s on macOS / Ubuntu GitHub-hosted runners. The
+    # pre-fix path is ~4s locally and would scale to ~15-20s on those CI
+    # runners (5x slower than the post-fix path on the same hardware), so an
+    # 8s budget still catches a regression with 100% margin while absorbing
+    # CI variance. Don't tighten this without re-measuring the pre-fix wall
+    # on the slowest runner in the matrix.
+    assert elapsed < 8.0
 
     # Sanity-check COW semantics: parent's index is untouched and still sized
     # to the original 1000 hints per kind, while every clone sees 1001 json
