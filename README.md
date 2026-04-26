@@ -152,6 +152,8 @@ Public exports from `parser_lineage_analyzer`:
 | `TaintReason` | Structured reason a path is uncertain. |
 | `WarningReason` | Structured reason for a parser-level warning. |
 | `DiagnosticRecord`, `SyntaxDiagnostic` | Parser/analyzer diagnostics. |
+| `AnalysisSummaryDict` | `TypedDict` shape returned by `ReverseParser.analysis_summary()`. |
+| `CompactAnalysisSummaryDict` | `TypedDict` shape returned by `ReverseParser.analysis_summary(compact=True)`. |
 
 Modules whose names start with `_` are private. `QueryResult.status` reports
 the dominant outcome — dynamic or unresolved uncertainty takes precedence

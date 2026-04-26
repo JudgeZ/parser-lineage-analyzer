@@ -22,6 +22,18 @@ from parser_lineage_analyzer.render import render_compact_json, render_text
 _NATIVE_DISABLED = os.environ.get("PARSER_LINEAGE_ANALYZER_NO_EXT", "").lower() in {"1", "true", "yes", "on"}
 
 
+def _compact_summary(parser: ReverseParser) -> CompactAnalysisSummaryDict:
+    """Typed accessor for ``analysis_summary(compact=True)``.
+
+    ``analysis_summary``'s return is the union ``AnalysisSummaryDict |
+    CompactAnalysisSummaryDict``; only the compact arm carries the
+    ``*_total`` counters and the ``warning_counts`` / ``taint_counts`` /
+    ``diagnostic_counts`` maps that this test suite indexes. Centralising
+    the cast here keeps every compact-summary call site uniformly typed.
+    """
+    return cast(CompactAnalysisSummaryDict, parser.analysis_summary(compact=True))
+
+
 def _independent_if_parser(count: int) -> str:
     lines = ["filter {", '  json { source => "message" }']
     for i in range(count):
@@ -634,7 +646,7 @@ def test_standalone_on_error_blocks_use_delta_reconciliation():
 def test_branch_local_extractors_and_anchors_do_not_force_full_token_merge(count: int, budget: float):
     elapsed, parser = _analysis_seconds(_branch_local_metadata_parser(count))
     assert elapsed < budget
-    summary = cast(CompactAnalysisSummaryDict, parser.analysis_summary(compact=True))
+    summary = _compact_summary(parser)
     assert summary["json_extractions_total"] == count
     assert summary["output_anchors_total"] == count
 
@@ -642,7 +654,7 @@ def test_branch_local_extractors_and_anchors_do_not_force_full_token_merge(count
 def test_branch_local_metadata_avoids_quadratic_probe_shape():
     elapsed, parser = _analysis_seconds(_branch_local_metadata_parser(4_000, seed_count=0))
     assert elapsed < 5.0
-    assert parser.analysis_summary(compact=True)["json_extractions_total"] == 4_000
+    assert _compact_summary(parser)["json_extractions_total"] == 4_000
 
 
 def test_dynamic_loop_alternatives_merge_only_loop_deltas():
@@ -670,7 +682,7 @@ def test_flat_static_loop_over_cumulative_cap_remains_exact_under_assignment_cap
 def test_nested_static_loop_over_cumulative_fanout_is_summarized_fast():
     start = time.perf_counter()
     parser = ReverseParser(_nested_static_loop_parser(6, 4))
-    summary = parser.analysis_summary(compact=True)
+    summary = _compact_summary(parser)
     elapsed = time.perf_counter() - start
     result = parser.query("additional.fields.combo")
 
@@ -685,7 +697,7 @@ def test_nested_static_loop_over_cumulative_fanout_is_summarized_fast():
 def test_nested_dynamic_loop_over_cumulative_fanout_is_summarized_fast():
     start = time.perf_counter()
     parser = ReverseParser(_nested_dynamic_loop_parser(32))
-    summary = parser.analysis_summary(compact=True)
+    summary = _compact_summary(parser)
     elapsed = time.perf_counter() - start
     result = parser.query("additional.fields.cross")
 
@@ -700,7 +712,7 @@ def test_nested_dynamic_loop_over_cumulative_fanout_is_summarized_fast():
 def test_real_slow_shape_completes_with_loop_fanout_diagnostics():
     start = time.perf_counter()
     parser = ReverseParser(_real_slow_shape_parser())
-    summary = parser.analysis_summary(compact=True)
+    summary = _compact_summary(parser)
     elapsed = time.perf_counter() - start
 
     assert elapsed < 2.0
@@ -711,7 +723,7 @@ def test_real_slow_shape_completes_with_loop_fanout_diagnostics():
 def test_gsub_transform_fanout_is_summarized_fast():
     start = time.perf_counter()
     parser = ReverseParser(_gsub_transform_fanout_parser())
-    summary = parser.analysis_summary(compact=True)
+    summary = _compact_summary(parser)
     elapsed = time.perf_counter() - start
     result = parser.query("additional.fields.posture")
 
@@ -743,7 +755,7 @@ def test_gsub_backreference_warning_survives_transform_fanout_summary():
 
 def test_self_referential_template_chain_is_summarized_fast():
     elapsed, parser = _analysis_seconds(_iam_self_referential_context_parser())
-    summary = parser.analysis_summary(compact=True)
+    summary = _compact_summary(parser)
     result = parser.query("target_taxonomy_role")
 
     assert elapsed < 1.0
@@ -762,7 +774,7 @@ def test_same_field_independent_branch_chain_uses_cached_condition_facts():
 def test_real_slow_2_shape_completes_with_transform_and_branch_fanout_diagnostics():
     start = time.perf_counter()
     parser = ReverseParser(_real_slow_2_shape_parser())
-    summary = parser.analysis_summary(compact=True)
+    summary = _compact_summary(parser)
     elapsed = time.perf_counter() - start
 
     assert elapsed < 5.0
@@ -782,7 +794,7 @@ def test_literal_collection_merge_below_cap_remains_exact():
 
 def test_literal_collection_merge_over_cap_is_summarized_fast():
     elapsed, parser = _analysis_seconds(_literal_collection_merge_parser(MAX_LITERAL_COLLECTION_LINEAGES + 1))
-    summary = parser.analysis_summary(compact=True)
+    summary = _compact_summary(parser)
     lineages = parser.analyze().tokens["global_threat_feed"]
 
     assert elapsed < 1.0
@@ -795,7 +807,7 @@ def test_literal_collection_merge_over_cap_is_summarized_fast():
 def test_unresolved_json_extractor_diagnostics_are_coalesced_with_logical_counts():
     count = 12_001
     elapsed, parser = _analysis_seconds(_unresolved_json_extractor_parser(count))
-    summary = parser.analysis_summary(compact=True)
+    summary = _compact_summary(parser)
     warnings = [
         warning for warning in parser.analyze().structured_warnings if warning.code == "unresolved_extractor_source"
     ]
@@ -810,7 +822,7 @@ def test_unresolved_json_extractor_diagnostics_are_coalesced_with_logical_counts
 def test_coalesced_extractor_counts_survive_branch_merges():
     count_per_branch = 150
     elapsed, parser = _analysis_seconds(_branched_unresolved_json_extractor_parser(count_per_branch))
-    summary = parser.analysis_summary(compact=True)
+    summary = _compact_summary(parser)
 
     assert elapsed < 1.0
     assert summary["warning_counts"]["unresolved_extractor_source"] == count_per_branch * 2
@@ -832,7 +844,7 @@ def test_small_unresolved_json_extractor_set_keeps_exact_source_warnings():
 
 def test_real_slow_3_shape_combines_template_and_extractor_summarization():
     elapsed, parser = _analysis_seconds(_real_slow_3_diagnostic_shape_parser())
-    summary = parser.analysis_summary(compact=True)
+    summary = _compact_summary(parser)
     unresolved_warnings = [
         warning for warning in parser.analyze().structured_warnings if warning.code == "unresolved_extractor_source"
     ]
@@ -1068,7 +1080,7 @@ def test_sampled_hidden_mappings_drive_query_semantics_without_no_assignment():
 
 def test_compact_summary_bounds_high_volume_diagnostics_but_keeps_counts():
     parser = ReverseParser(_dynamic_mutate_parser(200))
-    summary = parser.analysis_summary(compact=True)
+    summary = _compact_summary(parser)
     full_udm_fields = parser.list_udm_fields()
 
     assert summary["warnings_total"] == 200
@@ -1088,7 +1100,7 @@ def test_compact_summary_bounds_high_volume_diagnostics_but_keeps_counts():
 
 def test_compact_summary_marks_no_truncation_when_lists_fit_within_limit():
     parser = ReverseParser('filter { mutate { merge => { "@output" => "event" } } }')
-    summary = parser.analysis_summary(compact=True)
+    summary = _compact_summary(parser)
     assert summary["compact_summary"]["limit"] == 50
     assert summary["compact_summary"]["truncated_keys"] == []
 
@@ -1098,7 +1110,7 @@ def test_compact_summary_many_static_fields_samples_without_scanning_full_payloa
     parser.analyze()
 
     start = time.perf_counter()
-    summary = parser.analysis_summary(compact=True)
+    summary = _compact_summary(parser)
     elapsed = time.perf_counter() - start
 
     assert elapsed < 0.5
@@ -1112,7 +1124,7 @@ def test_compact_summary_aggregates_high_volume_taints_without_full_payload_grow
     parser.analyze()
 
     start = time.perf_counter()
-    summary = parser.analysis_summary(compact=True)
+    summary = _compact_summary(parser)
     elapsed = time.perf_counter() - start
 
     assert elapsed < 0.5
@@ -1176,7 +1188,7 @@ def test_secops_routing_else_if_chain_uses_sparse_branch_merge(count: int, budge
         pytest.skip("strict parse+analysis budget requires native scanner/config acceleration")
     elapsed, parser = _parse_and_analysis_seconds(_secops_routing_chain_parser(count))
     assert elapsed < budget
-    summary = cast(CompactAnalysisSummaryDict, parser.analysis_summary(compact=True))
+    summary = _compact_summary(parser)
     assert summary["token_count"] == (count * 3) + 18
     assert summary["json_extractions_total"] == 1
     assert summary["xml_extractions_total"] == count // 3 + (1 if count % 3 >= 2 else 0)

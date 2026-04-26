@@ -318,7 +318,10 @@ def _facts_contradict(left: Fact, right: Fact) -> bool:
     # operands are RegexFact here. The explicit guard documents the
     # invariant and survives ``python -O`` (which strips ``assert``).
     if not (isinstance(left, RegexFact) and isinstance(right, RegexFact)):
-        raise TypeError(f"Unhandled fact pair: {type(left).__name__}, {type(right).__name__}")
+        raise TypeError(
+            "_facts_contradict reached the regex-vs-regex arm with non-RegexFact operands: "
+            f"left={type(left).__name__}, right={type(right).__name__}"
+        )
     if left.is_match and right.is_match:
         return regex_languages_disjoint(left.body, left.flags, right.body, right.flags) == Trilean.YES
     # The arms below cover ``!~`` semantics. They are *currently
