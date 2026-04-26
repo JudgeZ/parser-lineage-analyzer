@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import os
-import subprocess
+
+# Dev-only benchmark orchestrator; subprocess inputs are constants defined below.
+import subprocess  # nosec B404
 import sys
 import textwrap
 import time

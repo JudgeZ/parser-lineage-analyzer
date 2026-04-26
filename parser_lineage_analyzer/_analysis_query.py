@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from bisect import insort
 from collections import Counter
-from typing import Protocol, cast
+from typing import Protocol, TypedDict, cast
 
 from ._analysis_helpers import (
     _dedupe_diagnostics,
@@ -19,7 +19,7 @@ from ._analysis_helpers import (
     _udm_suffixes,
 )
 from ._analysis_state import AnalyzerState
-from ._types import JSONDict
+from ._types import JSONDict, JSONValue
 from .model import (
     DiagnosticRecord,
     Lineage,
@@ -29,6 +29,73 @@ from .model import (
     TaintReason,
     WarningReason,
 )
+
+
+class AnalysisSummaryDict(TypedDict, total=False):
+    """Static shape of :meth:`AnalysisQueryMixin.analysis_summary` (non-compact).
+
+    Every key is optional (``total=False``) because some entries — notably
+    ``value_type_summary`` — are only emitted when the underlying analyzer
+    state has anything to report. The runtime values follow the same
+    JSON-compatible semantics as ``JSONDict`` (see ``_types.JSONValue``); this
+    TypedDict simply pins the per-key types so static consumers don't need to
+    rediscover them via ``isinstance`` guards on every read.
+    """
+
+    udm_fields: list[str]
+    output_anchors: list[JSONDict]
+    unsupported: list[str]
+    warnings: list[str]
+    structured_warnings: list[JSONDict]
+    diagnostics: list[JSONDict]
+    taints: list[JSONDict]
+    token_count: int
+    json_extractions: list[JSONDict]
+    csv_extractions: list[JSONDict]
+    kv_extractions: list[JSONDict]
+    xml_extractions: list[JSONDict]
+    value_type_summary: dict[str, JSONValue]
+
+
+class CompactAnalysisSummaryDict(TypedDict, total=False):
+    """Static shape of :meth:`AnalysisQueryMixin.analysis_summary` (compact).
+
+    Mirrors :class:`AnalysisSummaryDict` and adds the ``*_total`` counters,
+    the ``compact_summary`` envelope, and the per-code count maps emitted only
+    by the bounded summary path. ``total=False`` keeps the contract honest:
+    not every counter is present in every payload (the implementation only
+    emits the keys it actually populates), so callers should still go through
+    ``.get()`` / the CLI ``_summary_*`` helpers.
+    """
+
+    compact_summary: dict[str, JSONValue]
+    udm_fields: list[str]
+    udm_fields_total: int
+    output_anchors: list[JSONDict]
+    unsupported: list[str]
+    warnings: list[str]
+    structured_warnings: list[JSONDict]
+    diagnostics: list[JSONDict]
+    taints: list[JSONDict]
+    token_count: int
+    json_extractions: list[JSONDict]
+    csv_extractions: list[JSONDict]
+    kv_extractions: list[JSONDict]
+    xml_extractions: list[JSONDict]
+    warning_counts: dict[str, int]
+    taint_counts: dict[str, int]
+    diagnostic_counts: dict[str, int]
+    unsupported_total: int
+    warnings_total: int
+    structured_warnings_total: int
+    diagnostics_total: int
+    taints_total: int
+    output_anchors_total: int
+    json_extractions_total: int
+    csv_extractions_total: int
+    kv_extractions_total: int
+    xml_extractions_total: int
+
 
 SUMMARY_SAMPLE_LIMIT = 50
 MAX_ANCHOR_CONDITIONED_COMPACT_MAPPINGS = 50_000
@@ -243,7 +310,7 @@ class AnalysisQueryMixin:
         out = sorted(normalized)
         return out[:limit] if limit is not None else out
 
-    def analysis_summary(self, *, compact: bool = False) -> JSONDict:
+    def analysis_summary(self, *, compact: bool = False) -> AnalysisSummaryDict | CompactAnalysisSummaryDict:
         """Return deterministic parser/analyzer coverage metadata for CI use."""
         state = cast(_QueryContext, self).analyze()
         if compact:
@@ -260,12 +327,12 @@ class AnalysisQueryMixin:
         # mutation, or memoize here.
         from .model import Lineage as _Lineage
 
-        value_type_summary: JSONDict = {}
+        value_type_summary: dict[str, JSONValue] = {}
         for token, lineages in state.tokens.items():
             union = _Lineage.union_value_types(lineages)
             if union != "unknown":
                 value_type_summary[token] = union
-        summary: JSONDict = {
+        summary: AnalysisSummaryDict = {
             "udm_fields": self.list_udm_fields(),
             "output_anchors": [a.to_json() for a in state.output_anchors],
             "unsupported": _dedupe_strings(state.unsupported),
@@ -292,7 +359,7 @@ class AnalysisQueryMixin:
                 taints.extend(lin.taints)
         return _dedupe_taints(taints)
 
-    def _compact_analysis_summary(self, state: AnalyzerState) -> JSONDict:
+    def _compact_analysis_summary(self, state: AnalyzerState) -> CompactAnalysisSummaryDict:
         taint_sample, taint_total, taint_counts = self._summary_taint_sample_counts(state)
         unsupported = _dedupe_strings(state.unsupported)
         warnings = _dedupe_strings(state.warnings)
@@ -318,7 +385,7 @@ class AnalysisQueryMixin:
             "xml_extractions": len(state.xml_extractions),
         }
         truncated_keys = sorted(key for key, total in totals.items() if total > SUMMARY_SAMPLE_LIMIT)
-        return {
+        compact_summary: CompactAnalysisSummaryDict = {
             "compact_summary": {"limit": SUMMARY_SAMPLE_LIMIT, "truncated_keys": truncated_keys},
             "udm_fields": udm_fields,
             "udm_fields_total": udm_fields_total,
@@ -347,6 +414,7 @@ class AnalysisQueryMixin:
             "kv_extractions_total": totals["kv_extractions"],
             "xml_extractions_total": totals["xml_extractions"],
         }
+        return compact_summary
 
     def _summary_taint_sample_counts(self, state: AnalyzerState) -> tuple[list[JSONDict], int, dict[str, int]]:
         seen: set[tuple[object, ...]] = set()

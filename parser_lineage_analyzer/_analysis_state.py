@@ -464,8 +464,7 @@ class TokenStore(MutableMapping[str, list[Lineage]]):
         self._append_keys.pop(key, None)
         self._deleted.discard(key)
         if self._owner is not None:
-            self._owner._inferred_token_generations.pop(key, None)
-            self._owner._inferred_token_lineage_keys.pop(key, None)
+            self._owner._invalidate_inferred_token(key)
         if self._owner is not None and (not existed or old != value):
             self._owner._mark_token_changed(key, existed=existed)
 
@@ -627,7 +626,21 @@ class AnalyzerState:
     _untargeted_extractor_hint_keys: dict[str, dict[Key, int]] = field(
         default_factory=dict, init=False, repr=False, compare=False
     )
-    _extractor_hint_index_owned: bool = field(default=True, init=False, repr=False, compare=False)
+    # Per-kind copy-on-write tracking for the extractor hint index. Cycle 1 had
+    # a single ``_extractor_hint_index_owned`` flag that, when False, forced a
+    # full deep-copy of every kind's nested set on the next ``_ensure_extractor_hint_index``
+    # call. For workloads that fork once per ``if`` branch and add a single
+    # extractor per branch, that meant copying every kind's hint set on every
+    # fork — ~38% of analysis time on the dotted-target microbenchmark.
+    #
+    # The fix is per-kind ownership: the outer dicts are shallow-copied lazily
+    # (cheap, the kind set is bounded to ~4-6 entries) and only the kinds that
+    # actually need to mutate get a deep copy of their hint buckets. Other kinds
+    # remain shared by reference between parent and clone.
+    _extractor_hint_outer_owned: bool = field(default=True, init=False, repr=False, compare=False)
+    _extractor_hint_owned_kinds: set[str] = field(
+        default_factory=lambda: {"json", "kv", "csv", "xml"}, init=False, repr=False, compare=False
+    )
     _extractor_hint_index_sizes: tuple[int, int, int, int] = field(
         default=(0, 0, 0, 0), init=False, repr=False, compare=False
     )
@@ -668,12 +681,22 @@ class AnalyzerState:
     _inference_miss_cache: dict[str, tuple[int, int, int, int]] = field(
         default_factory=dict, init=False, repr=False, compare=False
     )
-    _inferred_token_generations: dict[str, tuple[int, int, int, int]] = field(
+    # Storage backing the _inferred_token_generations / _inferred_token_lineage_keys
+    # properties below. Stored under distinct names so the property descriptors on
+    # the class do not collide with dataclass __init__ assignment.
+    _inferred_token_generations_data: dict[str, tuple[int, int, int, int]] = field(
         default_factory=dict, init=False, repr=False, compare=False
     )
-    _inferred_token_lineage_keys: dict[str, set[Key]] = field(
+    _inferred_token_lineage_keys_data: dict[str, set[Key]] = field(
         default_factory=dict, init=False, repr=False, compare=False
     )
+    # Copy-on-write ownership flags. When False, the corresponding _data dict is
+    # shared with a parent state from clone() and must be copied before mutation.
+    # The accessor properties handle that transparently for both read-then-mutate
+    # patterns (e.g. ``state._inferred_token_generations[token] = X``) and for
+    # method calls like ``.pop()``.
+    _inferred_token_generations_owned: bool = field(default=True, init=False, repr=False, compare=False)
+    _inferred_token_lineage_keys_owned: bool = field(default=True, init=False, repr=False, compare=False)
     _has_resolved_extractor: dict[str, bool] = field(default_factory=dict, init=False, repr=False, compare=False)
     _dynamic_template_literals_cache: dict[str, tuple[str, ...]] = field(
         default_factory=dict, init=False, repr=False, compare=False
@@ -682,6 +705,59 @@ class AnalyzerState:
         default_factory=dict, init=False, repr=False, compare=False
     )
     _static_destination_total_tokens: int = field(default=0, init=False, repr=False, compare=False)
+
+    # ------------------------------------------------------------------
+    # Copy-on-write accessors for the inferred-token caches.
+    #
+    # These two dicts are populated heavily during member inference and used
+    # extensively as sticky caches across clones. Eagerly deep-copying them on
+    # every clone() costs O(N) per fork — at thousands of clones over a single
+    # analysis that becomes the dominant cost (~62% of wall time on dotted-member
+    # workloads). The COW pattern below mirrors the existing _token_parent_index_*
+    # design: clone() shares the dicts by reference and resets the owned flag,
+    # then the property getter copies on first read after a clone, so any caller
+    # that mutates the dict (even via item assignment from another module) gets
+    # an owned copy without the parent state being affected.
+    # ------------------------------------------------------------------
+
+    @property
+    def _inferred_token_generations(self) -> dict[str, tuple[int, int, int, int]]:
+        if not self._inferred_token_generations_owned:
+            self._inferred_token_generations_data = dict(self._inferred_token_generations_data)
+            self._inferred_token_generations_owned = True
+        return self._inferred_token_generations_data
+
+    @_inferred_token_generations.setter
+    def _inferred_token_generations(self, value: dict[str, tuple[int, int, int, int]]) -> None:
+        self._inferred_token_generations_data = value
+        self._inferred_token_generations_owned = True
+
+    @property
+    def _inferred_token_lineage_keys(self) -> dict[str, set[Key]]:
+        if not self._inferred_token_lineage_keys_owned:
+            # Per-key sets remain shared until they too are mutated. The dict-of-set
+            # write sites we have today either ``pop()`` whole entries or replace the
+            # set wholesale via ``state._inferred_token_lineage_keys[token] = {...}``,
+            # so a shallow copy here is correct: pop removes the reference from the
+            # owned dict without touching the original set, and item assignment binds
+            # a fresh set.
+            self._inferred_token_lineage_keys_data = dict(self._inferred_token_lineage_keys_data)
+            self._inferred_token_lineage_keys_owned = True
+        return self._inferred_token_lineage_keys_data
+
+    @_inferred_token_lineage_keys.setter
+    def _inferred_token_lineage_keys(self, value: dict[str, set[Key]]) -> None:
+        self._inferred_token_lineage_keys_data = value
+        self._inferred_token_lineage_keys_owned = True
+
+    def _invalidate_inferred_token(self, token: str) -> None:
+        # Membership-test-then-pop helper that avoids triggering COW when the
+        # token is not present in either inferred-cache dict (the common case
+        # for clones that touch tokens unrelated to past inference).
+        if token in self._inferred_token_generations_data:
+            self._inferred_token_generations.pop(token, None)
+        if token in self._inferred_token_lineage_keys_data:
+            self._inferred_token_lineage_keys.pop(token, None)
 
     def __post_init__(self) -> None:
         if isinstance(self.tokens, TokenStore):
@@ -746,8 +822,7 @@ class AnalyzerState:
         self._removed_tokens.discard(token)
         self._discard_token_lineage_key_cache(token)
         if invalidate_inferred:
-            self._inferred_token_generations.pop(token, None)
-            self._inferred_token_lineage_keys.pop(token, None)
+            self._invalidate_inferred_token(token)
         self._inference_miss_cache = {}
         self._member_inference_cache = {}
         if not existed:
@@ -758,8 +833,7 @@ class AnalyzerState:
         self._dirty_tokens.add(token)
         self._removed_tokens.add(token)
         self._discard_token_lineage_key_cache(token)
-        self._inferred_token_generations.pop(token, None)
-        self._inferred_token_lineage_keys.pop(token, None)
+        self._invalidate_inferred_token(token)
         self._inference_miss_cache = {}
         self._member_inference_cache = {}
         self._remove_token_from_parent_index(token)
@@ -948,25 +1022,42 @@ class AnalyzerState:
             self._extractor_hint_index = {}
             self._untargeted_extractor_hints = {}
             self._untargeted_extractor_hint_keys = {}
-            self._extractor_hint_index_owned = True
+            self._extractor_hint_outer_owned = True
+            self._extractor_hint_owned_kinds = set(_EXTRACTOR_HINT_KINDS)
             self._extractor_hint_index_sizes = (0, 0, 0, 0)
-        if not self._extractor_hint_index_owned:
-            self._extractor_hint_index = {
-                kind: {key: set(values) for key, values in self._extractor_hint_index.get(kind, {}).items()}
-                for kind in _EXTRACTOR_HINT_KINDS
-            }
-            self._untargeted_extractor_hints = {
-                kind: list(hints) for kind, hints in self._untargeted_extractor_hints.items()
-            }
-            self._untargeted_extractor_hint_keys = {
-                kind: dict(keys) for kind, keys in self._untargeted_extractor_hint_keys.items()
-            }
-            self._extractor_hint_index_owned = True
+        # Outer-dict COW: shallow-copy the three top-level dicts the first time
+        # this clone touches the index. The dicts hold at most one entry per
+        # kind (~4-6 entries), so the shallow copy is cheap. Inner buckets are
+        # still shared by reference at this point — they are deep-copied per
+        # kind below, only for kinds that actually mutate.
+        if not self._extractor_hint_outer_owned:
+            self._extractor_hint_index = dict(self._extractor_hint_index)
+            self._untargeted_extractor_hints = dict(self._untargeted_extractor_hints)
+            self._untargeted_extractor_hint_keys = dict(self._untargeted_extractor_hint_keys)
+            self._extractor_hint_outer_owned = True
         indexes = self._extractor_hint_index
         old_sizes = self._extractor_hint_index_sizes
+        owned_kinds = self._extractor_hint_owned_kinds
         for kind_idx, kind in enumerate(_EXTRACTOR_HINT_KINDS):
-            kind_index = indexes.setdefault(kind, {})
             start = old_sizes[kind_idx]
+            if start == sizes[kind_idx]:
+                # No new hints for this kind — leave its buckets shared with
+                # the parent. This is the per-kind COW payoff: a 1000-branch
+                # parser that adds a fresh ``json`` extractor in each branch
+                # never deep-copies the ``kv``/``csv``/``xml`` buckets.
+                continue
+            if kind not in owned_kinds:
+                # Per-kind deep COW: copy this kind's index buckets and the
+                # untargeted bookkeeping (lists/dicts) so we can mutate them
+                # without disturbing the parent's view. Other kinds stay
+                # shared until they too need to mutate.
+                indexes[kind] = {key: set(values) for key, values in indexes.get(kind, {}).items()}
+                if kind in self._untargeted_extractor_hints:
+                    self._untargeted_extractor_hints[kind] = list(self._untargeted_extractor_hints[kind])
+                if kind in self._untargeted_extractor_hint_keys:
+                    self._untargeted_extractor_hint_keys[kind] = dict(self._untargeted_extractor_hint_keys[kind])
+                owned_kinds.add(kind)
+            kind_index = indexes.setdefault(kind, {})
             for pos, hint in enumerate(self._hints_for_kind(kind)[start:], start=start):
                 target = hint.details.get("target") if hint.details else None
                 if target:
@@ -1072,9 +1163,12 @@ class AnalyzerState:
 
     def append_token_lineages(self, token: str, lineages: list[Lineage]) -> None:
         store = self.tokens if isinstance(self.tokens, TokenStore) else None
+        # Read directly from the COW backing dict — membership doesn't mutate, and
+        # using the property here would force an early COW on every append even
+        # when ``preserve_inferred`` is False.
         preserve_inferred = (
             store is not None
-            and token in self._inferred_token_generations
+            and token in self._inferred_token_generations_data
             and token in store
             and not store.is_deleted(token)
         )
@@ -1293,17 +1387,36 @@ class AnalyzerState:
         clone._static_destination_total_tokens = self._static_destination_total_tokens
         clone._output_anchor_seen = self._output_anchor_seen
         clone._hint_seen_by_kind = self._hint_seen_by_kind
+        # Per-kind copy-on-write for the extractor hint index. Both parent and
+        # clone share the outer dicts and inner buckets by reference; the next
+        # call to ``_ensure_extractor_hint_index`` on either side shallow-copies
+        # the outer dicts (cheap, ~4-6 entries) and only deep-copies the kinds
+        # whose hint count actually grew. The parent's flags are reset too —
+        # otherwise the parent could mutate a now-shared bucket in place and
+        # silently corrupt the clone's view.
+        self._extractor_hint_outer_owned = False
+        self._extractor_hint_owned_kinds = set()
         clone._extractor_hint_index = self._extractor_hint_index
         clone._untargeted_extractor_hints = self._untargeted_extractor_hints
         clone._untargeted_extractor_hint_keys = self._untargeted_extractor_hint_keys
-        clone._extractor_hint_index_owned = False
+        clone._extractor_hint_outer_owned = False
+        clone._extractor_hint_owned_kinds = set()
         clone._extractor_hint_index_sizes = self._extractor_hint_index_sizes
         clone._extractor_hint_generation = self._extractor_hint_generation
         clone._extractor_hint_generation_by_kind = dict(self._extractor_hint_generation_by_kind)
-        clone._inferred_token_generations = dict(self._inferred_token_generations)
-        clone._inferred_token_lineage_keys = {
-            token: set(keys) for token, keys in self._inferred_token_lineage_keys.items()
-        }
+        # Copy-on-write: share the inferred-token caches by reference and let the
+        # property accessors copy lazily on first mutation. We assign through the
+        # ``_data`` storage names to avoid the property setter, which would mark
+        # the clone as owned and force the eager copy we are trying to avoid.
+        # We must also flip the parent's flag to False — otherwise the parent
+        # could mutate the now-shared dict in place and silently corrupt the
+        # clone's view.
+        self._inferred_token_generations_owned = False
+        self._inferred_token_lineage_keys_owned = False
+        clone._inferred_token_generations_data = self._inferred_token_generations_data
+        clone._inferred_token_lineage_keys_data = self._inferred_token_lineage_keys_data
+        clone._inferred_token_generations_owned = False
+        clone._inferred_token_lineage_keys_owned = False
         clone._has_resolved_extractor = dict(self._has_resolved_extractor)
         clone._metadata_owned = False
         clone._metadata_seen_owned = False

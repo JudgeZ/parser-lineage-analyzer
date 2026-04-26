@@ -69,3 +69,97 @@ jobs:
           path: fuzz/findings_*/
           if-no-files-found: ignore
           retention-days: 30
+
+  atheris_native:
+    name: Atheris fuzz (native extensions enabled)
+    runs-on: ubuntu-22.04
+    # Mirrors the pure-Python `atheris` job above but leaves the Cython
+    # extensions (_scanner_ext, _config_fast_ext, _dedupe_ext, _template_ext,
+    # _branch_merge_ext) enabled so the analyzer's native code paths actually
+    # execute under the fuzzer. Runs on a separate runner in parallel, so
+    # wall-clock time is not extended.
+    #
+    # NOTE: this is "exercise" coverage, not libFuzzer-instrumented coverage.
+    # Atheris feeds libFuzzer Python-bytecode edge counts only; the C
+    # extensions are loaded as plain shared objects without
+    # `-fsanitize=fuzzer-no-link` instrumentation, so libFuzzer's input
+    # mutation is steered by Python-side coverage alone. The job still
+    # catches crashes, segfaults, and asserts that originate inside native
+    # code, which is the gap the security review flagged. True
+    # native-code-coverage-guided fuzzing would require a Clang rebuild of
+    # the extensions and an LD_PRELOAD of Atheris's libFuzzer (see
+    # https://github.com/google/atheris/blob/master/native_extension_fuzzing.md);
+    # leaving that for a follow-up.
+    timeout-minutes: 60
+    env:
+      DURATION: ${{ github.event.inputs.duration || '120' }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
+        with:
+          python-version: '3.10'
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev]"
+      # Atheris 3.x requires dis.Positions (Python 3.11+); pin to 2.x for the
+      # 3.10 runner.
+      - run: python -m pip install 'atheris<3'
+      # Fail loudly if the Cython build silently no-op'd (toolchain regression,
+      # missing Cython, etc.) — without this guard the job would still pass
+      # while running pure-Python code, looking identical to the `atheris`
+      # job and hiding the very regression this job exists to catch.
+      - name: Verify native extensions are loadable
+        run: |
+          python - <<'PY'
+          import importlib, sys
+          required = [
+              "parser_lineage_analyzer._native._scanner_ext",
+              "parser_lineage_analyzer._native._config_fast_ext",
+              "parser_lineage_analyzer._native._dedupe_ext",
+              "parser_lineage_analyzer._native._template_ext",
+              "parser_lineage_analyzer._native._branch_merge_ext",
+          ]
+          missing = []
+          for name in required:
+              try:
+                  importlib.import_module(name)
+              except ImportError as exc:
+                  missing.append(f"{name}: {exc}")
+          if missing:
+              sys.exit("native extensions missing (atheris_native job would silently regress to pure-Python): " + "; ".join(missing))
+          PY
+      # libFuzzer treats positional corpus directories as read-write — it
+      # writes new "interesting" inputs back to the dir. Copy fixtures into
+      # a working dir so the atheris run does not mutate checked-in tests.
+      - name: Stage seed corpus
+        run: |
+          mkdir -p fuzz/corpus_parse_code_native fuzz/corpus_analyzer_native
+          cp tests/fixtures/test_corpus/baseline/*.cbn fuzz/corpus_parse_code_native/
+          cp tests/fixtures/test_corpus/baseline/*.cbn fuzz/corpus_analyzer_native/
+      - name: Fuzz parse_code (native)
+        run: |
+          mkdir -p fuzz/findings_parse_code_native
+          python fuzz/fuzz_parse_code.py \
+            -max_total_time=${DURATION} \
+            -artifact_prefix=fuzz/findings_parse_code_native/ \
+            fuzz/corpus_parse_code_native
+      - name: Fuzz parse_config (native)
+        run: |
+          mkdir -p fuzz/findings_parse_config_native
+          python fuzz/fuzz_parse_config.py \
+            -max_total_time=${DURATION} \
+            -artifact_prefix=fuzz/findings_parse_config_native/
+      - name: Fuzz analyzer (native)
+        run: |
+          mkdir -p fuzz/findings_analyzer_native
+          python fuzz/fuzz_analyzer.py \
+            -max_total_time=${DURATION} \
+            -artifact_prefix=fuzz/findings_analyzer_native/ \
+            fuzz/corpus_analyzer_native
+      - name: Upload crash artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
+        with:
+          name: atheris-native-crashes
+          path: fuzz/findings_*_native/
+          if-no-files-found: ignore
+          retention-days: 30

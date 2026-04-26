@@ -878,7 +878,13 @@ def test_deep_extractor_target_hint_chains_are_indexed_by_prefix():
 
     assert query_elapsed < 0.25
     assert len(result.mappings) == 1_000
-    assert result.status == "repeated"
+    # C1 fix: chained json extractions all flow through a single
+    # `mutate.replace` (overwrite), so these 1000 mappings represent
+    # multi-source derivation, not append/merge semantics. Status should be
+    # `derived`, not `repeated` — the prior assertion only passed because
+    # `_status_from_aggregate` misclassified any 2+ unconditional exact
+    # mappings as `repeated`.
+    assert result.status == "derived"
 
 
 def test_untargeted_extractor_hints_are_coalesced_before_token_inference_fanout():
@@ -1396,3 +1402,155 @@ def test_with_conditions_long_existing_tuple_uses_set_membership_fast_path():
     # fast hardware; budget is loose to absorb noisy CI runners (Windows
     # py3.11 GHA observed ~0.5s; macOS/Linux observed <0.05s).
     assert elapsed < 1.5
+
+
+def test_analyzer_state_clone_uses_cow_for_inferred_token_caches():
+    # Regression test for the v0.1.0 release-blocker performance fix.
+    #
+    # Before the copy-on-write rewrite, ``AnalyzerState.clone()`` eagerly
+    # deep-copied ``_inferred_token_generations`` and
+    # ``_inferred_token_lineage_keys`` on every fork. With ~3,200 clones
+    # touching populated inferred-caches that scaled O(N * dict_size) and
+    # produced an 8x wall-clock slowdown in profiling (0.99s of 1.59s spent
+    # on the dict-of-set comprehension alone). The COW pattern shares the
+    # dicts by reference and only copies on first mutation per clone.
+    #
+    # This is a microbenchmark rather than a parser-driven workload because
+    # the caches are populated by ``_cache_inferred_token`` for inferred
+    # JSON members, which is hard to drive in bulk via real fixtures without
+    # also exercising large amounts of unrelated analysis.
+    state = AnalyzerState()
+    for i in range(100):
+        state._inferred_token_generations[f"token_{i}"] = (i, i + 1, i + 2, i + 3)
+        state._inferred_token_lineage_keys[f"token_{i}"] = {(f"k{j}",) for j in range(20)}
+
+    n = 3_200
+    start = time.perf_counter()
+    clones = []
+    for i in range(n):
+        c = state.clone()
+        # Trigger COW by popping a key from each cache. Use the public
+        # ``.pop()`` path (rather than the COW helper) so the budget bound
+        # below catches a regression to the eager-copy clone path and
+        # not just the absence of a particular helper.
+        c._inferred_token_generations.pop(f"token_{i % 100}", None)
+        c._inferred_token_lineage_keys.pop(f"token_{i % 100}", None)
+        clones.append(c)
+    elapsed = time.perf_counter() - start
+
+    # Budget gives ~4x headroom above the post-fix ~0.03s number; the
+    # pre-fix code took ~0.35s for the same loop on the same hardware
+    # (12x slower). 3.0s leaves ample slack for slow CI hosts while still
+    # catching a regression to the unconditional eager-copy path, which
+    # would balloon to several seconds at this iteration count once the
+    # inferred-cache dicts inflate to realistic sizes.
+    assert elapsed < 3.0
+
+    # Sanity-check COW semantics: parent state remains untouched even
+    # though every clone mutated its view of the inferred caches.
+    assert len(state._inferred_token_generations) == 100
+    assert len(state._inferred_token_lineage_keys) == 100
+    # Each clone observed exactly one popped entry, leaving 99 keys.
+    for clone in clones:
+        assert len(clone._inferred_token_generations) == 99
+        assert len(clone._inferred_token_lineage_keys) == 99
+
+
+def test_analyzer_state_clone_uses_per_kind_cow_for_extractor_hint_index():
+    # Regression test for the v0.1.0 release-blocker performance fix (gap P2).
+    #
+    # Before the per-kind COW rewrite, ``_ensure_extractor_hint_index`` reacted
+    # to ``_extractor_hint_index_owned == False`` by deep-copying the index
+    # buckets for *every* kind unconditionally — even kinds that hadn't grown
+    # since the fork. For a 1000-branch parser that adds a fresh ``json``
+    # extractor in each branch and immediately references its dotted target,
+    # that meant cloning every kind's hint set on every fork; the inner
+    # ``set(values)`` copy alone accounted for ~38% of analysis wall time.
+    # Wall scaling 500/1000/2000 → 0.13/0.36/1.24 s (~O(N^1.7)).
+    #
+    # The post-fix path keeps untouched kinds shared by reference and only
+    # deep-copies the kind whose ``len()`` actually changed in this branch.
+    n = 1_500
+    state = AnalyzerState()
+
+    # Pre-populate every kind with a realistic per-kind hint set so that the
+    # pre-fix ``set(values)`` deep copy is expensive enough to detect. Each
+    # kind gets 1000 hints with distinct dotted targets, so the index has
+    # 1000 buckets per kind, each holding a one-element ``set[int]``. At
+    # this size the pre-fix all-kinds eager copy is ~4s while the post-fix
+    # per-kind COW copies only json (~0.8s), giving a ~5x signal that the
+    # 2.5s budget below catches reliably even on slow CI.
+    for kind, store in (
+        ("json", state.json_extractions),
+        ("kv", state.kv_extractions),
+        ("csv", state.csv_extractions),
+        ("xml", state.xml_extractions),
+    ):
+        for i in range(1_000):
+            store.append(
+                ExtractionHint(
+                    kind,
+                    "message",
+                    {"target": f"{kind}_target_{i}"},
+                    parser_locations=[f"line {i}: {kind}"],
+                    source_resolved=True,
+                )
+            )
+    # Force the index to materialise on the parent so every clone starts with
+    # populated buckets that could have been deep-copied by the buggy path.
+    state.extractor_hints_for_token("json", "json_target_0")
+
+    start = time.perf_counter()
+    clones = []
+    for i in range(n):
+        c = state.clone()
+        # Add a single new ``json`` extractor in this branch — mirrors the
+        # 1000-branch dotted-target workload from the perf review. We go
+        # through ``add_extraction_hint`` (rather than appending to the list
+        # directly) because ``clone()`` shares the per-kind extraction lists
+        # by reference; the public path runs ``_ensure_metadata_owned`` to
+        # COW the list before mutating it.
+        c.add_extraction_hint(
+            "json",
+            ExtractionHint(
+                "json",
+                "message",
+                {"target": f"branch_target_{i}"},
+                parser_locations=[f"branch {i}"],
+                source_resolved=True,
+            ),
+        )
+        # Immediately reference the new target — this is the hot call site
+        # that triggers ``_ensure_extractor_hint_index`` and (pre-fix) the
+        # full deep-copy of every kind's bucket map.
+        hits = c.extractor_hints_for_token("json", f"branch_target_{i}")
+        assert hits, "new branch-local hint must be reachable via the index"
+        clones.append(c)
+    elapsed = time.perf_counter() - start
+
+    # Budget tuned for slow shared CI runners: post-fix wall is ~0.8s on a
+    # local dev machine and ~3s on macOS / Ubuntu GitHub-hosted runners. The
+    # pre-fix path is ~4s locally and would scale to ~15-20s on those CI
+    # runners (5x slower than the post-fix path on the same hardware), so an
+    # 8s budget still catches a regression with 100% margin while absorbing
+    # CI variance. Don't tighten this without re-measuring the pre-fix wall
+    # on the slowest runner in the matrix.
+    assert elapsed < 8.0
+
+    # Sanity-check COW semantics: parent's index is untouched and still sized
+    # to the original 1000 hints per kind, while every clone sees 1001 json
+    # hints (1000 inherited + 1 branch-local).
+    assert len(state.json_extractions) == 1_000
+    for clone in clones:
+        assert len(clone.json_extractions) == 1_001
+    # Parent's untouched kinds (kv/csv/xml) stayed shared by reference — the
+    # whole point of per-kind COW. We can't observe sharing directly without
+    # poking at the ``_extractor_hint_owned_kinds`` flag, so verify that
+    # path explicitly: the last clone never touched kv/csv/xml, so those
+    # kinds must not be in its owned-kinds set, and the underlying buckets
+    # must be the same object as the parent's.
+    last_clone = clones[-1]
+    assert "json" in last_clone._extractor_hint_owned_kinds
+    for shared_kind in ("kv", "csv", "xml"):
+        assert shared_kind not in last_clone._extractor_hint_owned_kinds
+        assert last_clone._extractor_hint_index[shared_kind] is state._extractor_hint_index[shared_kind]

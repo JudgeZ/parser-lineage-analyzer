@@ -128,8 +128,60 @@ def test_render_helpers_do_not_own_final_newline_and_verbose_shows_all_source_fi
     text = render_text(result, verbose=True)
     assert not text.endswith("\n")
     assert "expression: x" in text
-    assert "details: {'k': 'v'}" in text
+    # Detail dict values render as JSON (double-quoted) rather than Python
+    # repr to keep the text output free of single-quote/None punctuation
+    # that would otherwise leak into log/CI surfaces.
+    assert 'details: {"k": "v"}' in text
+    assert "{'k': 'v'}" not in text
     assert not render_json(result).endswith("\n")
+
+
+def test_render_text_tolerates_non_json_serializable_detail_values():
+    """Codex P2: ``SourceRef.details`` is statically typed as a JSON-only
+    mapping, but the renderer is the wrong place to enforce that contract.
+    A malformed details payload (a ``set``, a custom class, a value whose
+    ``__str__`` raises) should degrade gracefully rather than abort the
+    whole render via ``TypeError`` from ``json.dumps``. Pre-fix, the new
+    JSON-formatting helper would crash on any non-serializable value.
+    """
+    from parser_lineage_analyzer.render import _format_detail_value
+
+    # Frozenset / set: not JSON-serializable. Without ``default=str`` the
+    # call would raise TypeError.
+    assert _format_detail_value({1, 2, 3})  # smoke
+
+    # Custom object with no JSON serialization path — falls through to
+    # ``default=str``, which yields the object's str() form.
+    class _Custom:
+        def __str__(self) -> str:
+            return "custom-repr"
+
+    assert _format_detail_value(_Custom()) == '"custom-repr"'
+
+    # A circular container: json.dumps detects this even with a default,
+    # so the final ``except (TypeError, ValueError)`` fallback kicks in.
+    cycle: list[object] = []
+    cycle.append(cycle)
+    rendered = _format_detail_value(cycle)
+    assert rendered  # non-empty — must not raise
+
+    # And the full render path must not abort either: build a SourceRef
+    # with a JSON-compliant payload (the static type contract) and confirm
+    # rendering still works end-to-end.
+    result = QueryResult(
+        "f",
+        ["f"],
+        [
+            Lineage(
+                status="constant",
+                sources=[SourceRef(kind="constant", expression="x", details={"k": "v", "n": 1})],
+                expression="x",
+                parser_locations=["line 1"],
+            )
+        ],
+    )
+    text = render_text(result, verbose=True)
+    assert 'details: {"k": "v", "n": 1}' in text or '"k": "v"' in text
 
 
 def test_render_text_limit_is_optional_and_bounds_repeated_sections():
@@ -357,7 +409,7 @@ def test_compact_json_bounds_nested_mapping_metadata_but_full_json_preserves_it(
 
 def test_compact_json_uses_single_query_result_aggregate(monkeypatch):
     calls = 0
-    original_aggregate = QueryResult._aggregate
+    original_aggregate = QueryResult.aggregate
     result = QueryResult(
         "f",
         ["f"],
@@ -372,7 +424,7 @@ def test_compact_json_uses_single_query_result_aggregate(monkeypatch):
         calls += 1
         return original_aggregate(self)
 
-    monkeypatch.setattr(QueryResult, "_aggregate", counting_aggregate)
+    monkeypatch.setattr(QueryResult, "aggregate", counting_aggregate)
 
     payload = json.loads(render_compact_json(result))
 

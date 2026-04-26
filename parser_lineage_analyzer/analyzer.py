@@ -71,7 +71,8 @@ class ReverseParser(AnalysisQueryMixin, AnalysisExecutor):
         self.state.tokens["message"] = [
             Lineage(
                 status="exact",
-                sources=[SourceRef(kind="raw_message", source_token="message", path="message")],
+                # "message" is the Logstash field name; not a credential.
+                sources=[SourceRef(kind="raw_message", source_token="message", path="message")],  # nosec B106
                 expression="message",
                 parser_locations=["initial parser input"],
             )

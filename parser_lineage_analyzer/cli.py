@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 
 from . import __version__
 from .analyzer import MAX_PARSER_BYTES
+from .render import sanitize_for_terminal
 
 if TYPE_CHECKING:
     from .model import QueryResult
@@ -226,6 +227,29 @@ def _query_has_strict_findings(result: QueryResult) -> bool:
     )
 
 
+def _warn_if_parse_recovery(structured_warnings: Sequence[object]) -> None:
+    """Surface a stderr notice when the parser had to recover from unparsed
+    statements. Without this the only signal is buried in the body output and
+    a downstream pipeline can mistake "garbage in" for "successful query".
+    Exit code is unchanged so existing scripts keep working; use ``--strict``
+    to convert this into a non-zero exit.
+    """
+    count = 0
+    for warning in structured_warnings:
+        code = getattr(warning, "code", None)
+        if code is None and isinstance(warning, dict):
+            code = warning.get("code")
+        if code == "parse_recovery":
+            count += 1
+    if count:
+        plural = "" if count == 1 else "s"
+        print(
+            f"warning: parser recovered from {count} unparsed statement{plural}; "
+            "analysis may be incomplete (use --strict to fail)",
+            file=sys.stderr,
+        )
+
+
 # Code emitted by the analyzer for the "no mappings discovered for the queried
 # field" suggestion (see ``_analysis_query.py``). The CLI lifts this entry out
 # of ``warnings`` / ``structured_warnings`` and renders it under a separate
@@ -292,9 +316,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.compact_json and args.compact_summary:
         print("error: --compact-json and --compact-summary are mutually exclusive", file=sys.stderr)
         return 2
-    if args.verbose and (args.list or args.summary or args.compact_summary or args.json or args.compact_json):
+    # JSON output already includes the same fields ``--verbose`` would surface
+    # in text mode (parser_locations, notes, structured_warnings,
+    # diagnostics), so combining ``--verbose`` with ``--json``/``--compact-json``
+    # is a no-op rather than an error. Only warn for the modes where
+    # ``--verbose`` is genuinely silent (--list, --summary, --compact-summary).
+    if args.verbose and (args.list or args.summary or args.compact_summary):
         print(
-            "warning: --verbose is ignored with --list, --summary, --compact-summary, --json, or --compact-json",
+            "warning: --verbose is ignored with --list, --summary, or --compact-summary",
             file=sys.stderr,
         )
     if args.udm_field is not None:
@@ -336,6 +365,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     if summary_requested:
         summary = rp.analysis_summary(compact=args.compact_summary)
+        _warn_if_parse_recovery(_summary_sequence(summary, "structured_warnings"))
         if args.json:
             print(json.dumps(summary, indent=2))
         else:
@@ -353,11 +383,11 @@ def main(argv: list[str] | None = None) -> int:
             if unsupported:
                 print("Unsupported constructs:")
                 for item in unsupported:
-                    print(f"  - {item}")
+                    print(f"  - {sanitize_for_terminal(str(item))}")
             if warnings:
                 print("Warnings:")
                 for item in warnings:
-                    print(f"  - {item}")
+                    print(f"  - {sanitize_for_terminal(str(item))}")
         if args.strict and _summary_has_strict_findings(summary):
             sys.stdout.flush()
             _print_strict_summary_failure(summary)
@@ -365,18 +395,24 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.list:
         fields = rp.list_udm_fields()
+        # ``analyze()`` is memoized on the parser, so reading
+        # ``state.structured_warnings`` directly costs nothing here, while
+        # ``analysis_summary()`` does substantial dedup/aggregation work that
+        # is only needed for the strict gate. Defer the expensive build.
+        state = rp.analyze()
+        _warn_if_parse_recovery(state.structured_warnings)
         if args.json:
             print(json.dumps({"udm_fields": fields, "udm_fields_total": len(fields)}, indent=2))
         elif not fields:
             print("No UDM fields found.")
         else:
             for f in fields:
-                print(f)
+                print(sanitize_for_terminal(f))
         if args.strict:
-            summary = rp.analysis_summary()
-            if _summary_has_strict_findings(summary):
+            list_summary = rp.analysis_summary()
+            if _summary_has_strict_findings(list_summary):
                 sys.stdout.flush()
-                _print_strict_summary_failure(summary)
+                _print_strict_summary_failure(list_summary)
                 return 3
         return 0
     if not args.udm_field:
@@ -386,6 +422,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
     result = rp.query(args.udm_field, compact=args.compact_json)
+    _warn_if_parse_recovery(result.structured_warnings)
     hint = _extract_query_no_match_hint(result)
     if args.compact_json:
         from .render import render_compact_json

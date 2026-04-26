@@ -2,11 +2,22 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Literal, TypeVar
 
 from ._types import FrozenJSONDict, FrozenJSONValue, JSONDict, JSONValue
+
+# Word-boundary match for the ``merge``/``add_tag``/``add_field`` evidence
+# tokens that promote a multi-mapping ``QueryResult`` to ``repeated`` status.
+# Compiled once at module import to avoid the per-call cost in the hot
+# ``_status_from_aggregate`` path. The ``\b`` boundaries prevent
+# false-positives on substring-collisions like ``remerge``, ``merger``,
+# ``premerge``, ``add_field_validator`` — none exist in the current code
+# corpus, but the substring form was a sharp edge for any future analyzer
+# extension that introduces such names.
+_MERGE_EVIDENCE_PATTERN = re.compile(r"\b(?:merge|add_tag|add_field)\b", re.IGNORECASE)
 
 # Per-mapping lineage status assigned to a single ``Lineage`` row.
 #
@@ -59,9 +70,6 @@ QueryStatus = Literal[
     "unresolved",
 ]
 
-# Backward-compatible alias for callers that imported the old name. Same
-# value set as ``LineageStatus``; documented above.
-Status = LineageStatus
 LINEAGE_STATUS_ORDER: tuple[LineageStatus, ...] = (
     "exact",
     "exact_capture",
@@ -784,7 +792,18 @@ class QuerySemanticSummary:
 
 
 @dataclass(frozen=True, slots=True)
-class _QueryResultAggregate:
+class QueryResultAggregate:
+    """Computed-once snapshot of every cross-mapping property of a ``QueryResult``.
+
+    Returned by :meth:`QueryResult.aggregate`. Renderers and consumers that
+    need more than one of the derived fields (``status``,
+    ``is_conditional``, ``has_dynamic``, etc.) can call ``.aggregate()``
+    once and read multiple fields off the result instead of paying the
+    derivation cost per property access. The individual ``QueryResult``
+    properties (``status``, ``is_conditional``, ...) wrap exactly this and
+    remain the recommended path for one-off reads.
+    """
+
     statuses: frozenset[str]
     status: QueryStatus
     invalid_lineage_statuses: tuple[str, ...]
@@ -810,9 +829,18 @@ class QueryResult:
 
     @property
     def status(self) -> QueryStatus:
-        return self._aggregate().status
+        return self.aggregate().status
 
-    def _aggregate(self) -> _QueryResultAggregate:
+    def aggregate(self) -> QueryResultAggregate:
+        """Compute every cross-mapping derived property in a single pass.
+
+        Returns a :class:`QueryResultAggregate` snapshot. Callers that need
+        more than one of ``status``/``is_conditional``/``has_dynamic``/
+        ``has_unresolved``/``has_taints``/``invalid_lineage_statuses``
+        should use this method once and read fields off the result rather
+        than going through the per-property accessors, which each call
+        ``aggregate()`` themselves.
+        """
         mapping_statuses = set(self.semantic_summary.statuses)
         has_conditions = self.semantic_summary.is_conditional
         has_taints = self.semantic_summary.has_taints
@@ -824,7 +852,7 @@ class QueryResult:
         has_unresolved = not mapping_statuses or any(
             status == "unresolved" or status not in LINEAGE_STATUS_VALUES for status in mapping_statuses
         )
-        return _QueryResultAggregate(
+        return QueryResultAggregate(
             statuses=frozenset(mapping_statuses),
             status=self._status_from_aggregate(mapping_statuses, has_conditions),
             invalid_lineage_statuses=invalid_statuses,
@@ -855,14 +883,26 @@ class QueryResult:
             # Multiple unconditional mappings are usually append/merge output,
             # not branch logic. Do not label these as conditional unless branch
             # predicates are actually present.
-            if "repeated" in valid_statuses or valid_statuses <= {
-                "exact",
-                "exact_capture",
-                "derived",
-                "constant",
-                "repeated",
-            }:
+            #
+            # Bug C1: gate `repeated` on actual evidence of merge/append
+            # semantics rather than the mere presence of >=2 unconditional
+            # mappings. Conservative signals that qualify:
+            #   1. any mapping's status is literally `repeated`
+            #   2. any mapping carries a transformation OR parser_location
+            #      whose tokens include a merge/append-style operation
+            #      (`merge`, `add_tag`, `add_field`) — matched by
+            #      ``_MERGE_EVIDENCE_PATTERN`` with word boundaries to avoid
+            #      false-positives on substring-collisions like ``remerge``
+            #      or ``add_field_validator``.
+            # Otherwise, fall back to `derived` — multiple mappings with no
+            # merge/append evidence are derived from multiple sources, not a
+            # repeated/append-style write.
+            if "repeated" in valid_statuses:
                 return "repeated"
+            for mapping in self.mappings:
+                for marker in (*mapping.transformations, *mapping.parser_locations):
+                    if _MERGE_EVIDENCE_PATTERN.search(str(marker)):
+                        return "repeated"
             return "derived"
         return _first_query_status(valid_statuses)
 
@@ -880,17 +920,24 @@ class QueryResult:
 
     @property
     def _semantic_statuses(self) -> set[str]:
-        return set(self._aggregate().statuses)
+        return set(self.aggregate().statuses)
 
     @property
     def invalid_lineage_statuses(self) -> list[str]:
-        return list(self._aggregate().invalid_lineage_statuses)
+        return list(self.aggregate().invalid_lineage_statuses)
 
     @property
     def effective_diagnostics(self) -> list[DiagnosticRecord]:
-        return self._effective_diagnostics(self._aggregate())
+        return self.compute_effective_diagnostics(self.aggregate())
 
-    def _effective_diagnostics(self, aggregate: _QueryResultAggregate) -> list[DiagnosticRecord]:
+    def compute_effective_diagnostics(self, aggregate: QueryResultAggregate) -> list[DiagnosticRecord]:
+        """Return diagnostics including any synthesized from invalid statuses.
+
+        Takes a precomputed :class:`QueryResultAggregate` so renderers that
+        already called :meth:`aggregate` don't have to recompute it. The
+        no-args :attr:`effective_diagnostics` property is the convenience
+        equivalent for one-off reads.
+        """
         diagnostics = list(self.diagnostics)
         invalid_statuses = aggregate.invalid_lineage_statuses
         if invalid_statuses:
@@ -907,23 +954,23 @@ class QueryResult:
 
     @property
     def is_conditional(self) -> bool:
-        return self._aggregate().is_conditional
+        return self.aggregate().is_conditional
 
     @property
     def has_dynamic(self) -> bool:
-        return self._aggregate().has_dynamic
+        return self.aggregate().has_dynamic
 
     @property
     def has_unresolved(self) -> bool:
-        return self._aggregate().has_unresolved
+        return self.aggregate().has_unresolved
 
     @property
     def has_taints(self) -> bool:
-        return self._aggregate().has_taints
+        return self.aggregate().has_taints
 
     def to_json(self) -> JSONDict:
-        aggregate = self._aggregate()
-        diagnostics = self._effective_diagnostics(aggregate)
+        aggregate = self.aggregate()
+        diagnostics = self.compute_effective_diagnostics(aggregate)
         data: JSONDict = {
             "udm_field": self.udm_field,
             "status": aggregate.status,
