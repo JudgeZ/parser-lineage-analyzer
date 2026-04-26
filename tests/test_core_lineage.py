@@ -486,6 +486,98 @@ def test_static_array_loop_save_restore_does_not_alias_parent_token_lists():
     )
 
 
+def test_static_array_loop_descendant_save_restore_isolates_from_loop_body_appends():
+    """Codex P1 follow-up: a stricter version of the previous test that
+    targets the descendant-mutation path Codex specifically called out.
+
+    Scenario: a colliding outer-scope token (``index``) has descendants
+    (``index.foo``) populated before the loop. The loop body performs an
+    append-style write to ``index.foo``. The save snapshot captured
+    pre-loop must not be polluted by that append, and the post-loop
+    restore must reinstate the ORIGINAL outer-scope ``index.foo`` (not
+    the loop body's modified version).
+
+    Direct invariant check at the AnalyzerState level — exercises the
+    ``descendant_tokens`` save path in isolation from the analyzer's
+    branch-merge machinery.
+    """
+    from parser_lineage_analyzer._analysis_state import AnalyzerState
+    from parser_lineage_analyzer.model import Lineage, SourceRef
+
+    parent = AnalyzerState()
+    parent_index = Lineage(
+        status="exact_capture",
+        sources=[SourceRef(kind="grok_capture", source_token="message", capture_name="index")],
+        expression="index",
+    )
+    parent_index_foo = Lineage(
+        status="exact_capture",
+        sources=[SourceRef(kind="grok_capture", source_token="message", capture_name="index_foo")],
+        expression="index.foo",
+    )
+    parent.tokens["index"] = [parent_index]
+    parent.tokens["index.foo"] = [parent_index_foo]
+
+    fork = parent.clone()
+
+    # Mimic the loop's pre-loop save step (matches the production code at
+    # _analysis_flow.py:1286-1293 — shallow copy of var and each
+    # descendant). The shallow copy must produce lists distinct from
+    # whatever ``state.tokens`` happens to hand back.
+    saved_outer = {
+        "index": list(fork.tokens["index"]),
+        "index.foo": list(fork.tokens["index.foo"]),
+    }
+    saved_index_foo_id = id(saved_outer["index.foo"])
+
+    # Mimic an iteration: pre-iteration set, then a body op that appends
+    # to ``index.foo``, then per-iteration cleanup pop.
+    fork.tokens["index"] = [
+        Lineage(
+            status="constant",
+            sources=[SourceRef(kind="constant", expression="0")],
+            expression="0",
+        )
+    ]
+    body_lineage = Lineage(
+        status="constant",
+        sources=[SourceRef(kind="constant", expression="loop-body-foo")],
+        expression="loop-body-foo",
+    )
+    fork.append_token_lineages("index.foo", [body_lineage])
+    # Per-iteration cleanup pops descendants too.
+    fork.tokens.pop("index", None)
+    for token_name in fork.descendant_tokens("index"):
+        fork.tokens.pop(token_name, None)
+
+    # The saved snapshot must be untouched by the body's append. If the
+    # save had captured a reference to the parent's list, the body's
+    # ``mutate_local`` append on ``index.foo`` could have polluted that
+    # reference and the snapshot would now contain ``loop-body-foo``.
+    saved_kinds = {src.kind for lin in saved_outer["index.foo"] for src in lin.sources}
+    assert saved_kinds == {"grok_capture"}, (
+        f"loop-body append polluted the snapshot: {saved_kinds} — "
+        "save step must shallow-copy lineage lists for descendants too"
+    )
+    assert id(saved_outer["index.foo"]) == saved_index_foo_id, "snapshot identity changed unexpectedly"
+
+    # Restore: writes the saved (clean) list back into the fork's _data.
+    fork.tokens["index"] = saved_outer["index"]
+    fork.tokens["index.foo"] = saved_outer["index.foo"]
+
+    # Post-restore: the fork sees the original outer-scope lineage,
+    # not the loop body's transient additions.
+    fork_index_foo_kinds = {src.kind for lin in fork.tokens["index.foo"] for src in lin.sources}
+    assert fork_index_foo_kinds == {"grok_capture"}, (
+        f"restored ``index.foo`` includes loop-body lineage: {fork_index_foo_kinds}"
+    )
+
+    # And the parent remains untouched throughout — the entire flow
+    # operated on the fork's owned lists.
+    parent_index_foo_kinds = {src.kind for lin in parent.tokens["index.foo"] for src in lin.sources}
+    assert parent_index_foo_kinds == {"grok_capture"}
+
+
 def test_loop_variables_do_not_leak_after_loop():
     code = r"""
     filter {
