@@ -1405,6 +1405,33 @@ class FlowExecutorMixin:
                 parser_location=loc,
             )
         else:
+            # F3 (PR-D): consult the plugin signature registry before falling
+            # through to the unsupported-plugin taint path. ``self.plugin_signatures``
+            # is set by ``ReverseParser.__init__`` (None preserves pre-F3
+            # behavior). A registered signature routes to a generic handler
+            # (provided by ``SignaturePluginMixin``, also mixed into
+            # :class:`AnalysisExecutor`) that emits ``signature_dispatched``
+            # lineage; an unregistered name still produces the
+            # ``unsupported_plugin`` taint.
+            sig = None
+            registry = getattr(self, "plugin_signatures", None)
+            if registry is not None:
+                sig = registry.lookup(stmt.name)
+            if sig is not None:
+                # ``_exec_signature_dispatched`` is contributed by
+                # ``SignaturePluginMixin`` at composition time; mypy can't
+                # see across the sibling-mixin boundary in this file so
+                # the call site is annotated rather than forcing a
+                # circular import on a Protocol.
+                self._exec_signature_dispatched(stmt, state, conditions, sig)  # type: ignore[attr-defined]
+                # Built-in plugins (line 1371 above) call ``_handle_on_error``
+                # after dispatch so a trailing ``on_error { ... }`` block runs
+                # symbolically. Custom plugins routed via the signature
+                # registry must have the same treatment — without this call,
+                # the analyzer silently drops the on_error fallback.
+                cast(_FlowContext, self)._handle_on_error(stmt, state, conditions)
+                return
+
             warning = unsupported_plugin(stmt.line, stmt.name)
             state.add_unsupported(
                 warning,

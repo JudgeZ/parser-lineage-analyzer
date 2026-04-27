@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 
@@ -71,6 +73,31 @@ class UrlDecodePluginConfig(_PluginConfig):
     field: str | None = None
     fields: list[object] | str | None = None
     target: str | None = None
+
+
+# F3 (PR-D): plugin signature registry — see parser_lineage_analyzer/
+# _plugin_signatures.py for the loader and dispatch wiring. Without a
+# matching signature, an unknown plugin invocation falls through to the
+# ``unsupported_plugin`` taint path. With one, the dispatcher routes to a
+# generic handler that reads ``source_keys`` / ``dest_keys`` from the
+# plugin's config and produces signature-dispatched lineage tagged with
+# the declared ``lineage_status`` and ``taint_hint``.
+#
+# Inherits ``_PluginConfig`` for parity with sibling models — that
+# combines ``extra="forbid"`` (typos in semantic_class /
+# lineage_status / taint_hint surface as loud ``ValidationError`` at
+# TOML load time rather than silently degrading to UNKNOWN) with
+# ``strict=True`` (no implicit type coercion on ``in_place: bool``,
+# etc.).
+class PluginSignature(_PluginConfig):
+    name: str
+    semantic_class: Literal["extractor", "enricher", "transform", "mutate_like", "passthrough"]
+    source_keys: list[str] = Field(default_factory=list)
+    dest_keys: list[str] = Field(default_factory=list)
+    dest_value_kind: Literal["scalar", "map", "list"] = "scalar"
+    in_place: bool = False
+    lineage_status: Literal["exact", "derived", "dynamic", "conditional"] = "derived"
+    taint_hint: Literal["none", "derived", "dynamic"] = "derived"
 
 
 def compact_validation_error(exc: ValidationError) -> str:

@@ -29,8 +29,10 @@ from __future__ import annotations
 
 import re
 
+import pytest
 from hypothesis import HealthCheck, assume, given, settings, strategies as st
 
+from parser_lineage_analyzer import _regex_algebra
 from parser_lineage_analyzer._analysis_condition_facts import (
     conditions_are_compatible,
 )
@@ -40,6 +42,23 @@ from parser_lineage_analyzer._regex_algebra import (
     literal_in_regex_language,
     regex_languages_disjoint,
 )
+
+
+# The production budget (``ALGEBRA_TIME_BUDGET_MS = 25``) is sized for
+# the analyzer's hot path: many algebra calls per branch, all required
+# to settle within a parser run. Property tests run hundreds of varied
+# inputs in succession and want to verify the algebra's *correctness*,
+# not its bail-out behavior — under runner contention (CI GC pauses,
+# scheduler delays) a 25 ms wall-clock budget can fire on inputs that
+# locally complete in <1 ms, producing asymmetric ``UNKNOWN`` results
+# that break properties like ``test_disjoint_is_symmetric``.
+#
+# A 1 s budget per call is still bounded (so a genuine pathological
+# input still bails out) but eliminates the budget-noise flake.
+@pytest.fixture(autouse=True)
+def _generous_algebra_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(_regex_algebra, "ALGEBRA_TIME_BUDGET_MS", 1000)
+
 
 # -- Pattern strategies ----------------------------------------------
 

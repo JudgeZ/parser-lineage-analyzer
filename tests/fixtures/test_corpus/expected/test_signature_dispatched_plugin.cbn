@@ -1,0 +1,17 @@
+# EXPECTED BEHAVIOR (paired with test_signature_dispatched_plugin.signatures.toml):
+# A plugin not built into the analyzer (`acme_geo_enrich`) gets dispatched
+# through F3's signature registry instead of the `unsupported_plugin`
+# taint path. The signature declares it an enricher with `source` →
+# `target`; after analysis the target field resolves with a
+# `signature_dispatched` SourceRef, no `unsupported_plugin` taint, and
+# the appropriate `signature_dispatched_derived` taint hint attached.
+#
+# Loaded by tests/test_plugin_signatures.py::TestCorpusFixture (NOT by
+# the standard test_corpus_baseline runner, which doesn't know about
+# paired signatures files).
+filter {
+  acme_geo_enrich {
+    source => "client_ip"
+    target => "event.idm.read_only_udm.principal.location.country"
+  }
+}

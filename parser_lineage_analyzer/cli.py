@@ -105,6 +105,31 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "sorted-name order."
         ),
     )
+    parser.add_argument(
+        "--plugin-signatures",
+        action="append",
+        default=[],
+        metavar="FILE",
+        help=(
+            "Load plugin signatures from a TOML FILE. Each top-level table "
+            "describes one plugin (semantic_class, source_keys, dest_keys, "
+            "lineage_status, taint_hint). Repeatable; later --plugin-signatures "
+            "files override earlier ones. Without any signatures, unknown "
+            "plugins fall through to the ``unsupported_plugin`` taint path."
+        ),
+    )
+    parser.add_argument(
+        "--plugin-signatures-dir",
+        action="append",
+        default=[],
+        metavar="DIR",
+        help=(
+            "Load every *.toml file in DIR as plugin signatures (non-recursive). "
+            "Repeatable; --plugin-signatures-dir directories are processed "
+            "first in argv order, then individual --plugin-signatures files; "
+            "later sources override earlier ones."
+        ),
+    )
     return parser
 
 
@@ -365,6 +390,7 @@ def main(argv: list[str] | None = None) -> int:
     if not code.strip():
         print("error: parser input is empty (received 0 non-whitespace bytes)", file=sys.stderr)
         return 1
+    from ._plugin_signatures import PluginSignatureRegistry
     from .analyzer import ReverseParser
 
     # Validate any --grok-patterns-dir paths exist before constructing
@@ -381,12 +407,24 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 1
 
+    plugin_signatures: PluginSignatureRegistry | None = None
+    if args.plugin_signatures or args.plugin_signatures_dir:
+        try:
+            plugin_signatures = PluginSignatureRegistry.from_paths(
+                files=[Path(p) for p in args.plugin_signatures],
+                directories=[Path(p) for p in args.plugin_signatures_dir],
+            )
+        except (OSError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+
     try:
         rp = ReverseParser(
             code,
             max_parser_bytes=args.max_parser_bytes,
             mutate_canonical_order=args.mutate_canonical_order,
             grok_patterns_dir=args.grok_patterns_dir or None,
+            plugin_signatures=plugin_signatures,
         )
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
