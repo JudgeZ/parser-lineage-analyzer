@@ -54,18 +54,21 @@ def _challenge_fixture_paths() -> list[Path]:
 _FIXTURES = _challenge_fixture_paths()
 
 
-def _check_sidecar(parser: ReverseParser, fixture_id: str, sidecar: dict[str, list[str]]) -> None:
+def _check_sidecar(parser: ReverseParser, fixture_id: str, sidecar: dict[str, object]) -> None:
     summary = parser.analysis_summary()
     warning_codes = {expect_str(expect_mapping(w)["code"]) for w in expect_mapping_list(summary["structured_warnings"])}
     unsupported_blob = " | ".join(expect_str_list(summary["unsupported"]))
 
-    for code in sidecar.get("must_have_warning_codes", []):
+    for code in expect_str_list(sidecar.get("must_have_warning_codes", [])):
         assert code in warning_codes, f"{fixture_id}: expected warning code {code!r}; got {sorted(warning_codes)}"
-    for code in sidecar.get("must_not_have_warning_codes", []):
+    for code in expect_str_list(sidecar.get("must_not_have_warning_codes", [])):
         assert code not in warning_codes, f"{fixture_id}: warning code {code!r} should NOT be emitted but was"
-    for field in sidecar.get("must_resolve_fields", []):
-        assert parser.query(field).mappings, f"{fixture_id}: query({field!r}) returned no mappings"
-    for plugin in sidecar.get("must_have_unsupported", []):
+    for field in expect_str_list(sidecar.get("must_resolve_fields", [])):
+        result = parser.query(field)
+        assert any(mapping.status not in {"removed", "unresolved"} for mapping in result.mappings), (
+            f"{fixture_id}: query({field!r}) returned no live mappings"
+        )
+    for plugin in expect_str_list(sidecar.get("must_have_unsupported", [])):
         assert plugin in unsupported_blob, (
             f"{fixture_id}: expected {plugin!r} in unsupported list; got {summary['unsupported']!r}"
         )
@@ -84,10 +87,36 @@ def test_challenge_fixture_completes_within_budget(fixture_path: Path) -> None:
 
     sidecar_path = fixture_path.with_suffix(".expected.json")
     if sidecar_path.exists():
-        sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        sidecar_data = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        if not isinstance(sidecar_data, dict):
+            raise ValueError(f"{sidecar_path.name}: sidecar must be a JSON object")
+        sidecar: dict[str, object] = dict(sidecar_data)
         unknown = set(sidecar) - set(SIDECAR_KEYS)
         assert not unknown, f"{sidecar_path.name}: unknown sidecar keys {sorted(unknown)}"
         _check_sidecar(parser, fixture_path.name, sidecar)
+
+
+def test_challenge_sidecar_rejects_string_values_for_string_list_fields() -> None:
+    parser = ReverseParser("filter {}")
+
+    with pytest.raises(AssertionError, match="expected list"):
+        _check_sidecar(parser, "demo.cbn", {"must_not_have_warning_codes": "parse_recovery"})
+
+
+def test_challenge_sidecar_removed_field_is_not_live_resolution() -> None:
+    parser = ReverseParser(
+        """
+        filter {
+          mutate {
+            replace => { "gone" => "yes" }
+            remove_field => ["gone"]
+          }
+        }
+        """
+    )
+
+    with pytest.raises(AssertionError, match="no live mappings"):
+        _check_sidecar(parser, "demo.cbn", {"must_resolve_fields": ["gone"]})
 
 
 def test_challenge_bucket_size() -> None:

@@ -11,7 +11,7 @@ import sys
 import textwrap
 import time
 from collections.abc import Callable, Sequence
-from typing import Protocol, cast
+from typing import NamedTuple, Protocol, cast
 
 NATIVE_ENV_FLAGS = (
     "PARSER_LINEAGE_ANALYZER_NO_EXT",
@@ -39,6 +39,12 @@ class _CompletedProcessLike(Protocol):
 
 class _Runner(Protocol):
     def __call__(self, command: list[str], *, env: dict[str, str], timeout: float | None) -> _CompletedProcessLike: ...
+
+
+class ModeResult(NamedTuple):
+    name: str
+    elapsed: float
+    failed: int
 
 
 BENCHMARK_DRIVER = r"""
@@ -102,7 +108,7 @@ def _run_mode(
     timeout_seconds: float | None,
     runner: _Runner,
     clock: Callable[[], float],
-) -> int:
+) -> ModeResult:
     env = dict(os.environ)
     for flag in NATIVE_ENV_FLAGS:
         env.pop(flag, None)
@@ -117,7 +123,7 @@ def _run_mode(
         timeout_label = "unknown" if timeout_seconds is None else f"{timeout_seconds:.3f}s"
         print(f"mode={name} exit=timeout elapsed={elapsed:.3f}s")
         print(f"mode={name} timed out after {timeout_label}", file=sys.stderr)
-        return 1
+        return ModeResult(name, elapsed, 1)
     elapsed = clock() - start
     print(f"mode={name} exit={result.returncode} elapsed={elapsed:.3f}s")
     failed = result.returncode
@@ -127,7 +133,22 @@ def _run_mode(
             file=sys.stderr,
         )
         failed = 1
-    return 1 if failed else 0
+    return ModeResult(name, elapsed, 1 if failed else 0)
+
+
+def _mode_ratio_lines(
+    results: Sequence[ModeResult],
+    *,
+    baseline_name: str = "default-native",
+) -> list[str]:
+    baseline = next((result.elapsed for result in results if result.name == baseline_name), None)
+    if baseline is None or baseline <= 0:
+        return []
+    lines = [f"\nmode elapsed ratios (baseline={baseline_name}):"]
+    for result in results:
+        ratio = result.elapsed / baseline
+        lines.append(f"  {result.name:24s} elapsed={result.elapsed:8.3f}s ratio={ratio:6.2f}x")
+    return lines
 
 
 def main(
@@ -142,6 +163,7 @@ def main(
     mode_budget_seconds = _budget_from_env(MODE_BUDGET_ENV, DEFAULT_MODE_BUDGET_SECONDS)
     total_budget_seconds = _budget_from_env(TOTAL_BUDGET_ENV, DEFAULT_TOTAL_BUDGET_SECONDS)
     failures = 0
+    results: list[ModeResult] = []
     start = clock()
     for name, updates in modes:
         elapsed_so_far = clock() - start
@@ -151,7 +173,7 @@ def main(
         if total_budget_seconds >= 0:
             timeout_candidates.append(max(0.0, total_budget_seconds - elapsed_so_far))
         timeout_seconds = min(timeout_candidates) if timeout_candidates else None
-        failures |= _run_mode(
+        result = _run_mode(
             name,
             updates,
             benchmark_driver=benchmark_driver,
@@ -160,8 +182,12 @@ def main(
             runner=runner,
             clock=clock,
         )
+        results.append(result)
+        failures |= result.failed
     elapsed = clock() - start
     print(f"\nbenchmark total elapsed={elapsed:.3f}s budget={total_budget_seconds:.3f}s")
+    for line in _mode_ratio_lines(results):
+        print(line)
     if total_budget_seconds >= 0 and elapsed > total_budget_seconds:
         print(
             f"benchmark total exceeded budget: {elapsed:.3f}s > {total_budget_seconds:.3f}s",

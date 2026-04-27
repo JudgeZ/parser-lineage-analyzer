@@ -81,6 +81,46 @@ def test_native_modes_benchmark_fails_cleanly_when_runner_times_out(monkeypatch,
     assert "fake-mode timed out after 3.000s" in captured.err
 
 
+def test_native_modes_ratio_lines_compare_against_default_without_failing() -> None:
+    lines = benchmark_native_modes._mode_ratio_lines(
+        [
+            benchmark_native_modes.ModeResult("default-native", 10.0, 0),
+            benchmark_native_modes.ModeResult("no-ext", 12.5, 0),
+            benchmark_native_modes.ModeResult("no-native-dedupe", 8.0, 0),
+        ]
+    )
+
+    assert lines == [
+        "\nmode elapsed ratios (baseline=default-native):",
+        "  default-native           elapsed=  10.000s ratio=  1.00x",
+        "  no-ext                   elapsed=  12.500s ratio=  1.25x",
+        "  no-native-dedupe         elapsed=   8.000s ratio=  0.80x",
+    ]
+
+
+def test_native_modes_main_prints_ratio_report_when_default_mode_is_present(monkeypatch, capsys) -> None:
+    monkeypatch.setenv(benchmark_native_modes.MODE_BUDGET_ENV, "-1")
+    monkeypatch.setenv(benchmark_native_modes.TOTAL_BUDGET_ENV, "-1")
+    clock_values = iter([0.0, 0.0, 0.0, 2.0, 2.0, 2.0, 5.0, 5.0])
+
+    def fake_runner(command, env, timeout):
+        assert timeout is None
+        return SimpleNamespace(returncode=0)
+
+    result = benchmark_native_modes.main(
+        modes=(("default-native", {}), ("no-ext", {"PARSER_LINEAGE_ANALYZER_NO_EXT": "1"})),
+        benchmark_driver="print('fake benchmark')",
+        runner=fake_runner,
+        clock=lambda: next(clock_values),
+    )
+
+    captured = capsys.readouterr()
+    assert result == 0
+    assert "mode elapsed ratios (baseline=default-native):" in captured.out
+    assert "default-native           elapsed=   2.000s ratio=  1.00x" in captured.out
+    assert "no-ext                   elapsed=   3.000s ratio=  1.50x" in captured.out
+
+
 # Catastrophic-blowup watchdog for the grok pattern resolver. This file's
 # stated job is catching unintentional 10x slowdowns, NOT policing
 # percentile drift, so the budget is loose enough that runner noise on

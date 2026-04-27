@@ -352,19 +352,11 @@ def test_bug_conditional_nested():
     condition (covered by test_bug_conditional_nested_contradiction)."""
     # fixture: test_conditional_nested
     parser = _load("test_conditional_nested.cbn")
-    parser.analyze()
-    # Lineage should record both nested conditions.
     state = parser.analyze()
-    found = False
-    for lineages in state.tokens.values():
-        for lin in lineages:
-            if any("[outer]" in c for c in lin.conditions) and any("[inner]" in c for c in lin.conditions):
-                found = True
-                break
-    # Either condition recording is present, or the fixture's tokens didn't
-    # land in state.tokens (depends on the exact assignments) — accept either
-    # without crashing.
-    assert isinstance(found, bool)
+    lineages = state.tokens.get("user.role", [])
+    assert lineages, "expected user.role assignment from nested-field condition fixture"
+    assert {lin.expression for lin in lineages} == {"Admin"}
+    assert all('[user][name] == "Alice"' in lin.conditions for lin in lineages)
 
 
 def test_bug_conditional_nested_contradiction():
@@ -736,6 +728,26 @@ def test_bug_tag_membership_with_matching_tag_stays_reachable():
     assert "unreachable_branch" not in _summary_codes(parser)
 
 
+def test_single_quoted_tag_membership_prunes_unreachable_branch():
+    """Single-quoted tag membership has the same runtime semantics as
+    double-quoted membership, so the analyzer must use the same reachability
+    pruning for both forms."""
+    parser = ReverseParser("""
+        filter {
+          mutate { add_tag => ["seen"] }
+          if 'missing' in [tags] {
+            mutate { replace => { "event.idm.read_only_udm.metadata.description" => "bad" } }
+          } else {
+            mutate { replace => { "event.idm.read_only_udm.metadata.description" => "ok" } }
+          }
+          mutate { merge => { "@output" => "event" } }
+        }
+    """)
+    result = parser.query("metadata.description")
+    assert {mapping.expression for mapping in result.mappings} == {"ok"}
+    assert "unreachable_branch" in _summary_codes(parser)
+
+
 def test_bug_conditional_or_disjunction_contradiction():
     """EASY-FIX (Phase 3D): the contradiction detector now considers
     OR-disjuncts. When every disjunct of an outer condition contradicts a
@@ -804,6 +816,282 @@ def test_bug_io_for_loop_routing():
     for anchor in es_anchors:
         keys = {k for k, _ in anchor.config_summary}
         assert "hosts" in keys and "index" in keys, anchor.config_summary
+
+
+def test_io_block_skips_unreachable_elif_anchor():
+    """Input/output routing should use the same branch reachability checks
+    as filter blocks; impossible elif branches must not produce IO anchors."""
+    parser = ReverseParser("""
+        output {
+          if [route] == "a" {
+            elasticsearch { hosts => ["hot"] index => "a" }
+          } else if [route] == "a" {
+            file { path => "/tmp/impossible" }
+          } else {
+            null { }
+          }
+        }
+    """)
+    state = parser.analyze()
+    plugins = {anchor.plugin for anchor in state.io_anchors}
+    assert plugins == {"elasticsearch", "null"}
+    assert "unreachable_branch" in _summary_codes(parser)
+
+
+def test_io_block_skips_unreachable_single_quoted_tag_branch():
+    """Tag-membership pruning also applies inside output routing blocks."""
+    parser = ReverseParser("""
+        filter {
+          mutate { add_tag => ["seen"] }
+        }
+        output {
+          if 'missing' in [tags] {
+            file { path => "/tmp/missing" }
+          } else {
+            null { }
+          }
+        }
+    """)
+    state = parser.analyze()
+    plugins = {anchor.plugin for anchor in state.io_anchors}
+    assert plugins == {"null"}
+    assert "unreachable_branch" in _summary_codes(parser)
+
+
+def test_tag_membership_preserves_unknown_escapes_like_config_strings():
+    """Unknown condition escapes must match config string decoding.
+
+    Config string decoding preserves unknown escapes (`\\q` stays `\\q`), so
+    the condition literal decoder must do the same. Otherwise this reachable
+    output route is mistaken for a missing tag and pruned as unreachable.
+    """
+    parser = ReverseParser("""
+        filter {
+          mutate { add_tag => ["a\\q"] }
+        }
+        output {
+          if "a\\q" in [tags] {
+            file { path => "/tmp/matched" }
+          } else {
+            null { }
+          }
+        }
+    """)
+    state = parser.analyze()
+    plugins = {anchor.plugin for anchor in state.io_anchors}
+    assert "file" in plugins
+    assert "unreachable_branch" not in _summary_codes(parser)
+
+
+def test_tag_membership_decodes_known_quote_escape_like_config_strings():
+    """Known condition escapes must match config string decoding too.
+
+    The add_tag config string decodes `\"` to `"`, so the condition literal
+    must decode the same way or this reachable output route gets pruned.
+    """
+    parser = ReverseParser("""
+        filter {
+          mutate { add_tag => ["a\\"b"] }
+        }
+        output {
+          if "a\\"b" in [tags] {
+            file { path => "/tmp/matched" }
+          } else {
+            null { }
+          }
+        }
+    """)
+    state = parser.analyze()
+    plugins = {anchor.plugin for anchor in state.io_anchors}
+    assert "file" in plugins
+    assert "unreachable_branch" not in _summary_codes(parser)
+
+
+def test_tag_membership_decodes_escaped_backslash_like_config_strings():
+    """Escaped backslashes in conditions must match config string decoding."""
+    parser = ReverseParser("""
+        filter {
+          mutate { add_tag => ["a\\\\b"] }
+        }
+        output {
+          if "a\\\\b" in [tags] {
+            file { path => "/tmp/matched" }
+          } else {
+            null { }
+          }
+        }
+    """)
+    state = parser.analyze()
+    plugins = {anchor.plugin for anchor in state.io_anchors}
+    assert "file" in plugins
+    assert "unreachable_branch" not in _summary_codes(parser)
+
+
+def test_double_quoted_tag_membership_preserves_escaped_single_quote():
+    """Double-quoted condition literals preserve escaped single quotes."""
+    parser = ReverseParser("""
+        filter {
+          mutate { add_tag => ["a\\'b"] }
+        }
+        output {
+          if "a\\'b" in [tags] {
+            file { path => "/tmp/matched" }
+          } else {
+            null { }
+          }
+        }
+    """)
+    state = parser.analyze()
+    plugins = {anchor.plugin for anchor in state.io_anchors}
+    assert "file" in plugins
+    assert "unreachable_branch" not in _summary_codes(parser)
+
+
+def test_single_quoted_tag_membership_preserves_escaped_double_quote():
+    """Single-quoted condition literals preserve escaped double quotes."""
+    parser = ReverseParser("""
+        filter {
+          mutate { add_tag => ['a\\"b'] }
+        }
+        output {
+          if 'a\\"b' in [tags] {
+            file { path => "/tmp/matched" }
+          } else {
+            null { }
+          }
+        }
+    """)
+    state = parser.analyze()
+    plugins = {anchor.plugin for anchor in state.io_anchors}
+    assert "file" in plugins
+    assert "unreachable_branch" not in _summary_codes(parser)
+
+
+def test_io_block_skips_else_anchor_when_tag_check_is_definitely_true():
+    """A definitely-true tag membership check makes the synthesized else
+    negation unreachable, so the else output anchor should not survive.
+    """
+    parser = ReverseParser("""
+        filter {
+          mutate { add_tag => ["seen"] }
+        }
+        output {
+          if "seen" in [tags] {
+            elasticsearch { hosts => ["hot"] }
+          } else {
+            null { }
+          }
+        }
+    """)
+    state = parser.analyze()
+    plugins = {anchor.plugin for anchor in state.io_anchors}
+    assert plugins == {"elasticsearch"}
+
+
+def test_filter_if_skips_else_mapping_when_tag_check_is_definitely_true():
+    """Normal filter branches should prune an else branch whose synthesized
+    tag negation is unreachable.
+    """
+    parser = ReverseParser("""
+        filter {
+          mutate { add_tag => ["seen"] }
+          if "seen" in [tags] {
+            mutate { replace => { "event.idm.read_only_udm.metadata.description" => "then" } }
+          } else {
+            mutate { replace => { "event.idm.read_only_udm.metadata.description" => "else" } }
+          }
+          mutate { merge => { "@output" => "event" } }
+        }
+    """)
+    result = parser.query("metadata.description")
+    assert {mapping.expression for mapping in result.mappings} == {"then"}
+
+
+def test_filter_if_skips_elif_mapping_when_prior_tag_check_is_definitely_true():
+    """Normal filter elif branches should prune current-chain tag negations."""
+    parser = ReverseParser("""
+        filter {
+          mutate { add_tag => ["seen"] }
+          if "seen" in [tags] {
+            mutate { replace => { "event.idm.read_only_udm.metadata.description" => "then" } }
+          } else if [route] == "a" {
+            mutate { replace => { "event.idm.read_only_udm.metadata.description" => "bad" } }
+          }
+          mutate { merge => { "@output" => "event" } }
+        }
+    """)
+    result = parser.query("metadata.description")
+    assert {mapping.expression for mapping in result.mappings} == {"then"}
+
+
+def test_io_block_skips_elif_anchor_when_prior_tag_check_is_definitely_true():
+    """IO elif branches should prune current-chain tag negations."""
+    parser = ReverseParser("""
+        filter {
+          mutate { add_tag => ["seen"] }
+        }
+        output {
+          if "seen" in [tags] {
+            elasticsearch { hosts => ["hot"] }
+          } else if [route] == "a" {
+            file { path => "/tmp/bad" }
+          }
+        }
+    """)
+    state = parser.analyze()
+    plugins = {anchor.plugin for anchor in state.io_anchors}
+    assert plugins == {"elasticsearch"}
+
+
+def test_filter_if_inner_else_ignores_stale_outer_tag_negation_after_tag_mutation():
+    """Only the current if/elif chain's negations may prune an else branch."""
+    parser = ReverseParser("""
+        filter {
+          if "seen" in [tags] {
+            mutate { replace => { "event.idm.read_only_udm.metadata.description" => "outer then" } }
+          } else {
+            mutate { add_tag => ["seen"] }
+            if [route] == "a" {
+              mutate { replace => { "event.idm.read_only_udm.metadata.description" => "inner then" } }
+            } else {
+              mutate { replace => { "event.idm.read_only_udm.metadata.description" => "inner else" } }
+            }
+          }
+          mutate { merge => { "@output" => "event" } }
+        }
+    """)
+    result = parser.query("metadata.description")
+    assert "inner else" in {mapping.expression for mapping in result.mappings}
+
+
+def test_io_if_inner_else_ignores_stale_outer_tag_negation_after_tag_mutation():
+    """IO routing uses only the current if/elif chain's negations too."""
+    from parser_lineage_analyzer.ast_nodes import IfBlock, IOBlock, Plugin
+
+    parser = ReverseParser("""
+        filter {
+          mutate { add_tag => ["seen"] }
+        }
+    """)
+    state = parser.analyze()
+    parser._exec_io_block(
+        IOBlock(
+            line=1,
+            kind="output",
+            body=[
+                IfBlock(
+                    line=1,
+                    condition='[route] == "a"',
+                    then_body=[Plugin(line=1, name="elasticsearch", body="", config=[])],
+                    else_body=[Plugin(line=1, name="null", body="", config=[])],
+                )
+            ],
+        ),
+        state,
+        ['NOT("seen" in [tags])'],
+    )
+    plugins = {anchor.plugin for anchor in state.io_anchors}
+    assert "null" in plugins
 
 
 def test_bug_syslog_pri_resolves_concrete_labels_for_branched_pri():

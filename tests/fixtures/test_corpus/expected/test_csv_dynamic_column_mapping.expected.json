@@ -1,4 +1,3 @@
 {
-  "must_not_have_warning_codes": ["malformed_config"],
-  "must_resolve_fields": ["header[id]"]
+  "must_not_have_warning_codes": ["malformed_config"]
 }

@@ -17,25 +17,61 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import TypedDict
 
 from parser_lineage_analyzer import ReverseParser
 from parser_lineage_analyzer._analysis_state import AnalyzerState
 from parser_lineage_analyzer._plugin_specs import normalize_dialect
+from parser_lineage_analyzer._types import JSONValue
+from parser_lineage_analyzer.model import Lineage
 
 DEFAULT_ROOT = Path("tests/fixtures/runtime")
+
+
+class _FixtureFailures(TypedDict):
+    missing_fields: list[str]
+    missing_tags: list[str]
+    missing_output_anchors: list[str]
+
+
+class _FixtureExpected(TypedDict):
+    touched_fields: list[str]
+    tags: list[str]
+    output_anchors: list[str]
+
+
+class _FixtureReport(TypedDict):
+    fixture: str
+    parser: str
+    input: str | None
+    dialect: str
+    passed: bool
+    expected: _FixtureExpected
+    failures: _FixtureFailures
+
+
+class _RuntimeReport(TypedDict):
+    root: str
+    fixture_count: int
+    passed: int
+    failed: int
+    results: list[_FixtureReport]
 
 
 def discover_fixtures(root: Path) -> list[Path]:
     return sorted(path.parent for path in root.rglob("expected.json") if (path.parent / "parser.cbn").is_file())
 
 
-def check_fixture(fixture_dir: Path) -> dict[str, Any]:
+def check_fixture(fixture_dir: Path) -> _FixtureReport:
     parser_path = fixture_dir / "parser.cbn"
     input_path = fixture_dir / "input.json"
     expected_path = fixture_dir / "expected.json"
-    expected = json.loads(expected_path.read_text(encoding="utf-8"))
+    expected_value: JSONValue = json.loads(expected_path.read_text(encoding="utf-8"))
+    if not isinstance(expected_value, dict):
+        raise ValueError(f"{expected_path} must be a JSON object")
+    expected: Mapping[str, JSONValue] = expected_value
     code = parser_path.read_text(encoding="utf-8")
     dialect = normalize_dialect(str(expected.get("dialect", "secops")))
     parser = ReverseParser(code, dialect=dialect)
@@ -51,28 +87,29 @@ def check_fixture(fixture_dir: Path) -> dict[str, Any]:
     anchors = {anchor.anchor for anchor in state.output_anchors}
     missing_anchors = [anchor for anchor in expected_anchors if anchor not in anchors]
 
-    failures = {
+    failures: _FixtureFailures = {
         "missing_fields": missing_fields,
         "missing_tags": missing_tags,
         "missing_output_anchors": missing_anchors,
     }
     failed = any(failures.values())
+    expected_report: _FixtureExpected = {
+        "touched_fields": expected_fields,
+        "tags": expected_tags,
+        "output_anchors": expected_anchors,
+    }
     return {
         "fixture": fixture_dir.name,
         "parser": parser_path.as_posix(),
         "input": input_path.as_posix() if input_path.exists() else None,
         "dialect": dialect,
         "passed": not failed,
-        "expected": {
-            "touched_fields": expected_fields,
-            "tags": expected_tags,
-            "output_anchors": expected_anchors,
-        },
+        "expected": expected_report,
         "failures": failures,
     }
 
 
-def check_runtime_fixtures(root: Path) -> dict[str, Any]:
+def check_runtime_fixtures(root: Path) -> _RuntimeReport:
     root = root.resolve()
     results = [check_fixture(fixture_dir) for fixture_dir in discover_fixtures(root)]
     failed = [result for result in results if not result["passed"]]
@@ -85,7 +122,7 @@ def check_runtime_fixtures(root: Path) -> dict[str, Any]:
     }
 
 
-def _string_list(expected: dict[str, Any], key: str) -> list[str]:
+def _string_list(expected: Mapping[str, JSONValue], key: str) -> list[str]:
     value = expected.get(key, [])
     if not isinstance(value, list):
         raise ValueError(f"{key} must be a list")
@@ -93,9 +130,14 @@ def _string_list(expected: dict[str, Any], key: str) -> list[str]:
 
 
 def _field_is_covered(parser: ReverseParser, state: AnalyzerState, field: str) -> bool:
-    if field in state.tokens:
+    if _has_live_lineage(state.tokens.get(field, [])):
         return True
-    return bool(parser.query(field, compact=True).mappings)
+    result = parser.query(field, compact=True)
+    return _has_live_lineage(result.mappings)
+
+
+def _has_live_lineage(lineages: list[Lineage]) -> bool:
+    return any(lineage.status not in {"removed", "unresolved"} for lineage in lineages)
 
 
 def build_arg_parser() -> argparse.ArgumentParser:

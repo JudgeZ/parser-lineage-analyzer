@@ -6,15 +6,56 @@ import argparse
 import json
 import sys
 from collections import Counter
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Literal, TypedDict, cast
 
 from parser_lineage_analyzer import ReverseParser
 from parser_lineage_analyzer._plugin_signatures import PluginSignatureRegistry, load_bundled_registry
+from parser_lineage_analyzer._types import JSONDict, JSONValue
+
+Dialect = Literal["secops", "logstash"]
+CountSectionKey = Literal[
+    "unsupported_plugin_counts",
+    "unsupported_mutate_operation_counts",
+    "unknown_config_key_counts",
+    "warning_counts",
+    "top_affected_fields",
+]
+
+
+class AuditEntry(TypedDict):
+    path: str
+    report: JSONDict
+
+
+class DialectTotals(TypedDict):
+    parser_count: int
+    totals: dict[str, int]
+    unsupported_plugin_counts: dict[str, int]
+    unsupported_mutate_operation_counts: dict[str, int]
+    unknown_config_key_counts: dict[str, int]
+    warning_counts: dict[str, int]
+    top_affected_fields: dict[str, int]
+
+
+class PluginSignatureSummary(TypedDict):
+    enabled: bool
+    count: int
+
+
+class AuditReport(TypedDict):
+    root: str
+    dialects: list[Dialect]
+    plugin_signatures: PluginSignatureSummary
+    parser_count: int
+    totals_by_dialect: dict[Dialect, DialectTotals]
+    reports_by_dialect: dict[Dialect, list[AuditEntry]]
+
 
 DEFAULT_ROOT = Path("tests/fixtures/test_corpus")
 DEFAULT_OUT_DIR = Path("build/compat-audit")
-DEFAULT_DIALECTS = ("secops", "logstash")
+DEFAULT_DIALECTS: tuple[Dialect, ...] = ("secops", "logstash")
 REGRESSION_TOTAL_KEYS = (
     "unsupported_plugins",
     "unsupported_mutate_operations",
@@ -28,15 +69,15 @@ def iter_parser_files(root: Path) -> list[Path]:
 
 
 def audit_corpus(
-    root: Path, dialects: list[str], plugin_signatures: PluginSignatureRegistry | None = None
-) -> dict[str, Any]:
+    root: Path, dialects: list[Dialect], plugin_signatures: PluginSignatureRegistry | None = None
+) -> AuditReport:
     root = root.resolve()
     parser_files = iter_parser_files(root)
-    reports_by_dialect: dict[str, list[dict[str, Any]]] = {}
-    totals_by_dialect: dict[str, dict[str, Any]] = {}
+    reports_by_dialect: dict[Dialect, list[AuditEntry]] = {}
+    totals_by_dialect: dict[Dialect, DialectTotals] = {}
 
     for dialect in dialects:
-        reports: list[dict[str, Any]] = []
+        reports: list[AuditEntry] = []
         unsupported_plugins: Counter[str] = Counter()
         unsupported_mutate_ops: Counter[str] = Counter()
         unknown_config_keys: Counter[str] = Counter()
@@ -46,6 +87,7 @@ def audit_corpus(
 
         for path in parser_files:
             rel_path = path.relative_to(root).as_posix()
+            report: JSONDict
             try:
                 code = path.read_text(encoding="utf-8-sig")
                 report = ReverseParser(code, dialect=dialect, plugin_signatures=plugin_signatures).compat_report(
@@ -70,8 +112,8 @@ def audit_corpus(
                     "affected_field_counts": {},
                 }
             reports.append({"path": rel_path, "report": report})
-            report_totals = report.get("totals", {})
-            if isinstance(report_totals, dict):
+            report_totals = report.get("totals")
+            if isinstance(report_totals, Mapping):
                 for key, value in report_totals.items():
                     if isinstance(value, int):
                         totals[key] += value
@@ -105,9 +147,9 @@ def audit_corpus(
     }
 
 
-def _counter_from_report(report: dict[str, Any], key: str) -> Counter[str]:
-    raw = report.get(key, {})
-    if not isinstance(raw, dict):
+def _counter_from_report(report: Mapping[str, JSONValue], key: str) -> Counter[str]:
+    raw = report.get(key)
+    if not isinstance(raw, Mapping):
         return Counter()
     out: Counter[str] = Counter()
     for item, count in raw.items():
@@ -120,7 +162,7 @@ def _top_counts(counter: Counter[str], limit: int = 25) -> dict[str, int]:
     return dict(sorted(counter.items(), key=lambda item: (-item[1], item[0]))[:limit])
 
 
-def render_markdown(audit: dict[str, Any]) -> str:
+def render_markdown(audit: AuditReport) -> str:
     lines = [
         "# Parser Compatibility Audit",
         "",
@@ -145,13 +187,14 @@ def render_markdown(audit: dict[str, Any]) -> str:
         for key in sorted(totals):
             lines.append(f"| {key} | {totals[key]} |")
         lines.append("")
-        for heading, key in (
+        sections: tuple[tuple[str, CountSectionKey], ...] = (
             ("Unsupported Plugins", "unsupported_plugin_counts"),
             ("Unsupported Mutate Ops", "unsupported_mutate_operation_counts"),
             ("Unknown Config Keys", "unknown_config_key_counts"),
             ("Warning Counts", "warning_counts"),
             ("Top Affected Fields", "top_affected_fields"),
-        ):
+        )
+        for heading, key in sections:
             lines.extend(_markdown_counts(heading, dialect_totals[key]))
     return "\n".join(lines).rstrip() + "\n"
 
@@ -167,35 +210,37 @@ def _markdown_counts(heading: str, counts: dict[str, int]) -> list[str]:
     return lines
 
 
-def regression_messages(current: dict[str, Any], baseline: dict[str, Any]) -> list[str]:
+def regression_messages(current: AuditReport, baseline: Mapping[str, JSONValue]) -> list[str]:
     messages: list[str] = []
-    current_totals = current.get("totals_by_dialect", {})
-    baseline_totals = baseline.get("totals_by_dialect", {})
-    if not isinstance(current_totals, dict) or not isinstance(baseline_totals, dict):
+    current_totals = current["totals_by_dialect"]
+    baseline_totals = baseline.get("totals_by_dialect")
+    if not isinstance(baseline_totals, Mapping):
         return ["baseline/current audit shape is invalid"]
     for dialect in sorted(current_totals):
-        if isinstance(dialect, str) and dialect not in baseline_totals:
+        if dialect not in baseline_totals:
             messages.append(f"{dialect}: missing baseline dialect")
-    for dialect, baseline_payload in baseline_totals.items():
-        if not isinstance(dialect, str) or not isinstance(baseline_payload, dict):
+    for baseline_dialect, baseline_payload in baseline_totals.items():
+        if not isinstance(baseline_dialect, str) or not isinstance(baseline_payload, Mapping):
             continue
-        current_payload = current_totals.get(dialect)
-        if not isinstance(current_payload, dict):
-            messages.append(f"{dialect}: missing current dialect")
+        current_payload = (
+            current_totals.get(cast(Dialect, baseline_dialect)) if baseline_dialect in DEFAULT_DIALECTS else None
+        )
+        if current_payload is None:
+            messages.append(f"{baseline_dialect}: missing current dialect")
             continue
-        baseline_counts = baseline_payload.get("totals", {})
-        current_counts = current_payload.get("totals", {})
-        if not isinstance(baseline_counts, dict) or not isinstance(current_counts, dict):
+        baseline_counts = baseline_payload.get("totals")
+        current_counts = current_payload["totals"]
+        if not isinstance(baseline_counts, Mapping):
             continue
         for key in REGRESSION_TOTAL_KEYS:
             old = baseline_counts.get(key, 0)
             new = current_counts.get(key, 0)
             if isinstance(old, int) and isinstance(new, int) and new > old:
-                messages.append(f"{dialect}: {key} regressed from {old} to {new}")
+                messages.append(f"{baseline_dialect}: {key} regressed from {old} to {new}")
     return messages
 
 
-def write_outputs(audit: dict[str, Any], json_out: Path, md_out: Path) -> None:
+def write_outputs(audit: AuditReport, json_out: Path, md_out: Path) -> None:
     json_out.parent.mkdir(parents=True, exist_ok=True)
     md_out.parent.mkdir(parents=True, exist_ok=True)
     json_out.write_text(json.dumps(audit, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -223,9 +268,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _dedupe_dialects(raw: list[Dialect] | None) -> list[Dialect]:
+    return list(dict.fromkeys(raw or list(DEFAULT_DIALECTS)))
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
-    dialects = list(dict.fromkeys(args.dialect or list(DEFAULT_DIALECTS)))
+    dialects = _dedupe_dialects(cast(list[Dialect] | None, args.dialect))
     json_out = args.json_out or (args.out_dir / "compat-audit.json")
     md_out = args.md_out or (args.out_dir / "compat-audit.md")
 
@@ -234,7 +283,7 @@ def main(argv: list[str] | None = None) -> int:
     write_outputs(audit, json_out, md_out)
 
     if args.fail_on_regression:
-        baseline = json.loads(args.fail_on_regression.read_text(encoding="utf-8"))
+        baseline = cast(JSONDict, json.loads(args.fail_on_regression.read_text(encoding="utf-8")))
         messages = regression_messages(audit, baseline)
         if messages:
             for message in messages:

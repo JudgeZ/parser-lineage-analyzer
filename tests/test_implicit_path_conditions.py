@@ -266,22 +266,23 @@ class TestContradictionRouting:
         # Same body, opposite operators → must contradict via implicit-arg.
         body = r"^[a-z]+$"
         implicit = (f"[t] =~ /{body}/",)
-        assert condition_is_contradicted(f"[t] !~ /{body}/", (), implicit) is True
+        assert condition_is_contradicted(f"[t] !~ /{body}/", [], implicit) is True
         assert conditions_are_compatible([f"[t] !~ /{body}/"], implicit) is False
 
     def test_implicit_equivalent_to_prior_for_contradiction(self) -> None:
         body = r"^[a-z]+$"
         cond = f"[t] !~ /{body}/"
-        prior = (f"[t] =~ /{body}/",)
+        prior = [f"[t] =~ /{body}/"]
+        implicit = (f"[t] =~ /{body}/",)
         via_prior = condition_is_contradicted(cond, prior, ())
-        via_implicit = condition_is_contradicted(cond, (), prior)
+        via_implicit = condition_is_contradicted(cond, [], implicit)
         assert via_prior == via_implicit is True
 
     def test_implicit_default_empty_preserves_pre_pr_c_behavior(self) -> None:
         # Without implicit arg, behavior must be identical to PR-A baseline.
         cond = '[t] == "x"'
-        prior_only = condition_is_contradicted(cond, ('[t] != "x"',))
-        prior_with_explicit_empty_implicit = condition_is_contradicted(cond, ('[t] != "x"',), ())
+        prior_only = condition_is_contradicted(cond, ['[t] != "x"'])
+        prior_with_explicit_empty_implicit = condition_is_contradicted(cond, ['[t] != "x"'], ())
         assert prior_only is True
         assert prior_with_explicit_empty_implicit is True
 
@@ -368,7 +369,7 @@ class TestCrossFeatureWithF1NegMatch:
         parser = ReverseParser(code)
         parser.analyze()
         result = parser.query("principal.user.userid")
-        expressions = sorted(m.expression for m in result.mappings)
+        expressions = sorted(expect_str(m.expression) for m in result.mappings)
         # "123" is a valid INT value if grok1 matched; the if-branch must
         # remain reachable.
         assert "INT_LIT" in expressions, (
@@ -392,7 +393,7 @@ class TestCrossFeatureWithF1NegMatch:
         parser = ReverseParser(code)
         parser.analyze()
         result = parser.query("principal.port")
-        expressions = sorted(m.expression for m in result.mappings)
+        expressions = sorted(expect_str(m.expression) for m in result.mappings)
         assert expressions == ["HTTPS", "OTHER"]
         assert "unreachable_branch" not in _summary_codes(parser)
 
@@ -441,7 +442,7 @@ class TestCrossFeatureWithF1NegMatch:
         parser = ReverseParser(code)
         parser.analyze()
         result = parser.query("principal.user.userid")
-        expressions = sorted(m.expression for m in result.mappings)
+        expressions = sorted(expect_str(m.expression) for m in result.mappings)
         # The if-branch is reachable: IPV6 grok overwrote ``tok``, the
         # stale INT constraint must have been dropped, and ``[tok] == "::1"``
         # is no longer flagged as a contradiction.
@@ -560,7 +561,7 @@ class TestMutatePropagation:
         parser = ReverseParser(code)
         parser.analyze()
         result = parser.query("principal.port")
-        expressions = sorted(m.expression for m in result.mappings)
+        expressions = sorted(expect_str(m.expression) for m in result.mappings)
         # Both branches must be reachable post-gsub — gsub could rewrite the
         # value to "abc"-compatible content (e.g. "abc" matches if every
         # digit is replaced with an X-prefixed letter run).
@@ -582,7 +583,7 @@ class TestMutatePropagation:
         parser = ReverseParser(code)
         parser.analyze()
         result = parser.query("principal.port")
-        expressions = sorted(m.expression for m in result.mappings)
+        expressions = sorted(expect_str(m.expression) for m in result.mappings)
         # ``replace`` overwrites with a literal; any prior INT constraint is
         # moot. Both branches stay reachable.
         assert "REACHABLE_AFTER_REPLACE" in expressions
@@ -610,7 +611,7 @@ class TestMutatePropagation:
         parser = ReverseParser(code)
         parser.analyze()
         result = parser.query("principal.port")
-        expressions = sorted(m.expression for m in result.mappings)
+        expressions = sorted(expect_str(m.expression) for m in result.mappings)
         assert "MATCHED_APPENDED" in expressions, (
             f"add_field soundness regression: expected MATCHED_APPENDED to remain reachable, got {expressions!r}"
         )
@@ -631,7 +632,7 @@ class TestMutatePropagation:
         parser = ReverseParser(code)
         parser.analyze()
         result = parser.query("principal.port")
-        expressions = sorted(m.expression for m in result.mappings)
+        expressions = sorted(expect_str(m.expression) for m in result.mappings)
         assert "REACHABLE_AFTER_CONVERT" in expressions
         assert "ELSE" in expressions
 
@@ -657,7 +658,7 @@ class TestMutatePropagation:
         parser = ReverseParser(code)
         parser.analyze()
         result = parser.query("principal.user.userid")
-        expressions = sorted(m.expression for m in result.mappings)
+        expressions = sorted(expect_str(m.expression) for m in result.mappings)
         # After rename, dst's value is the renamed src's value (INT-shape).
         # "123" is INT-compatible; the if-branch must remain reachable.
         # If the old UUID constraint on dst survived, "123" would be
@@ -758,7 +759,7 @@ class TestBranchMergeIntersection:
         parser = ReverseParser(code)
         parser.analyze()
         result = parser.query("principal.port")
-        expressions = sorted(m.expression for m in result.mappings)
+        expressions = sorted(expect_str(m.expression) for m in result.mappings)
         # Implicit constraint applies in both surviving branches → algebra
         # collapses the impossible-literal check post-merge.
         assert "POST_MERGE_UNREACHABLE" not in expressions
@@ -829,6 +830,7 @@ class TestCacheDiscipline:
         cache_info_after = _conditions_are_compatible_cached.cache_info()
         # currsize must not exceed maxsize. (A bug that mis-keys would
         # push currsize toward maxsize quickly.)
+        assert cache_info_after.maxsize is not None
         assert cache_info_after.currsize <= cache_info_after.maxsize
 
 

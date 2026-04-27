@@ -16,6 +16,7 @@ Coverage targets:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -27,6 +28,7 @@ from parser_lineage_analyzer._grok_patterns import (
     expand_pattern,
     load_library_from_paths,
 )
+from parser_lineage_analyzer._types import ConfigPair, ConfigValue
 
 
 class TestBundledLibrary:
@@ -530,20 +532,19 @@ class TestPR11ReviewFixes:
         state = AnalyzerState()
         # ConfigPair tuples: (key, value). pattern_definitions value is
         # a list of (name, body) pairs. One good, one bad.
+        pattern_definitions: list[tuple[str, ConfigValue]] = [
+            ("GOOD_PAT", "[a-z]+"),
+            ("BAD_PAT", cast(ConfigValue, ["nested", "list"])),
+        ]
+        config: list[ConfigPair] = [
+            ("pattern_definitions", cast(ConfigValue, pattern_definitions)),
+            ("match", cast(ConfigValue, [("message", "%{BAD_PAT:weird} %{GOOD_PAT:good}")])),
+        ]
         plugin = Plugin(
             name="grok",
             body="",
             line=1,
-            config=[
-                (
-                    "pattern_definitions",
-                    [
-                        ("GOOD_PAT", "[a-z]+"),
-                        ("BAD_PAT", ["nested", "list"]),  # type: ignore[list-item]
-                    ],
-                ),
-                ("match", [("message", "%{BAD_PAT:weird} %{GOOD_PAT:good}")]),
-            ],
+            config=config,
         )
         rp._exec_grok(plugin, state, [])
         codes = {w.code for w in state.structured_warnings}

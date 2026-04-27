@@ -917,7 +917,10 @@ def test_cli_mutate_canonical_order_help_omits_internal_ticket(tmp_path):
     assert "--mutate-canonical-order" in help_text
     assert "T4.2" not in help_text
     # The behavior summary should still mention canonical order semantics.
-    assert "canonical" in help_text.lower()
+    flat = " ".join(help_text.split()).lower()
+    assert "canonical" in flat
+    assert "secops defaults to source order" in flat
+    assert "logstash defaults to canonical order" in flat
 
 
 def test_max_parser_bytes_constant_is_shared_with_analyzer():
@@ -968,6 +971,22 @@ def test_cli_text_output_scrubs_terminal_control_chars_in_warnings(tmp_path, cap
     out = capsys.readouterr().out
     assert "\x1b" not in out
     assert "\r" not in out
+
+
+def test_cli_text_output_preserves_unicode_values(tmp_path, capsys):
+    cafe = "caf" + chr(233)
+    code = f"""
+filter {{
+  mutate {{ replace => {{ "event.idm.read_only_udm.metadata.description" => "{cafe}" }} }}
+  mutate {{ merge => {{ "@output" => "event" }} }}
+}}
+"""
+    parser_file = _write_parser(tmp_path, code)
+
+    assert main([str(parser_file), "metadata.description"]) == 0
+    out = capsys.readouterr().out
+    assert f"expression: {cafe}" in out
+    assert f"constant:'{cafe}'" in out
 
 
 def test_io_anchor_is_publicly_exported():
@@ -1212,17 +1231,29 @@ def test_cli_strict_help_text_disambiguates_warning_levels():
     # query-level gates so users know which conditions trip exit 3.
     assert "parser-level" in flat
     assert "query-level" in flat
+    assert "cannot be used with --compat-report" in flat.lower()
 
 
 def test_readme_documents_new_cli_flags():
     readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
     for flag in (
+        "--compat-report",
+        "--dialect",
         "--grok-patterns-dir",
+        "--mutate-source-order",
         "--plugin-signatures",
         "--plugin-signatures-dir",
         "--include-pattern-bodies",
         "--version",
     ):
         assert flag in readme, f"README CLI flag table missing: {flag}"
+    assert "`--summary`, `--compact-summary`, and `--compat-report`" in readme
+    assert "cannot be used with `--compat-report`" in readme
+    assert "For query, list, and summary output, `--json` emits" in readme
+    assert "Compatibility reports (`--compat-report --json`) have their own JSON schema." in readme
+    assert "secops` defaults to source order" in readme
+    assert "logstash` defaults to canonical order" in readme
+    assert "Text output preserves Unicode parser values" in readme
+    assert "JSON output is ASCII-escaped" in readme
     assert "NO_COLOR" in readme
     assert "ASCII-aware only" in readme
