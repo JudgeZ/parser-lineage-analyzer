@@ -154,7 +154,6 @@ class TestExactLiteralRecognition:
     def test_recognizes_anchored_literal(self, condition: str, field: str, literal: str) -> None:
         assert exact_literal_value(condition) == (field, literal)
         assert is_exact_literal_regex_condition(condition)
-        assert _literal_fact_from_normalized_condition(condition) == LiteralFact(field, literal)
 
 
 class TestSoundnessGuards:
@@ -719,11 +718,15 @@ class TestRegexFactWiring:
         assert fact.body == "^[A-Z]+$"
         assert fact.is_match is True
 
-    def test_literal_fact_still_preferred_for_pure_literal_body(self) -> None:
-        # ``=~ /^foo$/`` reduces to a LiteralFact (Phase 0 behavior).
+    def test_newline_ambiguous_literal_body_uses_regex_fact(self) -> None:
+        # ``=~ /^foo$/`` remains an exact-literal shape for diagnostics, but
+        # contradiction facts keep the RegexFact so ``"foo\n"`` stays in the
+        # language under ``$`` anchor semantics.
         fact = _fact_from_condition("[t] =~ /^foo$/")
-        assert isinstance(fact, LiteralFact)
-        assert fact.value == "foo"
+        assert isinstance(fact, RegexFact)
+        assert fact.field == "[t]"
+        assert fact.body == "^foo$"
+        assert fact.is_match is True
 
     @pytest.mark.parametrize(
         "conditions,compatible",
@@ -845,6 +848,18 @@ class TestNegMatchExtraction:
         assert fact.body == "^foo$"
         assert fact.is_match is False
 
+    def test_pos_match_literal_body_stays_regex_fact_when_dollar_newline_ambiguous(self) -> None:
+        # ``exact_literal_value`` still recognizes the public Phase 0 shape,
+        # but the contradiction engine must not narrow ``^foo$`` to
+        # LiteralFact("foo") because the regex also matches ``"foo\n"``.
+        assert exact_literal_value("[t] =~ /^foo$/") == ("[t]", "foo")
+        assert _literal_fact_from_normalized_condition("[t] =~ /^foo$/") is None
+        fact = _fact_from_condition("[t] =~ /^foo$/")
+        assert isinstance(fact, RegexFact)
+        assert fact.field == "[t]"
+        assert fact.body == "^foo$"
+        assert fact.is_match is True
+
     def test_neg_match_non_literal_body_emits_regex_fact(self) -> None:
         fact = _fact_from_condition("[t] !~ /^[A-Z]+$/")
         assert isinstance(fact, RegexFact)
@@ -902,6 +917,11 @@ class TestNegMatchExtraction:
             # consults `literal_in_regex_language` and finds the contradiction.
             (['[t] == "foo"', "[t] !~ /^foo$/"], False),
             (['[t] != "foo"', "[t] !~ /^foo$/"], True),
+            # Positive literal-looking regexes stay as RegexFact so the
+            # trailing-newline witness is preserved.
+            (['[t] == "foo\\n"', "[t] =~ /^foo$/"], True),
+            (['[t] == "foo"', "[t] =~ /^foo$/"], True),
+            (['[t] == "bar"', "[t] =~ /^foo$/"], False),
             # Same field positive vs negative on identical body — algebra
             # detects via `language_subset(body, body) == YES`.
             (["[t] =~ /^[A-Z]+$/", "[t] !~ /^[A-Z]+$/"], False),
@@ -950,6 +970,7 @@ class TestNegMatchExtraction:
         assert conditions_are_compatible(["NOT([t] !~ /^foo$/)", '[t] != "foo"']) is True
         # And the symmetric existing-behavior check (already sound):
         assert conditions_are_compatible(["NOT([t] =~ /^foo$/)", '[t] == "foo"']) is False
+        assert conditions_are_compatible(["NOT([t] =~ /^foo$/)", '[t] == "foo\\n"']) is False
 
 
 class TestRegexStressFile:

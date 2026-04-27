@@ -86,7 +86,8 @@ def _decode_condition_string(value: str) -> str:
     i = 0
     while i < len(value):
         if value[i] == "\\" and i + 1 < len(value):
-            out.append(value[i + 1])
+            escaped = value[i + 1]
+            out.append({"n": "\n", "r": "\r", "t": "\t"}.get(escaped, escaped))
             i += 2
             continue
         out.append(value[i])
@@ -106,25 +107,26 @@ def _literal_fact_from_normalized_condition(condition: str) -> LiteralFact | Non
     m = _NE_RE.match(condition)
     if m:
         return LiteralFact(m.group("field"), _decode_condition_string(m.group("value")), False)
-    regex_literal = _regex_exact_literal_value(condition)
+    regex_literal = _safe_regex_literal_fact_from_normalized_condition(condition)
     if regex_literal is not None:
-        field, value = regex_literal
-        return LiteralFact(field, value)
-    # Intentional gap: ``[t] !~ /^literal$/`` is NOT reduced to
-    # ``LiteralFact(literal, is_equal=False)`` here, even though the body
-    # matches the EXACT_LITERAL shape. Reason: the analyzer's reality
-    # model uses Python ``re.search`` semantics, where ``$`` matches
-    # before a final ``\n``. So ``!~ /^foo$/`` excludes both ``"foo"``
-    # *and* ``"foo\n"``, while ``LiteralFact("foo", neq)`` would only
-    # exclude ``"foo"``. Sound on its own, but the negated-literal
-    # reduction would flip the LiteralFact's ``is_equal`` and produce
-    # the false claim that ``NOT(!~ /^foo$/)`` means ``[t] == "foo"``
-    # — a *narrower* match-set than the true ``=~ /^foo$/`` semantics.
-    # That narrower set unsoundly contradicts a peer fact like
-    # ``[t] != "foo"`` whose witness ``"foo\n"`` lies *outside* the
-    # narrowed set but *inside* the true regex language. Letting ``!~``
-    # stay as a :class:`RegexFact` keeps the algebra reasoning faithful.
+        return regex_literal
+    # Intentional gap: ``[t] =~ /^literal$/`` and ``[t] !~ /^literal$/`` are
+    # not reduced to value-equality facts when the regex language also admits
+    # ``"literal\n"`` via Python/Ruby ``$`` semantics. The literal classifier
+    # still recognizes these bodies for diagnostics, but contradiction facts
+    # keep them as RegexFacts so Phase 1 can reason about the wider language.
     return None
+
+
+def _safe_regex_literal_fact_from_normalized_condition(condition: str) -> LiteralFact | None:
+    regex_literal = _regex_exact_literal_value(condition)
+    extracted = extract_regex_literal(condition)
+    if regex_literal is None or extracted is None:
+        return None
+    field, value = regex_literal
+    if literal_in_regex_language(f"{value}\n", extracted.body, extracted.flags) != Trilean.NO:
+        return None
+    return LiteralFact(field, value)
 
 
 def _regex_fact_from_normalized_condition(condition: str) -> RegexFact | None:
@@ -140,6 +142,16 @@ def _regex_fact_from_normalized_condition(condition: str) -> RegexFact | None:
     return RegexFact(extracted.field, extracted.body, extracted.flags, is_match=extracted.is_match)
 
 
+def _negated_regex_fact_from_normalized_condition(condition: str) -> RegexFact | None:
+    m = _NEGATED_RE.match(condition)
+    if not m:
+        return None
+    fact = _regex_fact_from_normalized_condition(_normalize_condition(m.group("inner")))
+    if fact is None:
+        return None
+    return RegexFact(fact.field, fact.body, fact.flags, is_match=not fact.is_match)
+
+
 @lru_cache(maxsize=8192)
 def _fact_from_condition(condition: str) -> Fact | None:
     condition = _normalize_condition(condition)
@@ -148,6 +160,9 @@ def _fact_from_condition(condition: str) -> Fact | None:
     )
     if literal is not None:
         return literal
+    negated_regex = _negated_regex_fact_from_normalized_condition(condition)
+    if negated_regex is not None:
+        return negated_regex
     # Phase 1: a ``=~``/``!~`` whose body wasn't reducible to a LiteralFact
     # becomes a RegexFact for the symbolic algebra to reason about.
     return _regex_fact_from_normalized_condition(condition)
