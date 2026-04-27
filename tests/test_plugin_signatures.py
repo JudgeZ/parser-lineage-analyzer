@@ -4,7 +4,7 @@ Coverage targets:
 * Registry: register / lookup / contains / merge / from_paths.
 * TOML loader: single file, directory, sorted-key determinism, default
   ``name`` from table key, validation error → ValueError mapping.
-* Bundled registry returns an empty registry (no signatures shipped in v0.2).
+* Bundled registry returns conservative audited signatures.
 * Pydantic ``extra="forbid"`` rejects unknown signature keys.
 * End-to-end dispatch: a registered fake plugin produces signature-dispatched
   lineage with the declared semantic_class / lineage_status / sources.
@@ -205,9 +205,8 @@ class TestTomlLoader:
         assert "ignored" not in reg
 
     def test_load_directory_silent_on_missing_path(self, tmp_path: Path) -> None:
-        # Non-directory paths are silently ignored — the bundled directory
-        # ships empty in v0.2 so callers can opt into "load if present"
-        # without guarding.
+        # Non-directory paths are silently ignored so callers can opt into
+        # "load if present" without guarding.
         reg = PluginSignatureRegistry()
         reg.load_directory(tmp_path / "does_not_exist")
         assert len(reg) == 0
@@ -434,9 +433,28 @@ class TestTomlLoader:
 
 
 class TestBundledRegistry:
-    def test_empty_in_v0_2(self) -> None:
+    def test_bundled_registry_loads_common_signatures(self) -> None:
         reg = load_bundled_registry()
-        assert len(reg) == 0
+        assert len(reg) > 0
+        assert "throttle" in reg
+        assert "threat_lookup" in reg
+
+    def test_bundled_signature_dispatch_replaces_unsupported_path(self) -> None:
+        from parser_lineage_analyzer.analyzer import ReverseParser
+
+        src = """\
+filter {
+  throttle {
+    key => "%{message}"
+    add_tag => ["throttled"]
+  }
+}
+"""
+        rp = ReverseParser(src, plugin_signatures=load_bundled_registry())
+        state = rp.analyze()
+
+        assert not state.unsupported
+        assert "throttled" in state.tag_state.possibly
 
 
 # -- Dispatch end-to-end ----------------------------------------------

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Literal
 
 from ._analysis_executor import AnalysisExecutor
 from ._analysis_query import AnalysisQueryMixin
 from ._analysis_state import AnalyzerState
 from ._grok_patterns import GrokLibrary, bundled_library, load_library_from_paths
 from ._plugin_signatures import PluginSignatureRegistry
+from ._plugin_specs import DialectProfile, dialect_profile_for, normalize_dialect
 from .model import Lineage, SourceRef
 from .parser import parse_code_with_diagnostics
 
@@ -29,7 +31,8 @@ class ReverseParser(AnalysisQueryMixin, AnalysisExecutor):
         parser_code: str,
         *,
         max_parser_bytes: int = MAX_PARSER_BYTES,
-        mutate_canonical_order: bool = False,
+        dialect: Literal["secops", "logstash"] = "secops",
+        mutate_canonical_order: bool | None = None,
         grok_patterns_dir: Sequence[Path | str] | None = None,
         plugin_signatures: PluginSignatureRegistry | None = None,
     ):
@@ -42,9 +45,11 @@ class ReverseParser(AnalysisQueryMixin, AnalysisExecutor):
         token; analysis itself runs lazily on the first ``analyze``/``query``
         call. ``max_parser_bytes`` caps the UTF-8 size of ``parser_code`` and
         defaults to ``25_000_000``; pass a negative value (e.g. ``-1``) to
-        disable the limit. ``mutate_canonical_order`` opts into Logstash's
-        canonical per-block mutate execution order; the default of ``False``
-        preserves source order, which matches historical analyzer behavior.
+        disable the limit. ``dialect`` selects the parser compatibility
+        profile. ``"secops"`` is the default and preserves source-order mutate
+        semantics. ``"logstash"`` defaults to Logstash's canonical per-block
+        mutate execution order. ``mutate_canonical_order`` may be passed
+        explicitly to override either dialect default.
 
         ``grok_patterns_dir`` extends the bundled Logstash legacy grok pattern
         library with user-supplied pattern files. Each entry may be a file or
@@ -69,12 +74,17 @@ class ReverseParser(AnalysisQueryMixin, AnalysisExecutor):
         self.parser_code = parser_code
         self.ast, self.parse_diagnostics = parse_code_with_diagnostics(parser_code)
         self.state = AnalyzerState()
+        self.dialect = normalize_dialect(dialect)
+        self.dialect_profile: DialectProfile = dialect_profile_for(self.dialect)
+        self.state.dialect = self.dialect
         # Phase 4A: when set, the mutate dispatcher reorders operations to
         # match Logstash's hardcoded canonical order before iterating. This
-        # is opt-in because most real parsers exploit source-order semantics
-        # and changing the default would silently re-derive every existing
-        # mutate test.
-        self.state.mutate_canonical_order = mutate_canonical_order
+        # defaults by dialect but remains explicitly overridable.
+        self.state.mutate_canonical_order = (
+            self.dialect_profile.mutate_canonical_order_default
+            if mutate_canonical_order is None
+            else mutate_canonical_order
+        )
         # PR-B: grok pattern library. Bundled patterns are always loaded;
         # user-supplied directories merge on top with last-write-wins.
         # Stored on ``self`` (not ``self.state``) because the library is

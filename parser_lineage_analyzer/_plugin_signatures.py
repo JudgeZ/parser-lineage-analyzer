@@ -179,9 +179,8 @@ class PluginSignatureRegistry:
 
         Files are loaded in sorted order so two directories with the
         same files produce the same registry state. Missing or non-
-        directory paths are silently ignored — the bundled
-        ``plugin_signatures/`` directory ships empty in v0.2 so callers
-        can opt into "load bundled if present" without guarding.
+        directory paths are silently ignored so callers can opt into
+        "load bundled if present" without guarding.
 
         Symlinks whose resolved target sits outside the loaded directory
         are skipped: a configured signatures directory shouldn't
@@ -260,10 +259,9 @@ class PluginSignatureRegistry:
 def load_bundled_registry() -> PluginSignatureRegistry:
     """Load any signatures bundled with the package.
 
-    v0.2 ships the ``plugin_signatures/`` directory empty (see
-    ``docs/plugin-signatures.md`` for examples that are deliberately
-    docs-only). The loader still consults the directory so future
-    bundled additions need no code change.
+    The bundled directory contains conservative audited signatures for
+    common opaque enrichers. Callers opt in by invoking this loader (or by
+    passing the directory through the existing CLI/plugin-signature path).
     """
     registry = PluginSignatureRegistry()
     bundled_dir = Path(__file__).parent / "plugin_signatures"

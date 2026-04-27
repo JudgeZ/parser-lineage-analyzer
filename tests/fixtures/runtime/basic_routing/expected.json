@@ -1,0 +1,5 @@
+{
+  "touched_fields": ["event.idm.read_only_udm.target.ip"],
+  "tags": ["routed_runtime_fixture"],
+  "output_anchors": ["event"]
+}

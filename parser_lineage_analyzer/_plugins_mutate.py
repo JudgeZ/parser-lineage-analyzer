@@ -114,6 +114,7 @@ class MutatePluginMixin:
         "convert": "_exec_convert_mutate_op",
         "lowercase": "_exec_case_mutate_op",
         "uppercase": "_exec_case_mutate_op",
+        "strip": "_exec_case_mutate_op",
         "gsub": "_exec_gsub_mutate_op",
         "split": "_exec_split_mutate_op",
         "join": "_exec_join_mutate_op",
@@ -144,10 +145,10 @@ class MutatePluginMixin:
     # purposes. The cross-block alternative was investigated and rejected
     # because no real fixture demonstrated the need; revisit only if a
     # corpus fixture surfaces a per-pipeline-ordering bug.
-    # C6: ``coerce`` and ``strip`` are not in ``_MUTATE_OP_HANDLERS`` (the
-    # analyzer doesn't implement them yet). Listing them here made
+    # C6: ``coerce`` is not in ``_MUTATE_OP_HANDLERS`` (the analyzer doesn't
+    # implement it yet). Listing it here made
     # ``_warn_mutate_ordering_drift`` skip drift checks whenever a parser
-    # mixed ``coerce``/``strip`` with supported ops, and the
+    # mixed ``coerce`` with supported ops, and the
     # ``--mutate-canonical-order`` flag would sort them into a canonical
     # position only to immediately emit ``unsupported_mutate_operation``.
     # Drop them from the canonical tuple until handlers exist; ordering for
@@ -160,6 +161,7 @@ class MutatePluginMixin:
         "gsub",
         "uppercase",
         "lowercase",
+        "strip",
         "remove_field",
         "split",
         "join",

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from bisect import insort
 from collections import Counter
+from dataclasses import asdict
 from typing import Protocol, cast
 
 from ._analysis_helpers import (
@@ -19,6 +20,7 @@ from ._analysis_helpers import (
     _udm_suffixes,
 )
 from ._analysis_state import AnalyzerState
+from ._plugin_specs import PLUGIN_SPECS, dialect_profile_for
 from ._types import JSONDict, JSONValue
 from .model import (
     AnalysisSummaryDict,
@@ -34,10 +36,20 @@ from .model import (
 
 SUMMARY_SAMPLE_LIMIT = 50
 MAX_ANCHOR_CONDITIONED_COMPACT_MAPPINGS = 50_000
+_UNSUPPORTED_PLUGIN_RE = re.compile(r"unsupported plugin (?P<name>[A-Za-z0-9_.:-]+)")
+_UNSUPPORTED_MUTATE_OP_RE = re.compile(r"unsupported mutate operation (?P<op>[^:]+)$")
+_PARSER_LOCATION_PLUGIN_RE = re.compile(r"^line \d+:\s*(?P<plugin>[A-Za-z0-9_.:-]+)")
 
 
 def _clamp_query_sample_limit(sample_limit: int) -> int:
     return min(max(int(sample_limit), 0), SUMMARY_SAMPLE_LIMIT)
+
+
+def _compat_plugin_name(parser_location: str | None) -> str | None:
+    if parser_location is None:
+        return None
+    match = _PARSER_LOCATION_PLUGIN_RE.match(parser_location)
+    return match.group("plugin") if match else parser_location
 
 
 class _QueryContext(Protocol):
@@ -350,6 +362,103 @@ class AnalysisQueryMixin:
             "xml_extractions_total": totals["xml_extractions"],
         }
         return compact_summary
+
+    def compat_report(self, *, compact: bool = False) -> JSONDict:
+        """Return a dialect-oriented compatibility report for parser-corpus audits."""
+        state = cast(_QueryContext, self).analyze()
+        structured_warnings = _dedupe_warning_reasons(state.structured_warnings)
+        warning_counts = Counter(w.code for w in structured_warnings)
+        warning_counts.update(state._suppressed_warning_counts)
+        unsupported = _dedupe_strings(state.unsupported)
+
+        unsupported_plugins = [item for item in unsupported if "unsupported plugin" in item]
+        unsupported_mutate_ops = [item for item in unsupported if "unsupported mutate operation" in item]
+        unsupported_plugin_counts: Counter[str] = Counter()
+        for item in unsupported_plugins:
+            match = _UNSUPPORTED_PLUGIN_RE.search(item)
+            unsupported_plugin_counts[match.group("name") if match else item] += 1
+        unsupported_mutate_op_counts: Counter[str] = Counter()
+        for item in unsupported_mutate_ops:
+            match = _UNSUPPORTED_MUTATE_OP_RE.search(item)
+            unsupported_mutate_op_counts[match.group("op").strip() if match else item] += 1
+        unknown_config_keys = [
+            {
+                "plugin": _compat_plugin_name(warning.parser_location),
+                "parser_location": warning.parser_location,
+                "key": warning.source_token,
+                "message": warning.message,
+            }
+            for warning in structured_warnings
+            if warning.code == "unknown_config_key"
+        ]
+        unknown_config_key_counts = Counter(
+            f"{item.get('plugin')}.{item.get('key')}"
+            for item in unknown_config_keys
+            if item.get("plugin") and item.get("key")
+        )
+        dialect_disabled_plugin_counts = Counter(
+            warning.source_token
+            for warning in structured_warnings
+            if warning.code == "plugin_dialect_disabled" and warning.source_token
+        )
+        dynamic_or_symbolic_codes = {
+            code: count
+            for code, count in sorted(warning_counts.items())
+            if code.startswith("dynamic_")
+            or code.startswith("runtime_")
+            or code in {"static_limit", "gsub_backreference", "template_fanout"}
+        }
+
+        failure_tag_routes: list[JSONDict] = [route.to_json() for route in state.failure_tag_routes]
+        affected_fields: list[str] = []
+        affected_field_counts: Counter[str] = Counter()
+        affected_seen: set[str] = set()
+        for token, lineages in state.tokens.items():
+            token_affected = False
+            for lin in lineages:
+                if lin.status in {"dynamic", "unresolved"} or lin.taints:
+                    token_affected = True
+                    affected_field_counts[token] += 1
+            if token_affected and token not in affected_seen:
+                affected_seen.add(token)
+                affected_fields.append(token)
+
+        limit = SUMMARY_SAMPLE_LIMIT if compact else None
+        affected_field_counts_sorted = sorted(affected_field_counts.items(), key=lambda item: (-item[1], item[0]))
+        report: JSONDict = {
+            "dialect": getattr(state, "dialect", "secops"),
+            "dialect_profile": asdict(dialect_profile_for(getattr(state, "dialect", "secops"))),
+            "mutate_canonical_order": state.mutate_canonical_order,
+            "plugin_registry": {
+                "built_in_plugins": len(PLUGIN_SPECS),
+                "semantic_class_counts": dict(
+                    sorted(Counter(spec.semantic_class for spec in PLUGIN_SPECS.values()).items())
+                ),
+            },
+            "unsupported_plugins": unsupported_plugins[:limit],
+            "unsupported_mutate_operations": unsupported_mutate_ops[:limit],
+            "unknown_config_keys": unknown_config_keys[:limit],
+            "warning_counts": dict(sorted(warning_counts.items())),
+            "unsupported_plugin_counts": dict(sorted(unsupported_plugin_counts.items())),
+            "unsupported_mutate_operation_counts": dict(sorted(unsupported_mutate_op_counts.items())),
+            "unknown_config_key_counts": dict(sorted(unknown_config_key_counts.items())),
+            "dialect_disabled_plugin_counts": dict(sorted(dialect_disabled_plugin_counts.items())),
+            "dynamic_or_symbolic_warning_counts": dynamic_or_symbolic_codes,
+            "failure_tag_routes": failure_tag_routes[:limit],
+            "affected_fields": affected_fields[:limit],
+            "affected_field_counts": dict(affected_field_counts_sorted[:limit]),
+            "totals": {
+                "unsupported_plugins": len(unsupported_plugins),
+                "unsupported_mutate_operations": len(unsupported_mutate_ops),
+                "unknown_config_keys": len(unknown_config_keys),
+                "failure_tag_routes": len(failure_tag_routes),
+                "affected_fields": len(affected_fields),
+                "dynamic_or_symbolic_warnings": sum(dynamic_or_symbolic_codes.values()),
+            },
+        }
+        if compact:
+            report["compact"] = {"limit": SUMMARY_SAMPLE_LIMIT}
+        return report
 
     def _summary_taint_sample_counts(self, state: AnalyzerState) -> tuple[list[JSONDict], int, dict[str, int]]:
         seen: set[tuple[object, ...]] = set()

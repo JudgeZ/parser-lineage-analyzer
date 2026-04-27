@@ -1,0 +1,9 @@
+filter {
+  mutate {
+    replace => {
+      "event.idm.read_only_udm.target.ip" => "1.2.3.4"
+    }
+    add_tag => ["routed_runtime_fixture"]
+  }
+  mutate { merge => { "@output" => "event" } }
+}

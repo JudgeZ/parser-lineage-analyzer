@@ -247,6 +247,7 @@ def test_mutate_registry_contains_supported_operations():
         "convert": "_exec_convert_mutate_op",
         "lowercase": "_exec_case_mutate_op",
         "uppercase": "_exec_case_mutate_op",
+        "strip": "_exec_case_mutate_op",
         "gsub": "_exec_gsub_mutate_op",
         "split": "_exec_split_mutate_op",
         "join": "_exec_join_mutate_op",
