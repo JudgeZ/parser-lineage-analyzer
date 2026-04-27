@@ -1475,9 +1475,7 @@ class FlowExecutorMixin:
             tags.append(on_error)
         return _dedupe_strings(tags + timeout_tags)
 
-    def _apply_failure_tags(
-        self, stmt: Plugin, state: AnalyzerState, conditions: list[str], spec: PluginSpec
-    ) -> None:
+    def _apply_failure_tags(self, stmt: Plugin, state: AnalyzerState, conditions: list[str], spec: PluginSpec) -> None:
         tags = self._failure_tags_for(stmt, state, spec)
         if not tags:
             return

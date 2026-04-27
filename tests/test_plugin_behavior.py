@@ -559,7 +559,7 @@ def test_default_failure_tags_are_possible_not_definite():
           }
         }
         """,
-        dialect="logstash"
+        dialect="logstash",
     )
     state = parser.analyze()
     codes = {warning["code"] for warning in parser.analysis_summary()["structured_warnings"]}
@@ -583,7 +583,7 @@ def test_empty_failure_tags_suppress_default_failure_route():
           }
         }
         """,
-        dialect="logstash"
+        dialect="logstash",
     )
     state = parser.analyze()
     codes = {warning["code"] for warning in parser.analysis_summary()["structured_warnings"]}
@@ -684,7 +684,7 @@ def test_translate_regex_and_dictionary_path_stay_dynamic_with_warning():
 
 def test_translate_projects_json_object_dictionary_values():
     parser = ReverseParser(
-        r'''
+        r"""
         filter {
           translate {
             field => "error_code"
@@ -695,7 +695,7 @@ def test_translate_projects_json_object_dictionary_values():
             fallback => "{\"severity\":\"unknown\",\"action\":\"log\"}"
           }
         }
-        '''
+        """
     )
     state = parser.analyze()
 

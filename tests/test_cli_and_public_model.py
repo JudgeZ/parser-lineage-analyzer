@@ -61,10 +61,7 @@ def test_cli_dialect_and_mutate_order_overrides(tmp_path, capsys):
     assert main([str(parser_file), "target.hostname", "--json", "--dialect", "logstash"]) == 0
     assert json.loads(capsys.readouterr().out)["status"] == "unresolved"
 
-    assert (
-        main([str(parser_file), "target.hostname", "--json", "--dialect", "logstash", "--mutate-source-order"])
-        == 0
-    )
+    assert main([str(parser_file), "target.hostname", "--json", "--dialect", "logstash", "--mutate-source-order"]) == 0
     assert json.loads(capsys.readouterr().out)["status"] == "derived"
 
 
