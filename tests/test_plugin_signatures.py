@@ -16,6 +16,7 @@ Coverage targets:
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -129,7 +130,9 @@ class TestRegistryBasics:
 
 
 class TestTomlLoader:
-    def test_load_single_file(self, tmp_path: Path) -> None:
+    def test_load_rejects_top_level_scalar(self, tmp_path: Path) -> None:
+        # Top-level scalars are NOT supported (the file must be a table-of-tables);
+        # a stray scalar makes the loader fail with a clear error.
         f = tmp_path / "sigs.toml"
         f.write_text(
             'name = "ignored_top_level"\n'
@@ -141,8 +144,6 @@ class TestTomlLoader:
             'dest_keys = ["dst"]\n',
             encoding="utf-8",
         )
-        # Top-level scalars are NOT supported (the file must be a table-of-tables);
-        # a stray scalar makes the loader fail with a clear error.
         reg = PluginSignatureRegistry()
         with pytest.raises(ValueError, match="must be a TOML table"):
             reg.load_toml(f)
@@ -430,3 +431,276 @@ class TestCorpusFixture:
         lineages = rp.state.tokens.get("event.idm.read_only_udm.principal.location.country", [])
         codes = {t.code for lin in lineages for t in lin.taints}
         assert "signature_dispatched_derived" in codes
+
+
+# -- Regression tests for review feedback on PR-D ---------------------
+
+
+class TestPR12ReviewFixes:
+    """Regression coverage for Gemini / Codex / CodeRabbit / Copilot findings
+    on PR #12.
+
+    Each test is named after the specific finding it nails down so a
+    future regression is easy to attribute.
+    """
+
+    def test_on_error_block_runs_after_signature_dispatch(self) -> None:
+        # Gemini high (#1): the dispatch's early return used to skip
+        # ``_handle_on_error``. Built-in plugins call it after dispatch;
+        # signature-dispatched plugins must too, so a trailing
+        # ``on_error => "tag"`` (the canonical fail-tag form) is
+        # processed symbolically — landing as a token-level Lineage at
+        # the named flag.
+        from parser_lineage_analyzer.analyzer import ReverseParser
+
+        reg = PluginSignatureRegistry()
+        reg.register(_sig("custom_enrich", source_keys=["source"], dest_keys=["target"], taint_hint="none"))
+        src = """\
+filter {
+  custom_enrich {
+    source => "message"
+    target => "event.idm.read_only_udm.metadata.product"
+    on_error => "_custom_enrich_failed"
+  }
+}
+"""
+        rp = ReverseParser(src, plugin_signatures=reg)
+        rp.analyze()
+        # `_handle_on_error` records the flag as a token-level Lineage
+        # with `kind="error_flag"`; presence of that token confirms the
+        # post-dispatch hook fired.
+        flag_lineages = rp.state.tokens.get("_custom_enrich_failed", [])
+        kinds = {src.kind for lin in flag_lineages for src in lin.sources}
+        assert "error_flag" in kinds, (
+            f"on_error flag should be tracked when dispatch runs _handle_on_error; "
+            f"got source kinds {sorted(kinds)} for token '_custom_enrich_failed'"
+        )
+
+    def test_post_plugin_decorators_run_after_signature_dispatch(self) -> None:
+        # Gemini high (#2): built-in handlers call
+        # ``_apply_post_plugin_decorators`` so ``add_tag`` /
+        # ``add_field`` etc. on the plugin take effect. Signature
+        # dispatch must do the same. ``add_tag`` populates
+        # ``state.tag_state.possibly`` (and ``definitely`` on a single
+        # path); ``add_field`` writes a mutate-style destination.
+        from parser_lineage_analyzer.analyzer import ReverseParser
+
+        reg = PluginSignatureRegistry()
+        reg.register(_sig("decorated_plugin", source_keys=["source"], dest_keys=["target"], taint_hint="none"))
+        src = """\
+filter {
+  decorated_plugin {
+    source => "message"
+    target => "event.idm.read_only_udm.metadata.product"
+    add_tag => ["_decorated"]
+    add_field => { "event.idm.read_only_udm.metadata.event_type" => "DECORATED" }
+  }
+}
+"""
+        rp = ReverseParser(src, plugin_signatures=reg)
+        rp.analyze()
+        possibly = sorted(rp.state.tag_state.possibly)
+        assert "_decorated" in possibly, f"add_tag decorator should populate tag_state.possibly; got {possibly}"
+        # add_field is a mutate-style decorator; the field must resolve.
+        result = rp.query("event.idm.read_only_udm.metadata.event_type")
+        assert result.mappings, "add_field decorator should produce lineage"
+
+    def test_signature_destination_appends_to_existing_lineage(self) -> None:
+        # Gemini high (#2): generic handler can't know whether the
+        # plugin's real semantics are replace-style or merge-style, so
+        # ``_store_destination(append=True)`` matches the unsupported-
+        # plugin fallback behavior — prior lineage on the field is
+        # preserved as an alternative path.
+        from parser_lineage_analyzer.analyzer import ReverseParser
+
+        reg = PluginSignatureRegistry()
+        reg.register(_sig("appender", source_keys=["source"], dest_keys=["target"], taint_hint="none"))
+        # First a mutate.replace lays down lineage; then the signature-
+        # dispatched plugin writes to the same destination. With
+        # append=True both paths survive.
+        src = """\
+filter {
+  mutate {
+    replace => { "event.idm.read_only_udm.metadata.product" => "ORIGINAL" }
+  }
+  appender {
+    source => "message"
+    target => "event.idm.read_only_udm.metadata.product"
+  }
+}
+"""
+        rp = ReverseParser(src, plugin_signatures=reg)
+        rp.analyze()
+        lineages = rp.state.tokens.get("event.idm.read_only_udm.metadata.product", [])
+        # Expect 2+ lineages: the original mutate plus the signature-dispatched one.
+        kinds = {src.kind for lin in lineages for src in lin.sources}
+        assert "constant" in kinds or "literal" in kinds or "mutate_replace" in kinds, (
+            f"expected prior mutate lineage to survive; got source kinds {sorted(kinds)}"
+        )
+        assert "signature_dispatched" in kinds, (
+            f"expected signature-dispatched lineage to be added; got source kinds {sorted(kinds)}"
+        )
+
+    def test_per_destination_source_attribution_for_map_signatures(self) -> None:
+        # Codex P1 (#3): with one shared ``source_lineages`` accumulator,
+        # every destination in ``replace => {a => x, b => y}`` got the
+        # union of x AND y. Per-destination tracking now attributes
+        # each destination to its own source.
+        from parser_lineage_analyzer.analyzer import ReverseParser
+
+        reg = PluginSignatureRegistry()
+        reg.register(
+            _sig(
+                "fanout_distinct_sources",
+                semantic_class="mutate_like",
+                source_keys=[],
+                dest_keys=["replace"],
+                dest_value_kind="map",
+            )
+        )
+        # Distinct sources for each destination. Confirm each destination's
+        # upstream sources include its own RHS but NOT the other's.
+        src = """\
+filter {
+  grok {
+    match => { "message" => "%{WORD:left} %{WORD:right}" }
+  }
+  fanout_distinct_sources {
+    replace => {
+      "event.idm.read_only_udm.metadata.product" => "%{left}"
+      "event.idm.read_only_udm.metadata.vendor"  => "%{right}"
+    }
+  }
+}
+"""
+        rp = ReverseParser(src, plugin_signatures=reg)
+        rp.analyze()
+
+        def _upstream_capture_names(lineages: list) -> set[str]:
+            """Pull every ``capture_name`` from each lineage's signature-
+            dispatched upstream_sources. The grok captures both write a
+            SourceRef whose ``source_token`` is the parent ``message``,
+            so per-destination distinctness shows up only in
+            ``capture_name`` (``"left"`` vs ``"right"``)."""
+            names: set[str] = set()
+            for lin in lineages:
+                for src in lin.sources:
+                    upstream = src.details.get("upstream_sources") if src.details else None
+                    if not isinstance(upstream, (list, tuple)):
+                        continue
+                    for upstream_ref in upstream:
+                        if isinstance(upstream_ref, Mapping):
+                            cap = upstream_ref.get("capture_name")
+                            if isinstance(cap, str):
+                                names.add(cap)
+            return names
+
+        product_lins = rp.state.tokens.get("event.idm.read_only_udm.metadata.product", [])
+        vendor_lins = rp.state.tokens.get("event.idm.read_only_udm.metadata.vendor", [])
+        # Filter to just the signature-dispatched lineages.
+        product_sig_lins = [lin for lin in product_lins if any(s.kind == "signature_dispatched" for s in lin.sources)]
+        vendor_sig_lins = [lin for lin in vendor_lins if any(s.kind == "signature_dispatched" for s in lin.sources)]
+        assert product_sig_lins, "product should have signature-dispatched lineage"
+        assert vendor_sig_lins, "vendor should have signature-dispatched lineage"
+        product_captures = _upstream_capture_names(product_sig_lins)
+        vendor_captures = _upstream_capture_names(vendor_sig_lins)
+        # Product attributes back to "left" but NOT "right".
+        assert "left" in product_captures, (
+            f"product should attribute to grok capture 'left'; got {sorted(product_captures)}"
+        )
+        assert "right" not in product_captures, (
+            f"product MUST NOT attribute to capture 'right' (per-destination bug); got {sorted(product_captures)}"
+        )
+        # Vendor attributes back to "right" but NOT "left".
+        assert "right" in vendor_captures, (
+            f"vendor should attribute to grok capture 'right'; got {sorted(vendor_captures)}"
+        )
+        assert "left" not in vendor_captures, (
+            f"vendor MUST NOT attribute to capture 'left' (per-destination bug); got {sorted(vendor_captures)}"
+        )
+
+    def test_dest_value_kind_list_produces_destinations(self) -> None:
+        # Codex P1 (#4): ``dest_value_kind = "list"`` was documented but
+        # never implemented. A plain list of destination field names
+        # (``targets => ["a", "b"]``) is now honored when the signature
+        # opts into the list shape.
+        from parser_lineage_analyzer.analyzer import ReverseParser
+
+        reg = PluginSignatureRegistry()
+        reg.register(
+            _sig(
+                "fanout_list",
+                semantic_class="enricher",
+                source_keys=["source"],
+                dest_keys=["targets"],
+                dest_value_kind="list",
+            )
+        )
+        src = """\
+filter {
+  fanout_list {
+    source => "message"
+    targets => [
+      "event.idm.read_only_udm.metadata.product",
+      "event.idm.read_only_udm.metadata.vendor"
+    ]
+  }
+}
+"""
+        rp = ReverseParser(src, plugin_signatures=reg)
+        rp.analyze()
+        for dest in (
+            "event.idm.read_only_udm.metadata.product",
+            "event.idm.read_only_udm.metadata.vendor",
+        ):
+            assert rp.state.tokens.get(dest), f"dest_value_kind='list' should produce lineage for {dest}"
+
+    def test_sprintf_source_ref_is_stripped_before_resolve(self) -> None:
+        # Copilot (#5): source values commonly use ``%{message}``-style
+        # sprintf refs. Without ``_strip_ref``, ``_resolve_token`` looks
+        # up the literal ``%{message}`` and falls through to unresolved.
+        # The fix routes source values through ``_strip_ref`` first.
+        from parser_lineage_analyzer.analyzer import ReverseParser
+
+        reg = PluginSignatureRegistry()
+        reg.register(
+            _sig(
+                "sprintf_source_plugin",
+                semantic_class="enricher",
+                source_keys=["source"],
+                dest_keys=["target"],
+                taint_hint="none",
+            )
+        )
+        src = """\
+filter {
+  sprintf_source_plugin {
+    source => "%{message}"
+    target => "event.idm.read_only_udm.metadata.product"
+  }
+}
+"""
+        rp = ReverseParser(src, plugin_signatures=reg)
+        rp.analyze()
+        lineages = rp.state.tokens.get("event.idm.read_only_udm.metadata.product", [])
+        assert lineages
+        # The signature-dispatched lineage should attribute back to
+        # "message" (the raw token) via upstream_sources, NOT to the
+        # literal "%{message}" string.
+        sig_lins = [lin for lin in lineages if any(s.kind == "signature_dispatched" for s in lin.sources)]
+        assert sig_lins
+        upstream_token_names: set[str] = set()
+        for lin in sig_lins:
+            for src in lin.sources:
+                upstream = src.details.get("upstream_sources") if src.details else None
+                if not isinstance(upstream, (list, tuple)):
+                    continue
+                for ref in upstream:
+                    if isinstance(ref, Mapping):
+                        tok = ref.get("source_token")
+                        if isinstance(tok, str):
+                            upstream_token_names.add(tok)
+        assert "message" in upstream_token_names, (
+            f"upstream attribution should resolve %{{message}} to the 'message' token; "
+            f"got {sorted(upstream_token_names)}"
+        )

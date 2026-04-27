@@ -1424,6 +1424,12 @@ class FlowExecutorMixin:
                 # the call site is annotated rather than forcing a
                 # circular import on a Protocol.
                 self._exec_signature_dispatched(stmt, state, conditions, sig)  # type: ignore[attr-defined]
+                # Built-in plugins (line 1371 above) call ``_handle_on_error``
+                # after dispatch so a trailing ``on_error { ... }`` block runs
+                # symbolically. Custom plugins routed via the signature
+                # registry must have the same treatment — without this call,
+                # the analyzer silently drops the on_error fallback.
+                cast(_FlowContext, self)._handle_on_error(stmt, state, conditions)
                 return
 
             warning = unsupported_plugin(stmt.line, stmt.name)

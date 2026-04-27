@@ -83,12 +83,13 @@ class UrlDecodePluginConfig(_PluginConfig):
 # plugin's config and produces signature-dispatched lineage tagged with
 # the declared ``lineage_status`` and ``taint_hint``.
 #
-# ``extra="forbid"`` keeps typos in semantic_class / lineage_status /
-# taint_hint loud — they surface at TOML load time as
-# ``ValidationError`` rather than silently degrading to UNKNOWN.
-class PluginSignature(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+# Inherits ``_PluginConfig`` for parity with sibling models — that
+# combines ``extra="forbid"`` (typos in semantic_class /
+# lineage_status / taint_hint surface as loud ``ValidationError`` at
+# TOML load time rather than silently degrading to UNKNOWN) with
+# ``strict=True`` (no implicit type coercion on ``in_place: bool``,
+# etc.).
+class PluginSignature(_PluginConfig):
     name: str
     semantic_class: Literal["extractor", "enricher", "transform", "mutate_like", "passthrough"]
     source_keys: list[str] = Field(default_factory=list)

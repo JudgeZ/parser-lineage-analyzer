@@ -116,8 +116,29 @@ taint_hint = "none"
 
 Use for a plugin that takes a `replace => { dest => source, ... }`
 map similar to Logstash's built-in `mutate { replace => ... }`.
-Destinations come from the map keys; the values' source-field
-expressions feed the upstream-source attribution.
+Destinations come from the map keys; **each destination's lineage is
+attributed to the plugin-scope `source_keys` plus the pair's specific
+RHS source** — so `dst1 => "%{x}"` and `dst2 => "%{y}"` produce
+distinct upstream attributions, not the union of `x` and `y`.
+
+### Fan-out enricher (single source → list of destinations)
+
+```toml
+[fanout_enricher]
+semantic_class = "enricher"
+source_keys = ["source"]
+dest_keys = ["targets"]
+dest_value_kind = "list"
+lineage_status = "derived"
+taint_hint = "derived"
+```
+
+Use for a plugin invoked as
+`fanout_enricher { source => "client_ip" targets => ["principal.ip", "src.geo.country"] }`.
+Each entry in the list becomes a destination, attributed back to the
+plugin-scope `source_keys`. **Without `dest_value_kind = "list"`**
+the handler treats a non-pairs list as a misshapen map and silently
+ignores it — explicit declaration disambiguates intent.
 
 ### Passthrough (analyzer should ignore)
 
