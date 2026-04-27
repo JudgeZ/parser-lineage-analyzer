@@ -38,6 +38,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
@@ -59,6 +60,7 @@ RECOVERY_AWARE_PHRASES = (
     "syntax error",
     "recovered parser",
 )
+Dialect = Literal["secops", "logstash"]
 
 
 def _smoke_fixture_paths() -> list[Path]:
@@ -76,7 +78,6 @@ def _fixture_id(path: Path) -> str:
 
 
 _FIXTURES = _smoke_fixture_paths()
-
 
 SIDECAR_KEYS = (
     "must_have_warning_codes",
@@ -113,18 +114,31 @@ def _check_sidecar(parser: ReverseParser, fixture_id: str, sidecar: dict[str, ob
         assert code not in warning_codes, f"{fixture_id}: warning code {code!r} should NOT be emitted but was"
     for field in expect_str_list(sidecar.get("must_resolve_fields", [])):
         result = parser.query(field)
-        assert result.mappings, f"{fixture_id}: query({field!r}) returned no mappings"
+        assert any(mapping.status not in {"removed", "unresolved"} for mapping in result.mappings), (
+            f"{fixture_id}: query({field!r}) returned no live mappings"
+        )
     for plugin in expect_str_list(sidecar.get("must_have_unsupported", [])):
         assert plugin in unsupported_blobs, (
             f"{fixture_id}: expected {plugin!r} in unsupported list; got {summary['unsupported']!r}"
         )
 
 
+def _sidecar_dialect(sidecar: dict[str, object] | None) -> Dialect:
+    if sidecar is None:
+        return "secops"
+    dialect = expect_str(sidecar.get("dialect", "secops"))
+    if dialect == "secops":
+        return "secops"
+    if dialect == "logstash":
+        return "logstash"
+    raise ValueError(f"sidecar dialect must be 'secops' or 'logstash', got {dialect!r}")
+
+
 @pytest.mark.parametrize("fixture_path", _FIXTURES, ids=[_fixture_id(p) for p in _FIXTURES])
 def test_corpus_fixture_analyzes_cleanly(fixture_path: Path) -> None:
     src = fixture_path.read_text(encoding="utf-8")
     sidecar = _sidecar_for(fixture_path)
-    dialect = expect_str(sidecar.get("dialect", "secops")) if sidecar is not None else "secops"
+    dialect = _sidecar_dialect(sidecar)
     start = time.perf_counter()
     parser = ReverseParser(src, dialect=dialect)
     parser.analyze()
@@ -164,6 +178,22 @@ def test_sidecar_loader_returns_none_for_missing_sidecar(tmp_path: Path) -> None
     fixture = tmp_path / "demo.cbn"
     fixture.write_text("filter {}", encoding="utf-8")
     assert _sidecar_for(fixture) is None
+
+
+def test_sidecar_must_resolve_fields_rejects_removed_only_mapping() -> None:
+    parser = ReverseParser(
+        """
+        filter {
+          mutate {
+            replace => { "gone" => "yes" }
+            remove_field => ["gone"]
+          }
+        }
+        """
+    )
+
+    with pytest.raises(AssertionError, match="no live mappings"):
+        _check_sidecar(parser, "demo.cbn", {"must_resolve_fields": ["gone"]})
 
 
 def test_corpus_buckets_have_expected_size() -> None:

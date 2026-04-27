@@ -30,6 +30,29 @@ def test_runtime_fixture_check_reports_missing_static_coverage(tmp_path, capsys)
     assert "runtime fixture mismatch" in capsys.readouterr().err
 
 
+def test_runtime_fixture_check_removed_field_is_not_live_coverage(tmp_path):
+    fixture = tmp_path / "runtime" / "removed"
+    fixture.mkdir(parents=True)
+    (fixture / "parser.cbn").write_text(
+        """
+        filter {
+          mutate {
+            replace => { "gone" => "yes" }
+            remove_field => ["gone"]
+          }
+        }
+        """,
+        encoding="utf-8",
+    )
+    (fixture / "input.json").write_text('{"message":"x"}\n', encoding="utf-8")
+    (fixture / "expected.json").write_text(json.dumps({"touched_fields": ["gone"]}), encoding="utf-8")
+
+    report = runtime_fixture_check.check_runtime_fixtures(tmp_path / "runtime")
+
+    assert report["failed"] == 1
+    assert report["results"][0]["failures"]["missing_fields"] == ["gone"]
+
+
 def test_runtime_fixture_check_honors_fixture_dialect(tmp_path):
     fixture = tmp_path / "runtime" / "logstash"
     fixture.mkdir(parents=True)

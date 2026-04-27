@@ -71,7 +71,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help=(
             "Exit 3 if any parser-level (warning, taint, unsupported construct) "
             "or query-level (unresolved, partial, dynamic) finding is present. "
-            "Applies to --list, --summary, --compact-summary, and query modes."
+            "Applies to --list, --summary, --compact-summary, and query modes. "
+            "Cannot be used with --compat-report."
         ),
     )
     parser.add_argument(
@@ -112,8 +113,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "Reorder operations within each mutate{} block into Logstash's "
-            "canonical execution order before iterating. Default is source "
-            "order; this flag opts into Logstash-fidelity semantics."
+            "canonical execution order before iterating. Secops defaults to "
+            "source order; logstash defaults to canonical order. This flag "
+            "forces Logstash-fidelity semantics."
         ),
     )
     parser.add_argument(

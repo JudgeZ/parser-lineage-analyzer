@@ -8,7 +8,11 @@ from collections.abc import Callable, Iterable
 from functools import lru_cache
 from typing import Protocol, cast
 
-from ._analysis_condition_facts import condition_is_contradicted, is_exact_literal_regex_condition
+from ._analysis_condition_facts import (
+    condition_is_contradicted,
+    conditions_are_compatible,
+    is_exact_literal_regex_condition,
+)
 from ._analysis_details import iterable_sources_details, loop_tuple_details
 from ._analysis_diagnostics import (
     config_parse_warning,
@@ -60,12 +64,15 @@ MAX_CLONE_FANOUT = 128
 
 # Phase 3B: detect `"<lit>" in [tags]` so the analyzer can flag branches
 # that check for a tag no prior add_tag could have written.
-_TAGS_MEMBERSHIP_RE = re.compile(r'^"(?P<lit>[^"]+)"\s+in\s+\[tags\]$')
+_TAGS_MEMBERSHIP_RE = re.compile(r'^(?:"(?P<dlit>(?:\\.|[^"\\])*)"|\'(?P<slit>(?:\\.|[^\'\\])*)\')\s+in\s+\[tags\]$')
 
 # R1.3: detect `"<lit>" in [<field>]` for any field (not just `tags`).
 # When `<field>`'s lineage carries `value_type="string"`, this is substring
 # matching, not array membership — emit an advisory so users notice.
-_GENERIC_IN_CHECK_RE = re.compile(r'^"(?P<lit>[^"]+)"\s+in\s+\[(?P<field>[A-Za-z_@][A-Za-z0-9_@.:-]*)\]$')
+_GENERIC_IN_CHECK_RE = re.compile(
+    r'^(?:"(?P<dlit>(?:\\.|[^"\\])*)"|\'(?P<slit>(?:\\.|[^\'\\])*)\')'
+    r"\s+in\s+\[(?P<field>[A-Za-z_@][A-Za-z0-9_@.:-]*)\]$"
+)
 MAX_ELIF_CHAIN_BEFORE_WARNING = 1_000
 MAX_ARRAY_LITERAL_BEFORE_WARNING = 100_000
 _PluginHandler = Callable[[Plugin, AnalyzerState, list[str]], None]
@@ -83,6 +90,38 @@ _REGEX_LITERAL_IN_CONDITION_RE = re.compile(r"=~\s*/((?:\\.|[^/\\])*)/[A-Za-z]*"
 # preceding the brace, since `on_error => "tag"` (the canonical failure-tag
 # form) is fine.
 _ON_ERROR_BLOCK_IN_CONFIG_RE = re.compile(r"\bon_error\s*\{")
+
+
+def _decode_condition_literal(value: str, delimiter: str) -> str:
+    out: list[str] = []
+    i = 0
+    while i < len(value):
+        if value[i] == "\\" and i + 1 < len(value):
+            escaped = value[i + 1]
+            decoded = {
+                "n": "\n",
+                "t": "\t",
+                "r": "\r",
+                "f": "\f",
+                "b": "\b",
+                "v": "\v",
+                "\\": "\\",
+            }.get(escaped)
+            if decoded is None and escaped == delimiter:
+                decoded = delimiter
+            out.append(decoded if decoded is not None else "\\" + escaped)
+            i += 2
+            continue
+        out.append(value[i])
+        i += 1
+    return "".join(out)
+
+
+def _membership_literal(match: re.Match[str]) -> str:
+    double_value = match.group("dlit")
+    if double_value is not None:
+        return _decode_condition_literal(double_value, '"')
+    return _decode_condition_literal(match.group("slit") or "", "'")
 
 
 def _iter_regex_over_escapes(condition: str) -> Iterable[tuple[str, str]]:
@@ -357,32 +396,46 @@ class FlowExecutorMixin:
                 # approach in `_exec_if` (see `_prior_negation_conditions`).
                 cond = _clean_condition(child.condition)
                 prior_negations: list[str] = []
-                self._exec_io_block(
-                    IOBlock(line=child.line, kind=stmt.kind, body=child.then_body),
-                    state,
-                    _dedupe_strings(conditions + _prior_negation_conditions(prior_negations) + [cond]),
-                    depth,
-                    loop_fanout,
-                )
+                then_base_conditions = _dedupe_strings(conditions + _prior_negation_conditions(prior_negations))
+                then_conditions = _dedupe_strings(then_base_conditions + [cond])
+                if self._branch_is_reachable(cond, then_base_conditions, child.line, state):
+                    self._exec_io_block(
+                        IOBlock(line=child.line, kind=stmt.kind, body=child.then_body),
+                        state,
+                        then_conditions,
+                        depth,
+                        loop_fanout,
+                    )
                 prior_negations.append(f"NOT({cond})")
                 for elif_block in child.elifs:
                     ec = _clean_condition(elif_block.condition)
-                    self._exec_io_block(
-                        IOBlock(line=elif_block.line, kind=stmt.kind, body=elif_block.body),
-                        state,
-                        _dedupe_strings(conditions + _prior_negation_conditions(prior_negations) + [ec]),
-                        depth,
-                        loop_fanout,
-                    )
+                    elif_negations = _prior_negation_conditions(prior_negations)
+                    elif_base_conditions = _dedupe_strings(conditions + elif_negations)
+                    elif_conditions = _dedupe_strings(elif_base_conditions + [ec])
+                    if not self._tag_negation_conditions_are_unreachable(
+                        elif_negations, state
+                    ) and self._branch_is_reachable(ec, elif_base_conditions, elif_block.line, state):
+                        self._exec_io_block(
+                            IOBlock(line=elif_block.line, kind=stmt.kind, body=elif_block.body),
+                            state,
+                            elif_conditions,
+                            depth,
+                            loop_fanout,
+                        )
                     prior_negations.append(f"NOT({ec})")
                 if child.else_body is not None:
-                    self._exec_io_block(
-                        IOBlock(line=child.line, kind=stmt.kind, body=child.else_body),
-                        state,
-                        _dedupe_strings(conditions + _prior_negation_conditions(prior_negations)),
-                        depth,
-                        loop_fanout,
-                    )
+                    else_negations = _prior_negation_conditions(prior_negations)
+                    else_conditions = _dedupe_strings(conditions + else_negations)
+                    if conditions_are_compatible(
+                        else_conditions, tuple(state.implicit_path_conditions)
+                    ) and not self._tag_negation_conditions_are_unreachable(else_negations, state):
+                        self._exec_io_block(
+                            IOBlock(line=child.line, kind=stmt.kind, body=child.else_body),
+                            state,
+                            else_conditions,
+                            depth,
+                            loop_fanout,
+                        )
             elif isinstance(child, ForBlock):
                 # T3.1: real Logstash configs occasionally enumerate sinks via
                 # a for-loop (e.g. ``output { for x in [...] { http { url => "%{x}" } } }``).
@@ -491,9 +544,12 @@ class FlowExecutorMixin:
             ec = _clean_condition(elif_cond)
             self._warn_condition_limits(ec, _line, state)
             self._sync_branch_seed_diagnostics(original, state)
-            elif_base_conditions = _dedupe_strings(conditions + _prior_negation_conditions(prior_negations))
+            elif_negations = _prior_negation_conditions(prior_negations)
+            elif_base_conditions = _dedupe_strings(conditions + elif_negations)
             elif_conditions = _dedupe_strings(elif_base_conditions + [ec])
-            if self._branch_is_reachable(ec, elif_base_conditions, _line, state):
+            if not self._tag_negation_conditions_are_unreachable(elif_negations, state) and self._branch_is_reachable(
+                ec, elif_base_conditions, _line, state
+            ):
                 elif_state = original.clone()
                 self._exec_statements(body, elif_state, elif_conditions, depth, loop_fanout)
                 branch_records.append(BranchRecord(elif_state, elif_conditions, False))
@@ -503,9 +559,11 @@ class FlowExecutorMixin:
 
         if stmt.else_body is not None:
             else_state = original.clone()
-            else_conditions = _dedupe_strings(conditions + _prior_negation_conditions(prior_negations))
-            self._exec_statements(stmt.else_body, else_state, else_conditions, depth, loop_fanout)
-            branch_records.append(BranchRecord(else_state, else_conditions, False))
+            else_negations = _prior_negation_conditions(prior_negations)
+            else_conditions = _dedupe_strings(conditions + else_negations)
+            if not self._tag_negation_conditions_are_unreachable(else_negations, state):
+                self._exec_statements(stmt.else_body, else_state, else_conditions, depth, loop_fanout)
+                branch_records.append(BranchRecord(else_state, else_conditions, False))
         else:
             # No-op path: fields can retain their original lineage.
             #
@@ -793,7 +851,7 @@ class FlowExecutorMixin:
         match = _TAGS_MEMBERSHIP_RE.match(cond.strip())
         if not match:
             return
-        literal = match.group("lit")
+        literal = _membership_literal(match)
         tag_state = state.tag_state
         if tag_state.definitely or tag_state.possibly or tag_state.has_dynamic:
             if literal in tag_state.definitely:
@@ -848,6 +906,36 @@ class FlowExecutorMixin:
             source_token=literal,
         )
 
+    def _tag_negation_conditions_are_unreachable(self, conditions: list[str], state: AnalyzerState) -> bool:
+        """Return True when an else condition negates a definitely-true tag check."""
+        for condition in conditions:
+            if not condition.startswith("NOT(") or not condition.endswith(")"):
+                continue
+            inner = condition[4:-1]
+            if self._tag_membership_check_is_definitely_true(inner, state):
+                return True
+        return False
+
+    def _tag_membership_check_is_definitely_true(self, cond: str, state: AnalyzerState) -> bool:
+        match = _TAGS_MEMBERSHIP_RE.match(cond.strip())
+        if not match:
+            return False
+        literal = _membership_literal(match)
+        tag_state = state.tag_state
+        if tag_state.definitely or tag_state.possibly or tag_state.has_dynamic:
+            return not tag_state.has_dynamic and literal in tag_state.definitely
+        tag_lineages = state.tokens.get("tags", [])
+        if not tag_lineages:
+            return False
+        has_remove_anywhere = any("remove_tag" in lineage.transformations for lineage in tag_lineages)
+        if has_remove_anywhere:
+            return False
+        return any(
+            not lineage.conditions
+            and any(source.kind == "constant" and (source.expression or "") == literal for source in lineage.sources)
+            for lineage in tag_lineages
+        )
+
     def _tag_membership_check_is_unreachable(self, cond: str, state: AnalyzerState) -> bool:
         """Recognize ``"<lit>" in [tags]`` and check whether any prior
         add_tag could have added the literal.
@@ -860,7 +948,7 @@ class FlowExecutorMixin:
         match = _TAGS_MEMBERSHIP_RE.match(cond.strip())
         if not match:
             return False
-        literal = match.group("lit")
+        literal = _membership_literal(match)
         tag_state = state.tag_state
         if tag_state.definitely or tag_state.possibly or tag_state.has_dynamic:
             if tag_state.has_dynamic:

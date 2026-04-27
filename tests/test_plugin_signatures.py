@@ -908,8 +908,8 @@ filter {
         assert sig_lins
         upstream_token_names: set[str] = set()
         for lin in sig_lins:
-            for src in lin.sources:
-                upstream = src.details.get("upstream_sources") if src.details else None
+            for source_ref in lin.sources:
+                upstream = source_ref.details.get("upstream_sources") if source_ref.details else None
                 if not isinstance(upstream, (list, tuple)):
                     continue
                 for ref in upstream:

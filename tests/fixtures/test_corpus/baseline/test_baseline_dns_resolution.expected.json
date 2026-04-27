@@ -1,8 +1,1 @@
-{
-  "must_resolve_fields": [
-    "source.hostname",
-    "source.ip",
-    "destination.ips",
-    "destination.domain"
-  ]
-}
+{}

@@ -103,33 +103,40 @@ cat examples/example_parser.cbn | parser-lineage-analyzer - target.ip
 parser-lineage-analyzer PARSER_FILE [UDM_FIELD] [flags]
 ```
 
-`UDM_FIELD` is required for query mode and omitted for `--list` /
-`--summary`. Flags may appear in any position.
+`UDM_FIELD` is required for query mode and omitted for `--list`,
+`--summary`, `--compact-summary`, and `--compat-report`. Flags may appear
+in any position.
 
 | Flag | Purpose |
 |---|---|
 | `--json` | Machine-readable JSON output. |
 | `--list` | List discovered UDM-like parser fields instead of querying. |
 | `--summary` | Emit parser/analyzer coverage summary. |
+| `--compat-report` | Emit a dialect-oriented compatibility report for unsupported plugins, unknown config keys, dynamic features, failure-tag routes, and affected fields. |
 | `--compact-json` | Bound query JSON for high-cardinality output; samples large arrays, preserves `*_total` counters. |
 | `--compact-summary` | Bound summary diagnostics; includes counts by code. Implies `--summary`. |
-| `--strict` | Exit `3` if any parser-level warning, taint, or unsupported construct is present, OR if the query-level result is unresolved/partial/dynamic. When combined with `--json`/`--compact-json` the same summary is also embedded under a top-level `strict_failure` key. |
+| `--strict` | Exit `3` if any parser-level warning, taint, or unsupported construct is present, OR if the query-level result is unresolved/partial/dynamic. Applies to query, list, and summary modes; cannot be used with `--compat-report`. When combined with `--json`/`--compact-json` the same summary is also embedded under a top-level `strict_failure` key. |
 | `--verbose` | Include parser locations, notes, taints, and structured warnings in text output. |
+| `--dialect {secops,logstash}` | Parser compatibility profile. Defaults to `secops`; `logstash` mode defaults mutate blocks to Logstash's canonical operation order. |
 | `--max-parser-bytes N` | Cap input size in bytes (default `25000000`; `-1` for unlimited). |
-| `--mutate-canonical-order` | Reorder ops within each `mutate{}` block into Logstash's canonical execution order. Default is source order. |
+| `--mutate-canonical-order` | Force Logstash's canonical operation order within each `mutate{}` block. `secops` defaults to source order; `logstash` defaults to canonical order. |
+| `--mutate-source-order` | Force source-order mutate execution, overriding the dialect default. Mutually exclusive with `--mutate-canonical-order`. |
 | `--include-pattern-bodies` | Include the resolved grok regex body in JSON `details`. Off by default to keep `jq` output readable; `resolved_pattern_name` is always emitted. In `--verbose` text mode the body is shown unconditionally. |
 | `--grok-patterns-dir DIR` | Add a directory (or single file) of grok pattern definitions to the bundled Logstash legacy library. Repeatable; later entries override earlier ones. |
 | `--plugin-signatures FILE` | Load plugin signatures from a TOML file. Repeatable; later files override earlier ones. |
 | `--plugin-signatures-dir DIR` | Load every `*.toml` file in DIR as plugin signatures (non-recursive). Repeatable; processed before individual `--plugin-signatures` files. |
 | `--version` | Print the package version and exit. |
 
-Output is plain ASCII; if color is added in a future release, `NO_COLOR`
-will be honored.
+Text output preserves Unicode parser values and scrubs terminal control
+characters. JSON output is ASCII-escaped by `json.dumps`. If color is added
+in a future release, `NO_COLOR` will be honored.
 
-`--json` always emits `output_anchors`, `unsupported`, `warnings`,
-`structured_warnings`, and `diagnostics` — as `[]` when empty — so
-downstream consumers can rely on a stable key set. `*_total` counters are
-emitted only by `--compact-json` and remain omitted from plain `--json`.
+For query, list, and summary output, `--json` emits `output_anchors`,
+`unsupported`, `warnings`, `structured_warnings`, and `diagnostics` — as
+`[]` when empty — so downstream consumers can rely on a stable key set.
+Compatibility reports (`--compat-report --json`) have their own JSON schema.
+`*_total` counters are emitted only by `--compact-json` and remain omitted
+from plain query `--json`.
 
 ### Exit codes
 

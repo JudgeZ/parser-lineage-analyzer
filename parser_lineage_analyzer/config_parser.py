@@ -116,7 +116,7 @@ def _line_column(text: str, pos: int) -> tuple[int, int]:
 
 
 def _line_offset(text: str, line_one_indexed: int) -> int:
-    """Return byte offset of the start of the given 1-indexed line."""
+    """Return character offset of the start of the given 1-indexed line."""
     pos = 0
     for _ in range(line_one_indexed - 1):
         nl = text.find("\n", pos)

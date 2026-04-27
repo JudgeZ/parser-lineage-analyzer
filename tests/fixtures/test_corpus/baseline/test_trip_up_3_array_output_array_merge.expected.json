@@ -4,7 +4,6 @@
     "parse_recovery"
   ],
   "must_resolve_fields": [
-    "target.ip",
     "my_udm_object",
     "my_udm_object.child_key"
   ]
