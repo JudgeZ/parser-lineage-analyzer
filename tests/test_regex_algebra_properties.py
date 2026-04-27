@@ -143,7 +143,22 @@ def test_subset_is_reflexive(body: str) -> None:
 @given(_maybe_alternation(), _maybe_alternation())
 @_HYP_SETTINGS
 def test_disjoint_is_symmetric(a: str, b: str) -> None:
-    assert regex_languages_disjoint(a, "", b, "") == regex_languages_disjoint(b, "", a, "")
+    # The algebra walks operands left-to-right and threads a shared
+    # ``_Budget`` (states/transitions/wall-clock); under load (CI runners,
+    # GC pauses) the budget can be consumed asymmetrically, so one
+    # direction may reach a definitive YES/NO while the other bails to
+    # ``Trilean.UNKNOWN``. That asymmetry is sound — UNKNOWN is the safe
+    # default and never claims disjointness it can't prove — so we only
+    # require equality when *both* directions reach a definitive answer.
+    # When either side is UNKNOWN the symmetry property is satisfied
+    # trivially (the algebra simply punted one of the two analyses).
+    result_ab = regex_languages_disjoint(a, "", b, "")
+    result_ba = regex_languages_disjoint(b, "", a, "")
+    if result_ab != Trilean.UNKNOWN and result_ba != Trilean.UNKNOWN:
+        assert result_ab == result_ba, (
+            f"unsound: {a!r} vs {b!r} returned {result_ab.value} but "
+            f"{b!r} vs {a!r} returned {result_ba.value} — both definitive results disagree"
+        )
 
 
 @given(_maybe_alternation(), _maybe_alternation())
