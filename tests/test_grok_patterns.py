@@ -254,3 +254,171 @@ filter {
         details = lins[0].sources[0].details
         assert details is not None
         assert "resolved_pattern_body" not in details
+
+
+# -- Regression tests for review feedback on PR-B ---------------------
+
+
+class TestPR11ReviewFixes:
+    """Regression coverage for Gemini / Codex / Copilot findings on PR #11."""
+
+    def test_leading_whitespace_in_pattern_file_is_tolerated(self) -> None:
+        # Gemini finding: ``re.search(r"\s", line)`` on a leading-whitespace
+        # line found the leading space as the separator, producing an empty
+        # NAME and silently dropping the entry. Strip both ends first.
+        from parser_lineage_analyzer._grok_patterns import _parse_pattern_file_text
+
+        text = "  INDENTED_PAT  body_for_indented\n\tTAB_PAT\tbody_for_tab\nFLUSH_PAT flush_body\n"
+        parsed = _parse_pattern_file_text(text)
+        assert parsed == {
+            "INDENTED_PAT": "body_for_indented",
+            "TAB_PAT": "body_for_tab",
+            "FLUSH_PAT": "flush_body",
+        }
+
+    def test_pre_substitution_byte_budget_short_circuits(self) -> None:
+        # Codex P2: previous implementation called ``re.sub`` first and
+        # then checked the byte cap, so an adversarial pattern like
+        # ``BIG => "%{CHUNK} ..." * 100`` would allocate a multi-megabyte
+        # intermediate string before bailing. The new ``_expand`` streams
+        # segments and bails as soon as ``bytes_so_far`` exceeds the cap.
+        from parser_lineage_analyzer._grok_patterns import (
+            MAX_EXPANDED_BODY_BYTES,
+            GrokLibrary,
+            expand_pattern,
+        )
+
+        chunk_body = "X" * 1024  # 1 KB on its own — fits comfortably
+        # 100 references × ~1 KB each = 100 KB, far over the 8 KB cap.
+        big_body = " ".join("%{CHUNK}" for _ in range(100))
+        lib = GrokLibrary({"BIG": big_body, "CHUNK": chunk_body})
+        # Should return None (over budget) without exceeding it: confirm
+        # the cap is enforced (we can't directly observe peak memory,
+        # but the result being None proves the streaming check fired).
+        assert expand_pattern("BIG", lib) is None
+        # CHUNK alone fits.
+        assert expand_pattern("CHUNK", lib) == chunk_body
+        assert len(chunk_body) < MAX_EXPANDED_BODY_BYTES
+
+    def test_inner_call_memoization_shares_within_one_expand(self) -> None:
+        # PR-B self-review: a body referencing the same pattern N times
+        # used to recompute N times. The inner cache shares within one
+        # outer ``expand_pattern`` call. Observable effect: a deeply-
+        # nested pattern that fans out to many sub-references resolves
+        # without exploding.
+        from parser_lineage_analyzer._grok_patterns import GrokLibrary, expand_pattern
+
+        # 10 references to LEAF (single byte body) — all 10 should
+        # share the same inner-cache slot for LEAF.
+        body = "".join("%{LEAF}" for _ in range(10))
+        lib = GrokLibrary({"OUTER": body, "LEAF": "x"})
+        assert expand_pattern("OUTER", lib) == "x" * 10
+
+    def test_is_pattern_data_file_filters_extensions(self) -> None:
+        # PR-B self-review: a stray non-pattern file in grok_patterns/
+        # would have been silently parsed. Filter known non-pattern
+        # extensions defensively.
+        from parser_lineage_analyzer._grok_patterns import _is_pattern_data_file
+
+        # Real pattern files (extensionless).
+        for name in ("aws", "grok-patterns", "linux-syslog", "haproxy"):
+            assert _is_pattern_data_file(name)
+        # Bundle metadata.
+        for name in ("NOTICE", "LICENSE", "__init__.py", "__pycache__"):
+            assert not _is_pattern_data_file(name)
+        # Hidden files.
+        for name in (".DS_Store", ".gitkeep", ".hidden"):
+            assert not _is_pattern_data_file(name)
+        # Non-pattern extensions.
+        for name in ("README.md", "CHANGELOG.txt", "config.json", "data.toml", "schema.yaml"):
+            assert not _is_pattern_data_file(name)
+
+    def test_cli_validates_grok_patterns_dir_path_exists(self, tmp_path: Path) -> None:
+        # Gemini finding: a typo in --grok-patterns-dir silently produces
+        # an empty user library because load_library_from_paths is
+        # tolerant of missing paths (intentional for programmatic use).
+        # The CLI surface should fail loudly so the user notices.
+        from parser_lineage_analyzer.cli import main
+
+        parser_file = tmp_path / "parser.cbn"
+        parser_file.write_text('filter { mutate { add_tag => ["x"] } }\n', encoding="utf-8")
+        bogus = tmp_path / "this_does_not_exist"
+        rc = main(
+            [
+                str(parser_file),
+                "--summary",
+                "--json",
+                "--grok-patterns-dir",
+                str(bogus),
+            ]
+        )
+        assert rc == 1, f"CLI should exit 1 on missing --grok-patterns-dir path; got {rc}"
+
+    def test_cli_accepts_existing_grok_patterns_dir(self, tmp_path: Path) -> None:
+        # Sanity-check the validation path's positive case: an existing
+        # directory passes through to ReverseParser without error.
+        from parser_lineage_analyzer.cli import main
+
+        parser_file = tmp_path / "parser.cbn"
+        parser_file.write_text('filter { mutate { add_tag => ["x"] } }\n', encoding="utf-8")
+        sigs_dir = tmp_path / "patterns"
+        sigs_dir.mkdir()
+        (sigs_dir / "user").write_text("MY_PAT my_body\n", encoding="utf-8")
+        rc = main(
+            [
+                str(parser_file),
+                "--summary",
+                "--json",
+                "--grok-patterns-dir",
+                str(sigs_dir),
+            ]
+        )
+        assert rc == 0
+
+    def test_malformed_pattern_definitions_entries_taint(self) -> None:
+        # Codex P2: when a pattern_definitions entry's value is not a
+        # plain string (e.g. nested map, array), the previous loop
+        # silently dropped it. Now we taint conservatively — silently
+        # dropping would let the analyzer report exact_capture for grok
+        # rules whose effective pattern set is not actually modeled.
+        #
+        # We can't easily construct an array-valued pattern_definitions
+        # via the Logstash-style grammar, but we CAN exercise the path
+        # by directly invoking ``_exec_grok`` with a synthetic Plugin.
+        from parser_lineage_analyzer._analysis_state import AnalyzerState
+        from parser_lineage_analyzer.analyzer import ReverseParser
+        from parser_lineage_analyzer.ast_nodes import Plugin
+
+        # Construct a Plugin AST node by hand with a malformed
+        # pattern_definitions entry: ("BAD_PAT", ["nested", "list"]).
+        # This bypasses the grammar and goes straight to _exec_grok.
+        rp = ReverseParser('filter { mutate { add_tag => ["x"] } }')
+        rp.analyze()
+        state = AnalyzerState()
+        # ConfigPair tuples: (key, value). pattern_definitions value is
+        # a list of (name, body) pairs. One good, one bad.
+        plugin = Plugin(
+            name="grok",
+            body="",
+            line=1,
+            config=[
+                (
+                    "pattern_definitions",
+                    [
+                        ("GOOD_PAT", "[a-z]+"),
+                        ("BAD_PAT", ["nested", "list"]),  # type: ignore[list-item]
+                    ],
+                ),
+                ("match", [("message", "%{BAD_PAT:weird} %{GOOD_PAT:good}")]),
+            ],
+        )
+        rp._exec_grok(plugin, state, [])
+        codes = {w.code for w in state.structured_warnings}
+        assert "grok_pattern_definitions" in codes, (
+            f"malformed entry should emit grok_pattern_definitions warning; got {sorted(codes)}"
+        )
+        # And the taint message should mention the malformed entry by name.
+        taint_messages = [t.message for t in state.taints if t.code == "grok_pattern_definitions"]
+        assert any("BAD_PAT" in msg for msg in taint_messages), (
+            f"taint message should reference BAD_PAT; got {taint_messages}"
+        )

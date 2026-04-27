@@ -77,13 +77,14 @@ def test_native_modes_benchmark_fails_cleanly_when_runner_times_out(monkeypatch,
     assert "fake-mode timed out after 3.000s" in captured.err
 
 
-# Catastrophic-blowup watchdog for the grok pattern resolver. The bundled
-# library is loaded once per process; this test triggers a fresh load by
-# clearing the module-level cache, then exercises the largest patterns
-# (URI, IPV6, COMMONAPACHELOG) cold + 100 cached lookups each. The 50ms
-# budget is intentionally generous (5x typical local timing on M-series)
-# to absorb CI-runner noise without becoming a flaky timing assertion.
-GROK_RESOLVER_BUDGET_SECONDS = 0.050
+# Catastrophic-blowup watchdog for the grok pattern resolver. This file's
+# stated job is catching unintentional 10x slowdowns, NOT policing
+# percentile drift, so the budget is loose enough that runner noise on
+# the slowest CI cells doesn't trip it. Local timing on M-series is
+# sub-millisecond; the budget below is wide enough for the slowest
+# macos-26 / windows-2022 runners we've observed, narrow enough to flag
+# a genuine order-of-magnitude regression.
+GROK_RESOLVER_BUDGET_SECONDS = 0.500
 
 
 def test_grok_resolver_cold_plus_cached_within_budget(monkeypatch) -> None:
@@ -93,22 +94,42 @@ def test_grok_resolver_cold_plus_cached_within_budget(monkeypatch) -> None:
 
     # Clear the module-level cache to force a fresh library load + cold
     # expansion path. The LRU cache on `_expand_pattern_cached` is also
-    # reset so cached lookups truly count as cold first, then warm.
+    # reset so the first lookup of each pattern truly is cold.
     monkeypatch.setattr(_grok_patterns, "_BUNDLED_LIBRARY_CACHE", None)
     _grok_patterns._expand_pattern_cached.cache_clear()
 
     targets = ("URI", "IPV6", "COMMONAPACHELOG", "TIMESTAMP_ISO8601", "IP")
-    start = time.perf_counter()
+
+    # Cold pass — exercises bundle load + initial expansion.
+    cold_start = time.perf_counter()
     for name in targets:
         body = _grok_patterns.expand_pattern(name)
         assert body is not None, f"bundled pattern {name} should expand cleanly"
-    # 100 cached lookups per pattern — the LRU should be warm.
+    cold_elapsed = time.perf_counter() - cold_start
+
+    # Warm pass — 100 cached lookups per pattern. Should be dramatically
+    # faster than cold; if the cache regresses (e.g. someone adds a
+    # mutating operation that invalidates `lru_cache`), this catches it.
+    warm_start = time.perf_counter()
     for _ in range(100):
         for name in targets:
             _grok_patterns.expand_pattern(name)
-    elapsed = time.perf_counter() - start
+    warm_elapsed = time.perf_counter() - warm_start
 
-    assert elapsed < GROK_RESOLVER_BUDGET_SECONDS, (
+    total_elapsed = cold_elapsed + warm_elapsed
+    assert total_elapsed < GROK_RESOLVER_BUDGET_SECONDS, (
         f"grok resolver cold-load + cached lookups exceeded "
-        f"{GROK_RESOLVER_BUDGET_SECONDS * 1000:.0f}ms budget: {elapsed * 1000:.1f}ms"
+        f"{GROK_RESOLVER_BUDGET_SECONDS * 1000:.0f}ms budget: "
+        f"cold={cold_elapsed * 1000:.1f}ms, warm={warm_elapsed * 1000:.1f}ms"
     )
+
+    # Cache effectiveness check: 500 warm lookups should be much faster
+    # than 5 cold ones. The 3x ratio is conservative enough to survive
+    # noisy runners but still catch a regression that breaks LRU sharing
+    # (which would force warm lookups to recompute end-to-end).
+    if cold_elapsed > 0.0001:  # avoid div-by-zero on absurdly fast machines
+        assert warm_elapsed < cold_elapsed * 3, (
+            f"warm lookups ({warm_elapsed * 1000:.2f}ms for 500 calls) should be "
+            f"meaningfully faster than cold ({cold_elapsed * 1000:.2f}ms for 5 calls); "
+            f"LRU cache may be regressing"
+        )

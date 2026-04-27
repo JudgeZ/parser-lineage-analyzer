@@ -46,12 +46,20 @@ _GROK_REF_RE = re.compile(r"%\{(?P<name>[A-Za-z0-9_]+)(?::[^}]*)?\}")
 
 
 class GrokLibrary:
-    """An immutable name→body mapping with a stable identity for caching.
+    """A name→body mapping with a stable identity for caching.
 
-    Two libraries built from identical pattern sets compare equal and
-    hash equal regardless of construction order, so the LRU cache on
-    :func:`expand_pattern` shares slots across logically-equivalent
-    instances.
+    The ``__hash__`` is computed once at construction from the canonical
+    sorted ``(name, body)`` pairs, so two libraries built from
+    identical pattern sets compare equal and hash equal regardless of
+    insertion order — letting the LRU cache on :func:`expand_pattern`
+    share slots across logically-equivalent instances.
+
+    **Immutability invariant.** ``_patterns`` is a private attribute
+    and MUST NOT be mutated after construction. ``__hash__`` reads the
+    cached identity, so post-construction mutation through internal
+    attribute access (which the slot doesn't prevent) silently
+    corrupts cache lookups. Use :meth:`merge` to derive a new library
+    rather than mutating an existing one.
     """
 
     __slots__ = ("_patterns", "_identity")
@@ -115,17 +123,43 @@ def bundled_library() -> GrokLibrary:
     return _BUNDLED_LIBRARY_CACHE
 
 
+# Files that ship alongside the pattern data but must not be parsed as
+# patterns. Hidden files (``.DS_Store``, ``.gitkeep``, etc.) are filtered
+# separately by the leading-dot check.
+_NON_PATTERN_FILENAMES = frozenset({"NOTICE", "LICENSE", "__init__.py", "__pycache__"})
+
+# File extensions that obviously aren't pattern data. Upstream Logstash
+# patterns are extensionless (``aws``, ``bind``, ``grok-patterns``, etc.),
+# so any file with a recognizable extension is non-pattern. Defends
+# against future maintainers dropping a stray ``README.md`` or
+# ``CHANGELOG.txt`` into the bundle.
+_NON_PATTERN_EXTENSIONS = frozenset({".md", ".txt", ".json", ".toml", ".yaml", ".yml", ".py", ".pyc"})
+
+
+def _is_pattern_data_file(name: str) -> bool:
+    """Return True if ``name`` looks like a Logstash grok data file."""
+    if not name or name.startswith("."):
+        return False
+    if name in _NON_PATTERN_FILENAMES:
+        return False
+    # ``Path("aws").suffix`` is ``""`` for extensionless files; only
+    # filter on a known non-pattern extension.
+    suffix = Path(name).suffix.lower()
+    return not (suffix and suffix in _NON_PATTERN_EXTENSIONS)
+
+
 def _load_bundled_patterns() -> dict[str, str]:
     """Parse every data file under ``grok_patterns/`` (skipping NOTICE,
-    LICENSE, hidden files, and any non-data resources). Returns a
-    name→body mapping with deterministic last-write-wins on duplicates
-    (sorted file iteration order)."""
+    LICENSE, ``__init__.py``, hidden files, and any file with an
+    extension that obviously isn't pattern data — see
+    :data:`_NON_PATTERN_FILENAMES` and :data:`_NON_PATTERN_EXTENSIONS`).
+    Returns a name→body mapping with deterministic last-write-wins on
+    duplicates (sorted file iteration order)."""
     pkg = resources.files("parser_lineage_analyzer.grok_patterns")
     entries = sorted(pkg.iterdir(), key=lambda p: p.name)
     out: dict[str, str] = {}
     for entry in entries:
-        name = entry.name
-        if name in {"NOTICE", "LICENSE", "__init__.py"} or name.startswith("."):
+        if not _is_pattern_data_file(entry.name):
             continue
         if not entry.is_file():
             continue
@@ -137,13 +171,19 @@ def _parse_pattern_file_text(text: str) -> dict[str, str]:
     """Parse a single Logstash grok pattern file's contents.
 
     Format: each non-empty, non-comment line is ``NAME (whitespace) BODY``.
-    Returns a name→body mapping; later definitions in the file overwrite
-    earlier ones (matches upstream behavior).
+    Lines with leading whitespace are tolerated — the leading whitespace
+    is stripped before the NAME/BODY split, matching upstream Logstash
+    behavior for indented pattern lines. Returns a name→body mapping;
+    later definitions in the file overwrite earlier ones.
     """
     out: dict[str, str] = {}
     for raw_line in text.splitlines():
-        line = raw_line.rstrip()
-        if not line or line.lstrip().startswith("#"):
+        # Strip both ends so leading-whitespace lines parse the NAME
+        # correctly. (A previous version only ``rstrip``'d, which made
+        # ``re.search(r"\s", line)`` find the *leading* whitespace as
+        # the separator and silently drop the entry.)
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
             continue
         # First whitespace separates NAME from BODY.
         sep = re.search(r"\s", line)
@@ -194,35 +234,73 @@ def expand_pattern(name: str, library: GrokLibrary | None = None) -> str | None:
 
 @lru_cache(maxsize=4096)
 def _expand_pattern_cached(name: str, library: GrokLibrary) -> str | None:
-    return _expand(name, library, 0, frozenset())
+    return _expand(name, library, 0, frozenset(), inner_cache=None)
 
 
-def _expand(name: str, library: GrokLibrary, depth: int, visited: frozenset[str]) -> str | None:
+def _expand(
+    name: str,
+    library: GrokLibrary,
+    depth: int,
+    visited: frozenset[str],
+    inner_cache: dict[str, str | None] | None,
+) -> str | None:
+    """Recursive expansion core.
+
+    Streams the substitution segment-by-segment via
+    :func:`re.Pattern.finditer` so the byte budget is enforced
+    *before* materializing the final string. A pathological user
+    pattern like ``BIG => "%{CHUNK} %{CHUNK} ..."`` (with a 1 KB
+    ``CHUNK``) fails fast at ``MAX_EXPANDED_BODY_BYTES`` rather than
+    allocating the full multi-megabyte expansion only to discard it
+    afterwards.
+
+    ``inner_cache`` shares per-name results across recursive
+    sub-calls within a single :func:`_expand_pattern_cached` invocation
+    so a body referencing the same pattern many times pays its
+    expansion cost once (the outer ``lru_cache`` shares across calls;
+    this shares within one call).
+    """
     if depth > MAX_GROK_RECURSION_DEPTH:
         return None
     if name in visited:
         return None
+    if inner_cache is None:
+        inner_cache = {}
+    if name in inner_cache:
+        return inner_cache[name]
     body = library.get(name)
     if body is None:
         return None
 
     next_visited = visited | {name}
-    failed = False
 
-    def _replace(match: re.Match[str]) -> str:
-        nonlocal failed
-        if failed:
-            return ""
-        ref_name = match.group("name")
-        replacement = _expand(ref_name, library, depth + 1, next_visited)
+    parts: list[str] = []
+    bytes_so_far = 0
+    last_end = 0
+    for match in _GROK_REF_RE.finditer(body):
+        between = body[last_end : match.start()]
+        bytes_so_far += len(between.encode("utf-8"))
+        if bytes_so_far > MAX_EXPANDED_BODY_BYTES:
+            inner_cache[name] = None
+            return None
+        parts.append(between)
+        replacement = _expand(match.group("name"), library, depth + 1, next_visited, inner_cache)
         if replacement is None:
-            failed = True
-            return ""
-        return replacement
+            inner_cache[name] = None
+            return None
+        bytes_so_far += len(replacement.encode("utf-8"))
+        if bytes_so_far > MAX_EXPANDED_BODY_BYTES:
+            inner_cache[name] = None
+            return None
+        parts.append(replacement)
+        last_end = match.end()
+    tail = body[last_end:]
+    bytes_so_far += len(tail.encode("utf-8"))
+    if bytes_so_far > MAX_EXPANDED_BODY_BYTES:
+        inner_cache[name] = None
+        return None
+    parts.append(tail)
 
-    expanded = _GROK_REF_RE.sub(_replace, body)
-    if failed:
-        return None
-    if len(expanded.encode("utf-8")) > MAX_EXPANDED_BODY_BYTES:
-        return None
+    expanded = "".join(parts)
+    inner_cache[name] = expanded
     return expanded

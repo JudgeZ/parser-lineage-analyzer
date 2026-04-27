@@ -612,12 +612,23 @@ class ExtractorPluginMixin:
         # conflicts, matching upstream Logstash semantics.
         effective_library = getattr(self, "grok_library", None)
         user_pattern_names: list[str] = []
+        # Track entries we couldn't lift into the library because they
+        # weren't plain string→string pairs (e.g. a non-string body, or
+        # a nested map). These are tainted alongside any expansion
+        # failures — silently dropping them would let the resolver
+        # report ``exact_capture`` for grok rules whose effective
+        # pattern set we never actually modeled.
+        malformed_pattern_entries: list[str] = []
         if pattern_definitions:
             user_patterns: dict[str, str] = {}
             for value in pattern_definitions:
                 for k, v in as_pairs(value):
                     if isinstance(k, str) and isinstance(v, str):
                         user_patterns[k] = v
+                    else:
+                        # Use the key (or its repr) for diagnostics so
+                        # the user can find the offending entry.
+                        malformed_pattern_entries.append(str(k) if k is not None else "<unnamed>")
             if user_patterns:
                 user_pattern_names = list(user_patterns)
                 user_lib = GrokLibrary(user_patterns)
@@ -627,21 +638,23 @@ class ExtractorPluginMixin:
         # block was tainted as symbolic. With the resolver in place we only
         # taint when expansion of a user-defined pattern actually fails —
         # i.e. when the analyzer truly cannot reason about the user's body
-        # (cycle, depth bound, byte bound, or unresolved sub-reference).
-        # Sound on both sides: a clean expansion can only improve
-        # downstream reasoning; a failed expansion preserves prior
-        # behavior.
+        # (cycle, depth bound, byte bound, or unresolved sub-reference) —
+        # OR when an entry was malformed and couldn't be lifted into the
+        # library at all. Sound on both sides: a clean expansion can only
+        # improve downstream reasoning; a failed expansion or malformed
+        # entry preserves prior behavior.
+        unresolved_names: list[str] = list(malformed_pattern_entries)
         if user_pattern_names:
-            unresolved = [n for n in user_pattern_names if expand_pattern(n, effective_library) is None]
-            if unresolved:
-                unresolved_desc = ", ".join(sorted(unresolved))
-                warning = static_limit_warning(loc, f"grok pattern_definitions: {unresolved_desc}")
-                state.add_warning(warning, code="grok_pattern_definitions", message=warning, parser_location=loc)
-                state.add_taint(
-                    "grok_pattern_definitions",
-                    f"grok pattern_definitions are symbolic: {unresolved_desc}",
-                    loc,
-                )
+            unresolved_names.extend(n for n in user_pattern_names if expand_pattern(n, effective_library) is None)
+        if unresolved_names:
+            unresolved_desc = ", ".join(sorted(set(unresolved_names)))
+            warning = static_limit_warning(loc, f"grok pattern_definitions: {unresolved_desc}")
+            state.add_warning(warning, code="grok_pattern_definitions", message=warning, parser_location=loc)
+            state.add_taint(
+                "grok_pattern_definitions",
+                f"grok pattern_definitions are symbolic: {unresolved_desc}",
+                loc,
+            )
         for match in match_values:
             captured_tokens: dict[str, list[Lineage]] = {}
             for source_token, patterns in as_pairs(match):

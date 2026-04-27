@@ -367,6 +367,20 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     from .analyzer import ReverseParser
 
+    # Validate any --grok-patterns-dir paths exist before constructing
+    # the analyzer. ``load_library_from_paths`` silently skips missing
+    # paths (so the API stays tolerant to programmatic callers that
+    # genuinely want optional paths), but a CLI typo should surface
+    # immediately rather than silently produce an empty user library.
+    if args.grok_patterns_dir:
+        missing = [p for p in args.grok_patterns_dir if not Path(p).exists()]
+        if missing:
+            print(
+                "error: --grok-patterns-dir path does not exist: " + ", ".join(missing),
+                file=sys.stderr,
+            )
+            return 1
+
     try:
         rp = ReverseParser(
             code,
