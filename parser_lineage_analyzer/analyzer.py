@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from pathlib import Path
+
 from ._analysis_executor import AnalysisExecutor
 from ._analysis_query import AnalysisQueryMixin
 from ._analysis_state import AnalyzerState
+from ._grok_patterns import GrokLibrary, bundled_library, load_library_from_paths
 from .model import Lineage, SourceRef
 from .parser import parse_code_with_diagnostics
 
@@ -25,6 +29,7 @@ class ReverseParser(AnalysisQueryMixin, AnalysisExecutor):
         *,
         max_parser_bytes: int = MAX_PARSER_BYTES,
         mutate_canonical_order: bool = False,
+        grok_patterns_dir: Sequence[Path | str] | None = None,
     ):
         """Construct a static lineage engine over a SecOps/Chronicle parser.
 
@@ -38,6 +43,13 @@ class ReverseParser(AnalysisQueryMixin, AnalysisExecutor):
         disable the limit. ``mutate_canonical_order`` opts into Logstash's
         canonical per-block mutate execution order; the default of ``False``
         preserves source order, which matches historical analyzer behavior.
+
+        ``grok_patterns_dir`` extends the bundled Logstash legacy grok pattern
+        library with user-supplied pattern files. Each entry may be a file or
+        a directory; directory entries enumerate files in sorted order;
+        argument order determines merge order with last-write-wins (matches
+        Logstash ``patterns_dir`` semantics). The bundled library is always
+        loaded first as the base layer.
 
         Raises ``TypeError`` if ``parser_code`` is not a ``str`` and
         ``ValueError`` if the encoded size exceeds ``max_parser_bytes``.
@@ -56,6 +68,14 @@ class ReverseParser(AnalysisQueryMixin, AnalysisExecutor):
         # and changing the default would silently re-derive every existing
         # mutate test.
         self.state.mutate_canonical_order = mutate_canonical_order
+        # PR-B: grok pattern library. Bundled patterns are always loaded;
+        # user-supplied directories merge on top with last-write-wins.
+        # Stored on ``self`` (not ``self.state``) because the library is
+        # read-only and shared across all branch clones.
+        self.grok_library: GrokLibrary = bundled_library()
+        if grok_patterns_dir:
+            user_paths = [Path(p) for p in grok_patterns_dir]
+            self.grok_library = self.grok_library.merge(load_library_from_paths(user_paths))
         self._init_state()
         for diag in self.parse_diagnostics:
             warning = (

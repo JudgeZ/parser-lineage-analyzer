@@ -27,6 +27,26 @@ def capture_upstream_details(sources: Iterable[SourceRef]) -> JSONDict:
     return {"upstream_sources": source_refs_json(sources)}
 
 
+def grok_capture_details(
+    sources: Iterable[SourceRef],
+    pattern_name: str | None,
+    resolved_body: str | None,
+) -> JSONDict:
+    """``capture_upstream_details`` extended with grok pattern resolution.
+
+    When the analyzer has resolved the upstream grok pattern (e.g.
+    ``%{IP:src_ip}`` → IP body) the regex body is attached so query
+    output and downstream algebra (PR-C) can see what shape the captured
+    field's value must satisfy. ``resolved_body=None`` (unresolvable name,
+    cycle, or budget hit) leaves the resolution fields off entirely so
+    consumers don't have to distinguish "missing" from "unresolved"."""
+    out: JSONDict = {"upstream_sources": source_refs_json(sources)}
+    if pattern_name and resolved_body is not None:
+        out["resolved_pattern_name"] = pattern_name
+        out["resolved_pattern_body"] = resolved_body
+    return out
+
+
 def json_extraction_details(array_function: ConfigValue | None, target: ConfigValue | None, line: int) -> JSONDict:
     return {"array_function": array_function, "target": target, "line": line}
 

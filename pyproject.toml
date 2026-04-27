@@ -73,7 +73,13 @@ where = ["."]
 include = ["parser_lineage_analyzer*"]
 
 [tool.setuptools.package-data]
-parser_lineage_analyzer = ["grammar/*.lark", "py.typed"]
+parser_lineage_analyzer = [
+  "grammar/*.lark",
+  "py.typed",
+  "grok_patterns/*",
+  "grok_patterns/LICENSE",
+  "grok_patterns/NOTICE",
+]
 
 [tool.setuptools.exclude-package-data]
 "parser_lineage_analyzer._native" = ["*.c", "*.pyx"]

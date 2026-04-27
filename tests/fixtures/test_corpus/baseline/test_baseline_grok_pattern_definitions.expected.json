@@ -1,3 +1,7 @@
 {
-  "must_have_warning_codes": ["grok_pattern_definitions"]
+  "must_not_have_warning_codes": [
+    "malformed_config",
+    "parse_recovery",
+    "grok_pattern_definitions"
+  ]
 }

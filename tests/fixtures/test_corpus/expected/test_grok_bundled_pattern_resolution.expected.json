@@ -1,0 +1,12 @@
+{
+  "must_not_have_warning_codes": [
+    "malformed_config",
+    "parse_recovery",
+    "grok_pattern_definitions"
+  ],
+  "must_resolve_fields": [
+    "event.idm.read_only_udm.principal.ip",
+    "event.idm.read_only_udm.network.client.port",
+    "event.idm.read_only_udm.network.http.parsed_user_agent.uri"
+  ]
+}

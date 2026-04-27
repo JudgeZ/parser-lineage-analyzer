@@ -92,6 +92,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "order; this flag opts into Logstash-fidelity semantics."
         ),
     )
+    parser.add_argument(
+        "--grok-patterns-dir",
+        action="append",
+        default=[],
+        metavar="DIR",
+        help=(
+            "Add a directory (or single file) of grok pattern definitions to "
+            "the bundled Logstash legacy library. Repeatable; later --grok-"
+            "patterns-dir entries override earlier ones (matches Logstash "
+            "patterns_dir semantics). Files inside a directory are merged in "
+            "sorted-name order."
+        ),
+    )
     return parser
 
 
@@ -354,11 +367,26 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     from .analyzer import ReverseParser
 
+    # Validate any --grok-patterns-dir paths exist before constructing
+    # the analyzer. ``load_library_from_paths`` silently skips missing
+    # paths (so the API stays tolerant to programmatic callers that
+    # genuinely want optional paths), but a CLI typo should surface
+    # immediately rather than silently produce an empty user library.
+    if args.grok_patterns_dir:
+        missing = [p for p in args.grok_patterns_dir if not Path(p).exists()]
+        if missing:
+            print(
+                "error: --grok-patterns-dir path does not exist: " + ", ".join(missing),
+                file=sys.stderr,
+            )
+            return 1
+
     try:
         rp = ReverseParser(
             code,
             max_parser_bytes=args.max_parser_bytes,
             mutate_canonical_order=args.mutate_canonical_order,
+            grok_patterns_dir=args.grok_patterns_dir or None,
         )
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
