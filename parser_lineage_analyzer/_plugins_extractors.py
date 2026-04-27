@@ -51,6 +51,7 @@ from ._plugin_config_models import (
     XmlPluginConfig,
     compact_validation_error,
 )
+from ._regex_algebra import MAX_REGEX_BODY_BYTES
 from ._types import ConfigValue
 from .ast_nodes import Plugin
 from .config_parser import all_values, as_pairs
@@ -60,6 +61,87 @@ MAX_EXTRACTOR_SOURCE_DEPTH = 32
 MAX_UNRESOLVED_EXTRACTOR_WARNINGS = 128
 DefaultValue = TypeVar("DefaultValue")
 ModelT = TypeVar("ModelT", bound=BaseModel)
+
+
+# PR-C (F2 algebra wiring) — synthesizing implicit grok constraints.
+#
+# When the grok extractor resolves a captured pattern (e.g. ``%{IP:src_ip}``)
+# we synthesize a synthetic ``[<token>] =~ /<resolved_body>/`` condition
+# string and inject it into ``state.implicit_path_conditions``. The
+# contradiction engine consults that list alongside the user-visible
+# ``path_conditions`` so a downstream ``[src_ip] =~ /^[A-Z]+$/`` can be
+# proven unreachable. Soundness contract: when the synthesis can't
+# produce a parseable condition (e.g. body would need impossible
+# escaping, exceeds the algebra's body cap), we skip it and the algebra
+# returns its UNKNOWN-as-compatible default — never less safe than the
+# pre-PR-C state.
+
+# Bodies that constrain nothing — synthesizing a condition over them
+# would only bloat the cache key and the algebra would return UNKNOWN
+# anyway. The set is conservative: anything not on this list goes
+# through to the algebra and lets it decide.
+_TRIVIAL_GROK_BODIES = frozenset({"", ".*", ".+", "(.*)", "(.+)", "(?:.*)", "(?:.+)"})
+
+# Aligned with ``_regex_algebra.MAX_REGEX_BODY_BYTES``: synthesizing a
+# longer body would parse-fail downstream in the algebra's
+# ``extract_regex_literal``, so the constraint would have no effect —
+# better to skip the synthesis altogether than spend cache slots on
+# dead conditions. Re-exported as ``_MAX_IMPLICIT_GROK_BODY_BYTES`` for
+# test access; the source of truth is the algebra constant.
+#
+# v0.2 limitation: this cap means large bundled patterns (``IP`` ≈ 1.3 KB,
+# ``URI`` ≈ 1.5 KB, ``COMMONAPACHELOG`` ≈ 2.3 KB) don't get implicit
+# constraints. 241 of 316 bundled patterns DO fit. Future PR can either
+# bump ``MAX_REGEX_BODY_BYTES`` or route implicit conditions through a
+# separate code path with a higher per-body budget.
+_MAX_IMPLICIT_GROK_BODY_BYTES = MAX_REGEX_BODY_BYTES
+
+# Token names containing these characters would produce malformed
+# ``[<token>] =~ /<body>/`` strings that the algebra silently rejects
+# (sound: returns UNKNOWN-as-compatible). Validate up front so a
+# pathological pattern like ``%{IP:weird]name}`` doesn't waste a cache
+# slot on a dead constraint, and so the failure mode is visible to
+# tests.
+_INVALID_TOKEN_CHARS = frozenset("[]/\\\n\r")
+
+
+def _is_trivial_grok_body(body: str) -> bool:
+    return body in _TRIVIAL_GROK_BODIES
+
+
+def _synthesize_implicit_grok_condition(token: str, body: str) -> str | None:
+    """Build a ``[<token>] =~ /<body>/`` condition string parseable by
+    the regex algebra's ``_EXTRACT_REGEX_LITERAL_RE``.
+
+    Returns ``None`` when the synthesized condition would be unparseable
+    or unsound. Specifically rejects:
+
+    * empty token or body,
+    * tokens containing characters that would break the ``[...] =~ /.../``
+      delimiters (``[``, ``]``, ``/``, ``\\``) or that span lines,
+    * bodies containing newlines (algebra is line-mode),
+    * bodies exceeding the algebra's body cap.
+
+    Only the ``/`` delimiter character is escaped in the body. Backslash
+    escapes (``\\d``, ``\\b``, ``\\w``, etc.) are preserved as-is —
+    doubling backslashes would change regex semantics from "match a
+    digit" to "match a literal backslash followed by d", silently
+    making the implicit constraint stricter than the runtime grok
+    capture and corrupting downstream contradiction reasoning.
+    """
+    if not token or not body:
+        return None
+    if any(c in _INVALID_TOKEN_CHARS for c in token):
+        return None
+    if "\n" in body or "\r" in body:
+        return None
+    if len(body.encode("utf-8")) > _MAX_IMPLICIT_GROK_BODY_BYTES:
+        return None
+    # Escape only the ``/`` delimiter so the literal form parses; leave
+    # backslashes untouched so escapes like ``\d`` keep their regex
+    # meaning when the algebra compiles the body.
+    escaped = body.replace("/", "\\/")
+    return f"[{token}] =~ /{escaped}/"
 
 
 class _ExtractorContext(Protocol):
@@ -696,6 +778,39 @@ class ExtractorPluginMixin:
             fragment = m.group(0)
             pattern_name = m.group("pattern")
             resolved_body = expand_pattern(pattern_name, library) if library is not None else None
+            # PR-C (F2 algebra wiring): synthesize an implicit constraint
+            # for the captured field so downstream contradiction reasoning
+            # can leverage the resolved-body shape. Skipped for trivial
+            # bodies (``.*`` family) — they constrain nothing and would
+            # only bloat the cache key. Skipped for bodies that exceed
+            # the algebra's body cap — the resulting condition would be
+            # parsed but the algebra would return UNKNOWN, which is
+            # sound but wasteful.
+            #
+            # Re-grok soundness: when a token already has a prior
+            # implicit constraint (from an earlier grok call or another
+            # capture in this same pattern), the runtime value is
+            # *disjunctive* — ``tok`` got its value from whichever grok
+            # actually matched, not both. Conjuncting both bodies in the
+            # algebra falsely flags valid literals as unreachable.
+            # Keeping only the latest is *also* unsound (the earlier
+            # grok could have been the one that matched). Drop both and
+            # let the algebra fall back to UNKNOWN-as-compatible.
+            if resolved_body and not _is_trivial_grok_body(resolved_body):
+                implicit = _synthesize_implicit_grok_condition(token, resolved_body)
+                if implicit is not None:
+                    had_prior = state.has_implicit_path_condition_for_token(token)
+                    # Always invalidate (drops descendants too — re-capturing
+                    # into a parent invalidates child structural constraints).
+                    state.invalidate_implicit_path_conditions_for_token(token)
+                    if not had_prior:
+                        state.add_implicit_path_condition(implicit)
+            elif resolved_body:
+                # Trivial / oversize body: still drop any prior constraint
+                # on this token. Re-capturing into ``tok`` overwrites the
+                # value, so the prior shape constraint is now stale even
+                # if we can't synthesize a replacement.
+                state.invalidate_implicit_path_conditions_for_token(token)
             captured_tokens.setdefault(token, []).extend(
                 self._capture_lineages(
                     "grok_capture",

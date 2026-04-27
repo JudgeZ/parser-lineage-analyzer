@@ -367,8 +367,27 @@ def _literal_vs_regex_contradicts(literal: LiteralFact, regex: RegexFact) -> boo
     return False
 
 
-def condition_is_contradicted(condition: str, prior_conditions: list[str]) -> bool:
-    return _condition_is_contradicted_cached(_normalize_condition(condition), tuple(prior_conditions))
+def condition_is_contradicted(
+    condition: str,
+    prior_conditions: list[str],
+    implicit_conditions: tuple[str, ...] = (),
+) -> bool:
+    """Check whether ``condition`` is unsatisfiable given prior conditions.
+
+    ``implicit_conditions`` (PR-C / F2 algebra wiring): synthetic
+    constraints injected by the analyzer that augment the user-visible
+    ``prior_conditions``. Currently populated by the grok extractor for
+    captured fields whose pattern name resolves to a known regex body
+    (e.g. ``[src_ip] =~ /<IP_BODY>/``); the contradiction engine treats
+    them as additional priors so a downstream ``[src_ip] =~ /^[A-Z]+$/``
+    can be proven unreachable. Empty tuple by default — pre-PR-C
+    behavior preserved byte-for-byte.
+    """
+    # Implicit conditions are folded into the prior list before hashing
+    # so the cache partitions correctly: distinct implicit sets produce
+    # distinct cache keys.
+    combined_priors = tuple(prior_conditions) + implicit_conditions if implicit_conditions else tuple(prior_conditions)
+    return _condition_is_contradicted_cached(_normalize_condition(condition), combined_priors)
 
 
 # R4.1: bound the cross-product enumeration in the contradiction check.
@@ -434,8 +453,21 @@ def _condition_is_contradicted_cached(condition: str, prior_conditions: tuple[st
     return True
 
 
-def conditions_are_compatible(conditions: list[str]) -> bool:
-    return _conditions_are_compatible_cached(tuple(conditions))
+def conditions_are_compatible(
+    conditions: list[str],
+    implicit_conditions: tuple[str, ...] = (),
+) -> bool:
+    """Returns False iff the conjunction of ``conditions`` plus
+    ``implicit_conditions`` is provably unsatisfiable.
+
+    ``implicit_conditions`` (PR-C / F2 algebra wiring): same role as in
+    :func:`condition_is_contradicted` — synthetic grok-derived
+    constraints that augment the user-visible ``conditions`` list so
+    downstream contradiction reasoning can leverage what the analyzer
+    knows about captured fields' value shapes. Empty tuple by default.
+    """
+    combined = tuple(conditions) + implicit_conditions if implicit_conditions else tuple(conditions)
+    return _conditions_are_compatible_cached(combined)
 
 
 @lru_cache(maxsize=65536)
