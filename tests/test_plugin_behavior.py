@@ -829,6 +829,8 @@ def test_ruby_bracket_reads_ignore_write_lhs_and_allow_spacing():
             code => "
               event [ 'dst' ] = event.get 'src'
               event.set 'other', event [ 'src2' ]
+              event [ 'counter' ] ||= 0
+              event [ 'attempts' ] += 1
               event.remove 'old'
             "
           }
@@ -839,6 +841,8 @@ def test_ruby_bracket_reads_ignore_write_lhs_and_allow_spacing():
 
     assert {source.path for source in state.tokens["dst"][0].sources} == {"src", "src2"}
     assert {source.path for source in state.tokens["other"][0].sources} == {"src", "src2"}
+    assert "counter" in state.tokens
+    assert "attempts" in state.tokens
     assert "old" not in state.tokens
 
 
@@ -871,7 +875,7 @@ def test_aggregate_timeout_flush_projects_map_keys():
         filter {
           aggregate {
             task_id => "%{session_id}"
-            code => "map['events_count'] ||= 0"
+            code => "map['events_count'] ||= 0; map['first_seen'] = event.get('@timestamp')"
             push_map_as_event_on_timeout => true
           }
         }
@@ -881,6 +885,8 @@ def test_aggregate_timeout_flush_projects_map_keys():
 
     assert "events_count" in state.tokens
     assert "aggregate_timeout_flush" in state.tokens["events_count"][0].transformations
+    assert "first_seen" in state.tokens
+    assert "aggregate_timeout_flush" in state.tokens["first_seen"][0].transformations
 
 
 def test_lookup_and_enrichment_plugins_project_known_targets():

@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from parser_lineage_analyzer import ReverseParser
+from parser_lineage_analyzer._analysis_state import AnalyzerState
 from parser_lineage_analyzer._plugin_specs import normalize_dialect
 
 DEFAULT_ROOT = Path("tests/fixtures/runtime")
@@ -44,7 +45,7 @@ def check_fixture(fixture_dir: Path) -> dict[str, Any]:
     expected_tags = _string_list(expected, "tags")
     expected_anchors = _string_list(expected, "output_anchors")
 
-    missing_fields = [field for field in expected_fields if not _field_is_covered(parser, field)]
+    missing_fields = [field for field in expected_fields if not _field_is_covered(parser, state, field)]
     possible_tags = set(state.tag_state.possibly) | set(state.tag_state.definitely)
     missing_tags = [tag for tag in expected_tags if tag not in possible_tags]
     anchors = {anchor.anchor for anchor in state.output_anchors}
@@ -91,8 +92,7 @@ def _string_list(expected: dict[str, Any], key: str) -> list[str]:
     return [str(item) for item in value]
 
 
-def _field_is_covered(parser: ReverseParser, field: str) -> bool:
-    state = parser.analyze()
+def _field_is_covered(parser: ReverseParser, state: AnalyzerState, field: str) -> bool:
     if field in state.tokens:
         return True
     return bool(parser.query(field, compact=True).mappings)

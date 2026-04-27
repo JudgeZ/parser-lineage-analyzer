@@ -1653,10 +1653,17 @@ class FlowExecutorMixin:
             )
             state.add_taint("ruby_concurrency_risk", warning, loc, gv)
 
+        assignment_op = r"(?:\|\|=|&&=|<<=|>>=|\*\*=|[+\-*/%&|^]?=)"
+
         # 3. Read Dependencies (`event.get(...)`)
         gets = re.findall(r"event\.get\s*\(?\s*['\"]([^'\"]+)['\"]\s*\)?", full_code)
-        gets.extend(re.findall(r"event\s*\[\s*['\"]([^'\"]+)['\"]\s*\](?!\s*=)", full_code))
-        map_reads = re.findall(r"map\s*\[\s*['\"]([^'\"]+)['\"]\s*\](?!\s*=)", full_code) if aggregate else []
+        gets.extend(re.findall(rf"event\s*\[\s*['\"]([^'\"]+)['\"]\s*\](?!\s*{assignment_op})", full_code))
+        map_reads = (
+            re.findall(rf"map\s*\[\s*['\"]([^'\"]+)['\"]\s*\](?!\s*{assignment_op})", full_code) if aggregate else []
+        )
+        map_writes = (
+            re.findall(rf"map\s*\[\s*['\"]([^'\"]+)['\"]\s*\]\s*{assignment_op}", full_code) if aggregate else []
+        )
         sources = [  # nosec B106
             SourceRef(kind=f"{kind}_get", source_token=kind, path=_normalize_field_ref(g)) for g in gets
         ]
@@ -1670,7 +1677,8 @@ class FlowExecutorMixin:
 
         if aggregate:
             for map_key, event_source in re.findall(
-                r"map\[['\"]([^'\"]+)['\"]\]\s*=\s*event\.get\(\s*['\"]([^'\"]+)['\"]\s*\)",
+                rf"map\s*\[\s*['\"]([^'\"]+)['\"]\s*\]\s*{assignment_op}\s*"
+                r"event\.get\s*\(?\s*['\"]([^'\"]+)['\"]\s*\)?",
                 full_code,
             ):
                 map_token = f"@metadata.aggregate.{map_key}"
@@ -1689,7 +1697,7 @@ class FlowExecutorMixin:
         # template-fanout caps, and dedup apply consistently with the rest
         # of the analyzer instead of the inline ``[]``→``.`` shortcut.
         sets = re.findall(r"event\.set\s*\(?\s*['\"]([^'\"]+)['\"]\s*,", full_code)
-        sets.extend(re.findall(r"event\s*\[\s*['\"]([^'\"]+)['\"]\s*\]\s*=", full_code))
+        sets.extend(re.findall(rf"event\s*\[\s*['\"]([^'\"]+)['\"]\s*\]\s*{assignment_op}", full_code))
         for dest in sets:
             normalized = _normalize_field_ref(dest)
             if not normalized:
@@ -1715,7 +1723,7 @@ class FlowExecutorMixin:
             state.add_taint(f"{kind}_event_cancel", warning, loc)
 
         if aggregate and self._truthy_config(stmt, "push_map_as_event_on_timeout"):
-            for map_key in _dedupe_strings(map_reads):
+            for map_key in _dedupe_strings([*map_reads, *map_writes]):
                 dest = _normalize_field_ref(map_key)
                 if not dest:
                     continue
