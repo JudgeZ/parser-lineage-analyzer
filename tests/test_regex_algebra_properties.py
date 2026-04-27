@@ -29,8 +29,10 @@ from __future__ import annotations
 
 import re
 
+import pytest
 from hypothesis import HealthCheck, assume, given, settings, strategies as st
 
+from parser_lineage_analyzer import _regex_algebra
 from parser_lineage_analyzer._analysis_condition_facts import (
     conditions_are_compatible,
 )
@@ -40,6 +42,23 @@ from parser_lineage_analyzer._regex_algebra import (
     literal_in_regex_language,
     regex_languages_disjoint,
 )
+
+
+# The production budget (``ALGEBRA_TIME_BUDGET_MS = 25``) is sized for
+# the analyzer's hot path: many algebra calls per branch, all required
+# to settle within a parser run. Property tests run hundreds of varied
+# inputs in succession and want to verify the algebra's *correctness*,
+# not its bail-out behavior — under runner contention (CI GC pauses,
+# scheduler delays) a 25 ms wall-clock budget can fire on inputs that
+# locally complete in <1 ms, producing asymmetric ``UNKNOWN`` results
+# that break properties like ``test_disjoint_is_symmetric``.
+#
+# A 1 s budget per call is still bounded (so a genuine pathological
+# input still bails out) but eliminates the budget-noise flake.
+@pytest.fixture(autouse=True)
+def _generous_algebra_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(_regex_algebra, "ALGEBRA_TIME_BUDGET_MS", 1000)
+
 
 # -- Pattern strategies ----------------------------------------------
 
@@ -143,22 +162,7 @@ def test_subset_is_reflexive(body: str) -> None:
 @given(_maybe_alternation(), _maybe_alternation())
 @_HYP_SETTINGS
 def test_disjoint_is_symmetric(a: str, b: str) -> None:
-    # The algebra walks operands left-to-right and threads a shared
-    # ``_Budget`` (states/transitions/wall-clock); under load (CI runners,
-    # GC pauses) the budget can be consumed asymmetrically, so one
-    # direction may reach a definitive YES/NO while the other bails to
-    # ``Trilean.UNKNOWN``. That asymmetry is sound — UNKNOWN is the safe
-    # default and never claims disjointness it can't prove — so we only
-    # require equality when *both* directions reach a definitive answer.
-    # When either side is UNKNOWN the symmetry property is satisfied
-    # trivially (the algebra simply punted one of the two analyses).
-    result_ab = regex_languages_disjoint(a, "", b, "")
-    result_ba = regex_languages_disjoint(b, "", a, "")
-    if result_ab != Trilean.UNKNOWN and result_ba != Trilean.UNKNOWN:
-        assert result_ab == result_ba, (
-            f"unsound: {a!r} vs {b!r} returned {result_ab.value} but "
-            f"{b!r} vs {a!r} returned {result_ba.value} — both definitive results disagree"
-        )
+    assert regex_languages_disjoint(a, "", b, "") == regex_languages_disjoint(b, "", a, "")
 
 
 @given(_maybe_alternation(), _maybe_alternation())
