@@ -955,6 +955,7 @@ def test_secops_external_lookup_reports_dialect_disabled_not_unsupported():
     assert "plugin_dialect_disabled" in codes
     assert report["dialect_disabled_plugin_counts"] == {"elasticsearch": 1}
     assert report["totals"]["unsupported_plugins"] == 0
+    assert "lookup_result" not in parser.analyze().tokens
 
 
 def test_config_regex_with_quantifier_parses_as_single_value():

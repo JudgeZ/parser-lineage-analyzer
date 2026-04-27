@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- In SecOps dialect mode, Logstash-only external lookup plugins such as
+  `elasticsearch`, `memcached`, `jdbc_streaming`, `http`, `rest`, and
+  `acme_threat_lookup` now report `plugin_dialect_disabled` and do not write
+  conservative target lineage. Use `dialect="logstash"` / `--dialect logstash`
+  when analyzing Logstash pipelines that rely on those plugins.
+
 ## [0.1.0] - 2026-04-26
 
 Initial public release.
@@ -75,4 +84,5 @@ Initial public release.
   ({0,1024} per side) so adversarial parser source can't trigger
   catastrophic backtracking.
 
+[Unreleased]: https://github.com/JudgeZ/parser-lineage-analyzer/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/JudgeZ/parser-lineage-analyzer/releases/tag/v0.1.0
