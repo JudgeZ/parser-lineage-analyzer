@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Callable, Iterable
 from functools import lru_cache
@@ -38,7 +39,8 @@ from ._analysis_helpers import (
     _taint_key,
     _warning_key,
 )
-from ._analysis_state import AnalyzerState, BranchRecord
+from ._analysis_state import AnalyzerState, BranchRecord, FailureTagRoute
+from ._plugin_specs import PLUGIN_SPECS, PluginSpec, dialect_profile_for, plugin_spec_for
 from ._types import ConfigPair, ConfigValue
 from .ast_nodes import ElifBlock, ForBlock, IfBlock, IOBlock, Plugin, Statement, Unknown
 from .config_parser import all_values, as_pairs, first_value
@@ -265,52 +267,13 @@ class _FlowContext(Protocol):
         append: bool = False,
     ) -> None: ...
 
+    def _assign_object_literal_subfields(
+        self, dest: str, pairs: list[ConfigPair], state: AnalyzerState, conditions: list[str], line: int, mode: str
+    ) -> None: ...
+
 
 class FlowExecutorMixin:
-    _PLUGIN_HANDLERS = {
-        "mutate": "_exec_mutate",
-        "json": "_exec_json",
-        "xml": "_exec_xml",
-        "kv": "_exec_kv",
-        "csv": "_exec_csv",
-        "grok": "_exec_grok",
-        "date": "_exec_date",
-        "base64": "_exec_base64",
-        "url_decode": "_exec_url_decode",
-        "syslog_pri": "_exec_syslog_pri",
-        "dissect": "_exec_dissect",
-        "on_error": "_exec_on_error_block",
-        "ruby": "_exec_ruby",
-        "translate": "_exec_translate",
-        "aggregate": "_exec_aggregate",
-        "clone": "_exec_clone",
-        "useragent": "_exec_useragent",
-        "geoip": "_exec_geoip",
-        "cidr": "_exec_generic_plugin",
-        "mac": "_exec_generic_transform",
-        "math": "_exec_generic_transform",
-        "extractnumbers": "_exec_generic_transform",
-        "tld": "_exec_generic_transform",
-        "cipher": "_exec_generic_transform",
-        "anonymize": "_exec_generic_transform",
-        "fingerprint": "_exec_generic_transform",
-        "urldecode": "_exec_generic_transform",
-        "bytes": "_exec_generic_transform",
-        "i18n": "_exec_generic_transform",
-        "alter": "_exec_generic_transform",
-        "truncate": "_exec_generic_transform",
-        "elapsed": "_exec_elapsed",
-        "uuid": "_exec_uuid",
-        "dns": "_exec_dns",
-        "prune": "_exec_prune",
-        "split": "_exec_split",
-        "elasticsearch": "_exec_external_lookup",
-        "memcached": "_exec_external_lookup",
-        "jdbc_streaming": "_exec_external_lookup",
-        "http": "_exec_external_lookup",
-        "rest": "_exec_external_lookup",
-        "acme_threat_lookup": "_exec_external_lookup",
-    }
+    _PLUGIN_HANDLERS = {name: spec.handler_name for name, spec in PLUGIN_SPECS.items()}
 
     def _exec_statements(
         self,
@@ -1373,7 +1336,8 @@ class FlowExecutorMixin:
         self, stmt: Plugin, state: AnalyzerState, conditions: list[str], depth: int = 0, loop_fanout: int = 1
     ) -> None:
         name = stmt.name
-        handler_name = self._PLUGIN_HANDLERS.get(name)
+        spec = plugin_spec_for(name)
+        handler_name = spec.handler_name if spec is not None and state.dialect in spec.dialects else None
         if name != "on_error":
             self._warn_config_advisories(stmt, state)
         if stmt.config_diagnostics and name != "on_error":
@@ -1391,7 +1355,12 @@ class FlowExecutorMixin:
                 block_handler(stmt, state, conditions, depth + 1, loop_fanout)
             else:
                 plugin_handler = cast(_PluginHandler, getattr(self, handler_name))
-                plugin_handler(stmt, state, conditions)
+                if spec is not None and spec.symbolic_failure_routing:
+                    self._exec_plugin_with_symbolic_failure(stmt, state, conditions, plugin_handler, spec)
+                else:
+                    plugin_handler(stmt, state, conditions)
+                    if spec is not None and spec.apply_decorators:
+                        self._apply_post_plugin_decorators(stmt, state, conditions)
             if name != "on_error":
                 cast(_FlowContext, self)._handle_on_error(stmt, state, conditions)
         elif name == "drop":
@@ -1470,6 +1439,59 @@ class FlowExecutorMixin:
             # per-token taints onto the specific destination fields the plugin
             # would have written, which we can usually infer from the config map.
             self._taint_unsupported_plugin_destinations(stmt, state, warning)
+
+    def _exec_plugin_with_symbolic_failure(
+        self,
+        stmt: Plugin,
+        state: AnalyzerState,
+        conditions: list[str],
+        plugin_handler: _PluginHandler,
+        spec: PluginSpec,
+    ) -> None:
+        failure_conditions = _dedupe_strings(conditions + [f"{stmt.name} failure"])
+
+        plugin_handler(stmt, state, conditions)
+        if spec.apply_decorators:
+            self._apply_post_plugin_decorators(stmt, state, conditions)
+        self._apply_failure_tags(stmt, state, failure_conditions, spec)
+
+    def _configured_string_list(self, stmt: Plugin, key: str, default: tuple[str, ...]) -> list[str]:
+        raw = first_value(stmt.config, key)
+        if raw is None:
+            return list(default)
+        if isinstance(raw, list) and not as_pairs(raw):
+            return [str(item) for item in raw if str(item)]
+        text = str(raw)
+        return [text] if text else []
+
+    def _failure_tags_for(self, stmt: Plugin, state: AnalyzerState, spec: PluginSpec) -> list[str]:
+        profile = dialect_profile_for(state.dialect)
+        default_failure = spec.default_failure_tags if profile.default_failure_tags_enabled else ()
+        default_timeout = spec.default_timeout_tags if profile.default_failure_tags_enabled else ()
+        tags = self._configured_string_list(stmt, "tag_on_failure", default_failure)
+        timeout_tags = self._configured_string_list(stmt, "tag_on_timeout", default_timeout)
+        on_error = first_value(stmt.config, "on_error")
+        if isinstance(on_error, str) and on_error:
+            tags.append(on_error)
+        return _dedupe_strings(tags + timeout_tags)
+
+    def _apply_failure_tags(
+        self, stmt: Plugin, state: AnalyzerState, conditions: list[str], spec: PluginSpec
+    ) -> None:
+        tags = self._failure_tags_for(stmt, state, spec)
+        if not tags:
+            return
+        loc = _location(stmt.line, stmt.name, "failure tags")
+        state.tag_state = state.tag_state.with_possible(tags, has_dynamic=False)
+        for tag in tags:
+            state.add_failure_tag_route(
+                FailureTagRoute(
+                    plugin=stmt.name,
+                    tag=tag,
+                    conditions=list(conditions),
+                    parser_locations=[loc],
+                )
+            )
 
     def _taint_unsupported_plugin_destinations(self, stmt: Plugin, state: AnalyzerState, warning: str) -> None:
         """Tag each destination written by an unsupported plugin with a scoped taint.
@@ -1574,12 +1596,17 @@ class FlowExecutorMixin:
 
     def _exec_ruby(self, stmt: Plugin, state: AnalyzerState, conditions: list[str]) -> None:
         """Executes a ruby block, using heuristic regex to model its effects."""
-        loc = _location(stmt.line, "ruby")
+        self._exec_ruby_like(stmt, state, conditions, kind="ruby", aggregate=False)
+
+    def _exec_ruby_like(
+        self, stmt: Plugin, state: AnalyzerState, conditions: list[str], *, kind: str, aggregate: bool
+    ) -> None:
+        loc = _location(stmt.line, kind)
 
         # 1. Collect ruby code
         code_snippets = []
         for key, value, _ in _iter_config_values(stmt.config):
-            if key in ("init", "code") and isinstance(value, str):
+            if key in ("init", "code", "timeout_code") and isinstance(value, str):
                 code_snippets.append(value)
 
         full_code = "\n".join(code_snippets)
@@ -1598,9 +1625,30 @@ class FlowExecutorMixin:
 
         # 3. Read Dependencies (`event.get(...)`)
         gets = re.findall(r"event\.get\(\s*['\"]([^'\"]+)['\"]\s*\)", full_code)
-        sources = [SourceRef(kind="ruby_get", source_token="ruby", path=g) for g in gets]  # nosec B106
+        gets.extend(re.findall(r"event\[['\"]([^'\"]+)['\"]\]", full_code))
+        map_reads = re.findall(r"map\[['\"]([^'\"]+)['\"]\]", full_code) if aggregate else []
+        sources = [SourceRef(kind=f"{kind}_get", source_token=kind, path=g) for g in gets]  # nosec B106
+        sources.extend(SourceRef(kind="aggregate_map", source_token=kind, path=m) for m in map_reads)
+        if "event.to_hash" in full_code:
+            sources.append(SourceRef(kind=f"{kind}_event_hash", source_token=kind, path="event.to_hash"))
         if not sources:
-            sources = [SourceRef(kind="ruby_block", source_token="ruby")]  # nosec B106
+            sources = [SourceRef(kind=f"{kind}_block", source_token=kind)]  # nosec B106
+
+        if aggregate:
+            for map_key, event_source in re.findall(
+                r"map\[['\"]([^'\"]+)['\"]\]\s*=\s*event\.get\(\s*['\"]([^'\"]+)['\"]\s*\)",
+                full_code,
+            ):
+                map_token = f"@metadata.aggregate.{map_key}"
+                map_lin = Lineage(
+                    status="dynamic",
+                    sources=[SourceRef(kind="aggregate_get", source_token=kind, path=event_source)],
+                    expression=map_token,
+                    transformations=["aggregate_map_write"],
+                    conditions=list(conditions),
+                    parser_locations=[loc],
+                )
+                cast(_FlowContext, self)._store_destination(map_token, [map_lin], loc, state, append=True)
 
         # 4. State Mutations (`event.set(...)`). Route through
         # ``_store_destination`` (append=True) so canonical normalization,
@@ -1615,15 +1663,41 @@ class FlowExecutorMixin:
                 status="dynamic",
                 sources=sources,
                 expression=normalized,
+                transformations=[f"{kind}_set"],
                 conditions=list(conditions),
                 parser_locations=[loc],
             )
             cast(_FlowContext, self)._store_destination(normalized, [ruby_lin], loc, state, append=True)
 
-        # 5. Event Splitting / Yielding (`yield` or `event.clone`)
-        if re.search(r"\byield\b", full_code) or ".clone" in full_code:
+        removes = re.findall(r"event\.remove\(\s*['\"]([^'\"]+)['\"]\s*\)", full_code)
+        if removes:
+            mutate_stmt = Plugin(stmt.line, "mutate", body="", config=[("remove_field", removes)])
+            cast(_PluginHandler, getattr(self, "_exec_mutate"))(mutate_stmt, state, conditions)  # noqa: B009
+
+        if re.search(r"\bevent\.cancel\b", full_code):
+            warning = f"{loc}: ruby event.cancel may drop events on this path"
+            state.add_warning(warning, code=f"{kind}_event_cancel", message=warning, parser_location=loc)
+            state.add_taint(f"{kind}_event_cancel", warning, loc)
+
+        if aggregate and self._truthy_config(stmt, "push_map_as_event_on_timeout"):
+            for map_key in _dedupe_strings(map_reads):
+                dest = _normalize_field_ref(map_key)
+                if not dest:
+                    continue
+                map_lin = Lineage(
+                    status="dynamic",
+                    sources=[SourceRef(kind="aggregate_map", source_token=kind, path=map_key)],
+                    expression=dest,
+                    transformations=["aggregate_timeout_flush"],
+                    conditions=_dedupe_strings(conditions + ["aggregate timeout flush"]),
+                    parser_locations=[loc],
+                )
+                cast(_FlowContext, self)._store_destination(dest, [map_lin], loc, state, append=True)
+
+        # 5. Event Splitting / Yielding (`yield`, `new_event_block.call`, or `event.clone`)
+        if re.search(r"\byield\b", full_code) or "new_event_block.call" in full_code or ".clone" in full_code:
             warning = ruby_event_split_warning(loc)
-            state.add_warning(warning, code="ruby_event_split", message=warning, parser_location=loc)
+            state.add_warning(warning, code=f"{kind}_event_split", message=warning, parser_location=loc)
             # No state fork required: the warning already conveys the
             # event-multiplication risk to consumers, and the previous code
             # merged two unmutated ``state.clone()`` copies into ``original``
@@ -1653,20 +1727,138 @@ class FlowExecutorMixin:
         if not dest_str:
             return
 
+        dictionary_pairs = self._translate_dictionary_pairs(stmt)
+        fallback = first_value(stmt.config, "fallback")
+        regex_mode = self._truthy_config(stmt, "regex") or not self._truthy_config(stmt, "exact", default=True)
+        dictionary_path = first_value(stmt.config, "dictionary_path")
+        transformations = ["translate"]
+        notes: list[str] = []
+        if dictionary_pairs:
+            transformations.append("translate_dictionary")
+            preview = ", ".join(f"{key!r}->{value!r}" for key, value in dictionary_pairs[:5])
+            if len(dictionary_pairs) > 5:
+                preview += ", ..."
+            notes.append(f"inline dictionary entries: {preview}")
+        if fallback is not None:
+            transformations.append("translate_fallback")
+            notes.append(f"fallback: {fallback!r}")
+        if regex_mode:
+            transformations.append("translate_regex")
+            notes.append("dictionary keys may be regex patterns")
+        if dictionary_path is not None:
+            transformations.append("translate_dictionary_path")
+            warning = f"{loc}: translate dictionary_path is runtime-loaded; dictionary values are not enumerated"
+            state.add_warning(
+                warning,
+                code="dynamic_translate_dictionary",
+                message=warning,
+                parser_location=loc,
+                source_token=str(dictionary_path),
+            )
+            state.add_taint("dynamic_translate_dictionary", warning, loc, str(dictionary_path))
+
         translate_lin = Lineage(
-            status="dynamic",
+            status="dynamic" if regex_mode or dictionary_path is not None else "derived",
             sources=sources,
-            expression=dest_str,
+            expression=f"translate({field!s})",
+            transformations=transformations,
             conditions=list(conditions),
             parser_locations=[loc],
+            notes=notes,
         )
         cast(_FlowContext, self)._store_destination(dest_str, [translate_lin], loc, state, append=True)
+        object_pairs = self._translate_object_projection_pairs(dictionary_pairs, fallback)
+        if object_pairs:
+            cast(_FlowContext, self)._assign_object_literal_subfields(
+                dest_str,
+                object_pairs,
+                state,
+                conditions,
+                stmt.line,
+                "translate",
+            )
         self._apply_post_plugin_decorators(stmt, state, conditions)
 
     def _exec_aggregate(self, stmt: Plugin, state: AnalyzerState, conditions: list[str]) -> None:
         """Executes an aggregate block (uses embedded ruby code)."""
-        # Aggregate blocks are essentially stateful ruby blocks. We model them the exact same way.
-        self._exec_ruby(stmt, state, conditions)
+        loc = _location(stmt.line, "aggregate")
+        warning = f"{loc}: aggregate uses shared state across events; modeled conservatively"
+        state.add_warning(warning, code="aggregate_state", message=warning, parser_location=loc)
+        state.add_taint("aggregate_state", warning, loc)
+        timeout_tags = first_value(stmt.config, "timeout_tags")
+        if isinstance(timeout_tags, list) and not as_pairs(timeout_tags):
+            tags = [str(tag) for tag in timeout_tags if str(tag)]
+            state.tag_state = state.tag_state.with_possible(tags, has_dynamic=False)
+            for tag in tags:
+                state.add_failure_tag_route(
+                    FailureTagRoute(
+                        plugin="aggregate",
+                        tag=tag,
+                        conditions=_dedupe_strings(conditions + ["aggregate timeout"]),
+                        parser_locations=[_location(stmt.line, "aggregate", "timeout_tags")],
+                    )
+                )
+        self._exec_ruby_like(stmt, state, conditions, kind="aggregate", aggregate=True)
+
+    def _truthy_config(self, stmt: Plugin, key: str, *, default: bool = False) -> bool:
+        value = first_value(stmt.config, key)
+        if value is None:
+            return default
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes"}
+        return bool(value)
+
+    def _translate_dictionary_pairs(self, stmt: Plugin) -> list[tuple[str, str]]:
+        dictionary = first_value(stmt.config, "dictionary")
+        pairs = as_pairs(dictionary) if isinstance(dictionary, list) else []
+        return [(str(key), str(value)) for key, value in pairs]
+
+    def _translate_object_projection_pairs(
+        self, dictionary_pairs: list[tuple[str, str]], fallback: ConfigValue | None
+    ) -> list[ConfigPair]:
+        merged: dict[str, ConfigValue] = {}
+        for _key, value in dictionary_pairs:
+            for field, field_value in self._json_object_pairs(value):
+                merged.setdefault(field, field_value)
+        if fallback is not None:
+            for field, field_value in self._json_object_pairs(str(fallback)):
+                merged.setdefault(field, field_value)
+        return sorted(merged.items())
+
+    def _json_object_pairs(self, value: str) -> list[ConfigPair]:
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(parsed, dict):
+            return []
+        pairs: list[ConfigPair] = []
+        for key, item in parsed.items():
+            if isinstance(item, dict):
+                pairs.append((str(key), [(str(k), self._json_scalar_to_config(v)) for k, v in sorted(item.items())]))
+            elif isinstance(item, list):
+                list_value: list[ConfigValue] = [str(v) if not isinstance(v, bool) else v for v in item]
+                pairs.append((str(key), list_value))
+            elif item is None:
+                pairs.append((str(key), "null"))
+            elif isinstance(item, bool):
+                pairs.append((str(key), item))
+            else:
+                pairs.append((str(key), str(item)))
+        return pairs
+
+    def _json_scalar_to_config(self, value: object) -> ConfigValue:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, list):
+            return [self._json_scalar_to_config(item) for item in value]
+        if isinstance(value, dict):
+            return [(str(k), self._json_scalar_to_config(v)) for k, v in sorted(value.items())]
+        if value is None:
+            return "null"
+        return str(value)
 
     def _exec_clone(self, stmt: Plugin, state: AnalyzerState, conditions: list[str]) -> None:
         """Executes a clone block."""
@@ -1738,7 +1930,8 @@ class FlowExecutorMixin:
     def _exec_enrichment_plugin(self, stmt: Plugin, state: AnalyzerState, conditions: list[str], kind: str) -> None:
         """Executes an enrichment plugin (like geoip or useragent) mapping source to target."""
         source = first_value(stmt.config, "source")
-        target = first_value(stmt.config, "target") or kind
+        target = first_value(stmt.config, "target") or first_value(stmt.config, "prefix") or kind
+        fields = first_value(stmt.config, "fields")
         loc = _location(stmt.line, kind)
 
         success_state = state.clone()
@@ -1750,10 +1943,25 @@ class FlowExecutorMixin:
                     status="dynamic",
                     sources=sources,
                     expression=dest_str,
+                    transformations=[kind],
                     conditions=list(conditions),
                     parser_locations=[loc],
                 )
                 cast(_FlowContext, self)._store_destination(dest_str, [lin], loc, success_state, append=True)
+                if isinstance(fields, list) and not as_pairs(fields):
+                    for field in fields:
+                        child = _normalize_field_ref(f"{dest_str}.{field}")
+                        if not child:
+                            continue
+                        child_lin = Lineage(
+                            status="dynamic",
+                            sources=sources,
+                            expression=child,
+                            transformations=[kind, "field_projection"],
+                            conditions=list(conditions),
+                            parser_locations=[loc],
+                        )
+                        cast(_FlowContext, self)._store_destination(child, [child_lin], loc, success_state, append=True)
 
         self._apply_post_plugin_decorators(stmt, success_state, conditions)
         state.merge_branch_records(
@@ -1812,6 +2020,12 @@ class FlowExecutorMixin:
         """Executes an external lookup plugin."""
         target = first_value(stmt.config, "target")
         loc = _location(stmt.line, stmt.name)
+        query_source = (
+            first_value(stmt.config, "query")
+            or first_value(stmt.config, "statement")
+            or first_value(stmt.config, "url")
+            or "external_query"
+        )
 
         success_state = state.clone()
         store = cast(_FlowContext, self)._store_destination
@@ -1820,8 +2034,9 @@ class FlowExecutorMixin:
             if dest_str:
                 lin = Lineage(
                     status="dynamic",
-                    sources=[SourceRef(kind=stmt.name, source_token=stmt.name, path="external_query")],
+                    sources=[SourceRef(kind=stmt.name, source_token=stmt.name, path=str(query_source))],
                     expression=dest_str,
+                    transformations=[stmt.name],
                     conditions=list(conditions),
                     parser_locations=[loc],
                 )
@@ -1832,9 +2047,10 @@ class FlowExecutorMixin:
         # Both lineages are real assignments (the lookup writes the row, the
         # ``get`` map projects fields onto the same path) and should both
         # survive deduplication thanks to distinct ``SourceRef.path`` values.
-        gets = all_values(stmt.config, "get")
-        for get_block in gets:
-            for src, tgt in as_pairs(get_block):
+        projections = [*all_values(stmt.config, "get"), *all_values(stmt.config, "fields")]
+        for get_block in projections:
+            projection_pairs = as_pairs(get_block)
+            for src, tgt in projection_pairs:
                 dest_str = _normalize_field_ref(str(tgt))
                 if not dest_str:
                     continue
@@ -1842,10 +2058,27 @@ class FlowExecutorMixin:
                     status="dynamic",
                     sources=[SourceRef(kind=stmt.name, source_token=stmt.name, path=str(src))],
                     expression=dest_str,
+                    transformations=[stmt.name, "field_projection"],
                     conditions=list(conditions),
                     parser_locations=[loc],
                 )
                 store(dest_str, [lin], loc, success_state, append=True)
+            if not projection_pairs and target and isinstance(get_block, list):
+                target_str = _normalize_field_ref(str(target))
+                if target_str:
+                    for field in get_block:
+                        child = _normalize_field_ref(f"{target_str}.{field}")
+                        if not child:
+                            continue
+                        lin = Lineage(
+                            status="dynamic",
+                            sources=[SourceRef(kind=stmt.name, source_token=stmt.name, path=str(field))],
+                            expression=child,
+                            transformations=[stmt.name, "field_projection"],
+                            conditions=list(conditions),
+                            parser_locations=[loc],
+                        )
+                        store(child, [lin], loc, success_state, append=True)
 
         self._apply_post_plugin_decorators(stmt, success_state, conditions)
         state.merge_branch_records(

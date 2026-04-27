@@ -51,6 +51,7 @@ from ._plugin_config_models import (
     XmlPluginConfig,
     compact_validation_error,
 )
+from ._plugin_specs import config_key_is_ignored
 from ._regex_algebra import MAX_REGEX_BODY_BYTES
 from ._types import ConfigValue
 from .ast_nodes import Plugin
@@ -265,6 +266,8 @@ class ExtractorPluginMixin:
             if str(key) == "on_error":
                 continue
             if str(key) not in validation_data:
+                if config_key_is_ignored(stmt.name, str(key)):
+                    continue
                 validation_data[str(key)] = value
         try:
             return model_cls.model_validate(validation_data)
@@ -272,6 +275,8 @@ class ExtractorPluginMixin:
             extra_errors = [err for err in exc.errors() if err.get("type") == "extra_forbidden"]
             for err in extra_errors:
                 key = ".".join(str(part) for part in err.get("loc", ())) or "config"
+                if config_key_is_ignored(stmt.name, key):
+                    continue
                 warning = unknown_config_key_warning(stmt.line, stmt.name, key)
                 state.add_warning(
                     warning,

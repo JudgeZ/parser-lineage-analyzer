@@ -1,0 +1,48 @@
+[cidr_lookup]
+semantic_class = "enricher"
+source_keys = ["address", "source", "network"]
+dest_keys = ["target"]
+lineage_status = "dynamic"
+taint_hint = "dynamic"
+
+[enrich_geoip]
+semantic_class = "enricher"
+source_keys = ["ip", "source"]
+dest_keys = ["target"]
+lineage_status = "dynamic"
+taint_hint = "dynamic"
+
+[http_filter]
+semantic_class = "enricher"
+source_keys = ["url"]
+dest_keys = ["target"]
+lineage_status = "dynamic"
+taint_hint = "dynamic"
+
+[jdbc_lookup]
+semantic_class = "enricher"
+source_keys = ["statement", "query"]
+dest_keys = ["target"]
+lineage_status = "dynamic"
+taint_hint = "dynamic"
+
+[rest_filter]
+semantic_class = "enricher"
+source_keys = ["url"]
+dest_keys = ["target"]
+lineage_status = "dynamic"
+taint_hint = "dynamic"
+
+[throttle]
+semantic_class = "passthrough"
+source_keys = ["key", "before_count", "after_count"]
+dest_keys = []
+lineage_status = "derived"
+taint_hint = "none"
+
+[threat_lookup]
+semantic_class = "enricher"
+source_keys = ["source", "indicator", "query"]
+dest_keys = ["target"]
+lineage_status = "dynamic"
+taint_hint = "dynamic"

@@ -46,6 +46,54 @@ def test_cli_accepts_flags_between_parser_file_and_udm_field(tmp_path, capsys):
     assert payload["status"] == "exact"
 
 
+def test_cli_dialect_and_mutate_order_overrides(tmp_path, capsys):
+    code = r"""
+    filter {
+      mutate {
+        replace => { "source" => "value" }
+        rename => { "source" => "event.idm.read_only_udm.target.hostname" }
+      }
+      mutate { merge => { "@output" => "event" } }
+    }
+    """
+    parser_file = _write_parser(tmp_path, code)
+
+    assert main([str(parser_file), "target.hostname", "--json", "--dialect", "logstash"]) == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "unresolved"
+
+    assert (
+        main([str(parser_file), "target.hostname", "--json", "--dialect", "logstash", "--mutate-source-order"])
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["status"] == "derived"
+
+
+def test_cli_rejects_conflicting_mutate_order_flags(tmp_path, capsys):
+    parser_file = _write_parser(tmp_path)
+
+    assert main([str(parser_file), "--summary", "--mutate-canonical-order", "--mutate-source-order"]) == 2
+    assert "mutually exclusive" in capsys.readouterr().err
+
+
+def test_cli_compat_report_json(tmp_path, capsys):
+    parser_file = _write_parser(
+        tmp_path,
+        r"""
+        filter {
+          grok { match => { "message" => "%{IP:src_ip}" } tag_on_failure => ["custom_fail"] }
+          totally_custom { target => "event.idm.read_only_udm.target.ip" }
+        }
+        """,
+    )
+
+    assert main([str(parser_file), "--compat-report", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["dialect"] == "secops"
+    assert payload["totals"]["unsupported_plugins"] == 1
+    assert payload["totals"]["failure_tag_routes"] >= 1
+
+
 def test_cli_stdin_query_json_success(monkeypatch, capsys):
     monkeypatch.setattr(sys, "stdin", io.StringIO(SIMPLE_CODE))
     assert main(["-", "target.ip", "--json"]) == 0

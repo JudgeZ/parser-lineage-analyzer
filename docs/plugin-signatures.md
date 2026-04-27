@@ -207,13 +207,13 @@ Two safety nets:
 
 ## Bundled signatures
 
-v0.2 ships **no bundled signatures**. The `parser_lineage_analyzer/
-plugin_signatures/` directory is intentionally empty; the loader
-consults it so future bundled additions need no code change.
+The package ships a small audited bundle under
+`parser_lineage_analyzer/plugin_signatures/`. These signatures are
+conservative and are not loaded unless a caller explicitly uses
+`load_bundled_registry()` or passes them through the existing
+signature-loading path.
 
-The deliberate choice is to avoid silently shipping signatures that
-a user might rely on without auditing — a wrong signature for a
-real plugin can produce misleading lineage, which is worse than no
-lineage. Examples in this document are pedagogical only; copy what
-fits your environment, audit it, and load it via your own
-`--plugin-signatures` files.
+Bundled signatures are intentionally approximate: they reduce hard
+`unsupported_plugin` output for common opaque enrichers, while dynamic
+or external behavior remains tainted. For organization-specific plugins,
+prefer loading your own audited `--plugin-signatures` files.

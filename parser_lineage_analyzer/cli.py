@@ -52,6 +52,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--summary", action="store_true", help="Emit parser/analyzer coverage summary instead of querying one field."
     )
     parser.add_argument(
+        "--compat-report",
+        action="store_true",
+        help=(
+            "Emit a dialect-oriented compatibility report: unsupported "
+            "plugins, unsupported mutate operations, unknown config keys, "
+            "symbolic/dynamic features, failure-tag routes, and affected fields."
+        ),
+    )
+    parser.add_argument(
         "--compact-summary",
         action="store_true",
         help="Bound high-volume summary diagnostics and include counts by code. Implies --summary.",
@@ -71,6 +80,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Include full parser locations, notes, taints, and structured warning detail in text output.",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument(
+        "--dialect",
+        choices=("secops", "logstash"),
+        default="secops",
+        help=(
+            "Parser compatibility profile. Defaults to secops. In logstash "
+            "mode, mutate{} blocks default to Logstash's canonical operation order."
+        ),
+    )
     parser.add_argument(
         "--max-parser-bytes",
         type=int,
@@ -96,6 +114,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "Reorder operations within each mutate{} block into Logstash's "
             "canonical execution order before iterating. Default is source "
             "order; this flag opts into Logstash-fidelity semantics."
+        ),
+    )
+    parser.add_argument(
+        "--mutate-source-order",
+        action="store_true",
+        help=(
+            "Force source-order mutate{} execution. This overrides the "
+            "dialect default and is mutually exclusive with --mutate-canonical-order."
         ),
     )
     parser.add_argument(
@@ -423,14 +449,37 @@ def _augment_json_with_strict_failure(payload: str, failure: dict[str, object] |
     return json.dumps(data, indent=2, sort_keys=False)
 
 
+def _print_compat_report(report: Mapping[str, object]) -> None:
+    print(f"Dialect: {report.get('dialect', 'secops')}")
+    print(f"Mutate canonical order: {report.get('mutate_canonical_order', False)}")
+    totals = report.get("totals", {})
+    if isinstance(totals, Mapping):
+        print(f"Unsupported plugins: {totals.get('unsupported_plugins', 0)}")
+        print(f"Unsupported mutate operations: {totals.get('unsupported_mutate_operations', 0)}")
+        print(f"Unknown config keys: {totals.get('unknown_config_keys', 0)}")
+        print(f"Failure-tag routes: {totals.get('failure_tag_routes', 0)}")
+        print(f"Affected fields: {totals.get('affected_fields', 0)}")
+    dynamic_counts = report.get("dynamic_or_symbolic_warning_counts", {})
+    if isinstance(dynamic_counts, Mapping) and dynamic_counts:
+        print("Dynamic/symbolic warning counts:")
+        for code, count in sorted(dynamic_counts.items()):
+            print(f"  - {code}: {count}")
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(build_arg_parser(), argv)
     summary_requested = args.summary or args.compact_summary
-    if args.udm_field and (summary_requested or args.list):
-        print("error: udm_field cannot be used with --list, --summary, or --compact-summary", file=sys.stderr)
+    if args.udm_field and (summary_requested or args.list or args.compat_report):
+        print(
+            "error: udm_field cannot be used with --list, --summary, --compact-summary, or --compat-report",
+            file=sys.stderr,
+        )
         return 2
-    if args.list and summary_requested:
-        print("error: --list and --summary/--compact-summary are mutually exclusive", file=sys.stderr)
+    if args.list and (summary_requested or args.compat_report):
+        print("error: --list and --summary/--compact-summary/--compat-report are mutually exclusive", file=sys.stderr)
+        return 2
+    if args.compat_report and summary_requested:
+        print("error: --compat-report and --summary/--compact-summary are mutually exclusive", file=sys.stderr)
         return 2
     if args.json and args.compact_json:
         print("error: --json and --compact-json are mutually exclusive", file=sys.stderr)
@@ -444,14 +493,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.compact_json and args.compact_summary:
         print("error: --compact-json and --compact-summary are mutually exclusive", file=sys.stderr)
         return 2
+    if args.compact_json and args.compat_report:
+        print("error: --compact-json and --compat-report are mutually exclusive", file=sys.stderr)
+        return 2
     # JSON output already includes the same fields ``--verbose`` would surface
     # in text mode (parser_locations, notes, structured_warnings,
     # diagnostics), so combining ``--verbose`` with ``--json``/``--compact-json``
     # is a no-op rather than an error. Only warn for the modes where
     # ``--verbose`` is genuinely silent (--list, --summary, --compact-summary).
-    if args.verbose and (args.list or args.summary or args.compact_summary):
+    if args.verbose and (args.list or args.summary or args.compact_summary or args.compat_report):
         print(
-            "warning: --verbose is ignored with --list, --summary, or --compact-summary",
+            "warning: --verbose is ignored with --list, --summary, --compact-summary, or --compat-report",
             file=sys.stderr,
         )
     if args.udm_field is not None:
@@ -460,6 +512,9 @@ def main(argv: list[str] | None = None) -> int:
             print("error: udm_field cannot be empty", file=sys.stderr)
             return 2
         args.udm_field = stripped_udm
+    if args.mutate_canonical_order and args.mutate_source_order:
+        print("error: --mutate-canonical-order and --mutate-source-order are mutually exclusive", file=sys.stderr)
+        return 2
     try:
         code = _read_parser(args.parser_file, args.max_parser_bytes)
     except FileNotFoundError:
@@ -509,16 +564,30 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
     try:
+        mutate_canonical_order = None
+        if args.mutate_canonical_order:
+            mutate_canonical_order = True
+        elif args.mutate_source_order:
+            mutate_canonical_order = False
         rp = ReverseParser(
             code,
             max_parser_bytes=args.max_parser_bytes,
-            mutate_canonical_order=args.mutate_canonical_order,
+            dialect=args.dialect,
+            mutate_canonical_order=mutate_canonical_order,
             grok_patterns_dir=args.grok_patterns_dir or None,
             plugin_signatures=plugin_signatures,
         )
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
+    if args.compat_report:
+        report = rp.compat_report(compact=False)
+        _warn_if_parse_recovery(rp.analyze().structured_warnings)
+        if args.json:
+            print(json.dumps(report, indent=2))
+        else:
+            _print_compat_report(report)
+        return 0
     if summary_requested:
         summary = rp.analysis_summary(compact=args.compact_summary)
         _warn_if_parse_recovery(_summary_sequence(summary, "structured_warnings"))
@@ -629,7 +698,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if not args.udm_field:
         print(
-            "error: udm_field is required unless --list, --summary, or --compact-summary is used",
+            "error: udm_field is required unless --list, --summary, --compact-summary, or --compat-report is used",
             file=sys.stderr,
         )
         return 2

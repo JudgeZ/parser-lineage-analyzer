@@ -85,6 +85,7 @@ parser_lineage_analyzer = [
   "grok_patterns/*",
   "grok_patterns/LICENSE",
   "grok_patterns/NOTICE",
+  "plugin_signatures/*.toml",
 ]
 
 [tool.setuptools.exclude-package-data]

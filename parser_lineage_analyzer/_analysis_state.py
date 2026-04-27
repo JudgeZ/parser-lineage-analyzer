@@ -84,6 +84,14 @@ class TagState:
             has_dynamic=self.has_dynamic or has_dynamic,
         )
 
+    def with_possible(self, literals: Iterable[str], *, has_dynamic: bool) -> TagState:
+        lits = frozenset(literals)
+        return TagState(
+            definitely=self.definitely,
+            possibly=self.possibly | lits,
+            has_dynamic=self.has_dynamic or has_dynamic,
+        )
+
     def with_removed(self, literals: Iterable[str], *, has_dynamic: bool) -> TagState:
         lits = frozenset(literals)
         # Definitely-removed: drop from definitely. If the remove is purely
@@ -564,6 +572,45 @@ class ExtractionHint:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class FailureTagRoute:
+    plugin: str
+    tag: str
+    conditions: Iterable[str] = field(default_factory=tuple)
+    parser_locations: Iterable[str] = field(default_factory=tuple)
+    _analysis_key: tuple[object, ...] | None = field(default=None, init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "conditions", tuple(self.conditions))
+        object.__setattr__(self, "parser_locations", tuple(self.parser_locations))
+        object.__setattr__(
+            self,
+            "_analysis_key",
+            (
+                self.plugin,
+                self.tag,
+                self.conditions,
+                self.parser_locations,
+            ),
+        )
+
+    def __hash__(self) -> int:
+        return hash(self._analysis_key)
+
+    def __eq__(self, other: object) -> bool:
+        if other.__class__ is not FailureTagRoute:
+            return NotImplemented
+        return self._analysis_key == other._analysis_key
+
+    def to_json(self) -> JSONDict:
+        return {
+            "plugin": self.plugin,
+            "tag": self.tag,
+            "conditions": list(self.conditions),
+            "parser_locations": list(self.parser_locations),
+        }
+
+
 @dataclass
 class AnalyzerState:
     tokens: MutableMapping[str, list[Lineage]] = field(default_factory=dict)
@@ -573,6 +620,7 @@ class AnalyzerState:
     # mutate{} block are dispatched in Logstash's canonical order rather than
     # source order. False matches the analyzer's historical behavior.
     mutate_canonical_order: bool = False
+    dialect: str = "secops"
     # T2: structured tag-membership tracking — see TagState docstring. The
     # field is itself immutable; updates produce a new TagState assigned back.
     tag_state: TagState = field(default_factory=TagState)
@@ -580,6 +628,7 @@ class AnalyzerState:
     kv_extractions: list[ExtractionHint] = field(default_factory=list)
     csv_extractions: list[ExtractionHint] = field(default_factory=list)
     xml_extractions: list[ExtractionHint] = field(default_factory=list)
+    failure_tag_routes: list[FailureTagRoute] = field(default_factory=list)
     unsupported: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     structured_warnings: list[WarningReason] = field(default_factory=list)
@@ -658,8 +707,8 @@ class AnalyzerState:
     _diagnostic_base_counts: tuple[int, int, int, int, int] = field(
         default=(0, 0, 0, 0, 0), init=False, repr=False, compare=False
     )
-    _metadata_base_counts: tuple[int, int, int, int, int] = field(
-        default=(0, 0, 0, 0, 0), init=False, repr=False, compare=False
+    _metadata_base_counts: tuple[int, int, int, int, int, int] = field(
+        default=(0, 0, 0, 0, 0, 0), init=False, repr=False, compare=False
     )
     _metadata_owned: bool = field(default=True, init=False, repr=False, compare=False)
     _metadata_seen_owned: bool = field(default=True, init=False, repr=False, compare=False)
@@ -680,6 +729,7 @@ class AnalyzerState:
     )
     _output_anchor_seen: set[Key] = field(default_factory=set, init=False, repr=False, compare=False)
     _hint_seen_by_kind: dict[str, set[Key]] = field(default_factory=dict, init=False, repr=False, compare=False)
+    _failure_tag_route_seen: set[Key] = field(default_factory=set, init=False, repr=False, compare=False)
     _token_lineage_key_cache: dict[str, AbstractSet[Key]] = field(
         default_factory=dict, init=False, repr=False, compare=False
     )
@@ -1164,6 +1214,16 @@ class AnalyzerState:
         self._extractor_hint_generation_by_kind[kind] = self._extractor_hint_generation_by_kind.get(kind, 0) + added
         self._has_resolved_extractor.pop(kind, None)
 
+    def add_failure_tag_route(self, route: FailureTagRoute) -> None:
+        key = cast(Key, route._analysis_key)
+        if key in self._failure_tag_route_seen:
+            return
+        self._ensure_metadata_owned()
+        if key in self._failure_tag_route_seen:
+            return
+        self._failure_tag_route_seen.add(key)
+        self.failure_tag_routes.append(route)
+
     def inference_generation_key(self) -> tuple[int, int, int, int]:
         return (
             self._extractor_hint_generation_by_kind.get("json", 0),
@@ -1283,6 +1343,7 @@ class AnalyzerState:
         self._hint_seen_by_kind = {
             kind: {_hint_key(hint) for hint in self._hints_for_kind(kind)} for kind in ("json", "kv", "csv", "xml")
         }
+        self._failure_tag_route_seen = {cast(Key, route._analysis_key) for route in self.failure_tag_routes}
         self._metadata_seen_owned = True
         self._extractor_hint_generation += 1
         self._extractor_hint_generation_by_kind = {
@@ -1301,10 +1362,12 @@ class AnalyzerState:
             self.kv_extractions = list(self.kv_extractions)
             self.csv_extractions = list(self.csv_extractions)
             self.xml_extractions = list(self.xml_extractions)
+            self.failure_tag_routes = list(self.failure_tag_routes)
             self._metadata_owned = True
         if not self._metadata_seen_owned:
             self._output_anchor_seen = set(self._output_anchor_seen)
             self._hint_seen_by_kind = {kind: set(keys) for kind, keys in self._hint_seen_by_kind.items()}
+            self._failure_tag_route_seen = set(self._failure_tag_route_seen)
             self._metadata_seen_owned = True
 
     def _ensure_diagnostics_owned(self) -> None:
@@ -1352,11 +1415,13 @@ class AnalyzerState:
             tokens={},
             output_anchors=self.output_anchors,
             mutate_canonical_order=self.mutate_canonical_order,
+            dialect=self.dialect,
             tag_state=self.tag_state,
             json_extractions=self.json_extractions,
             kv_extractions=self.kv_extractions,
             csv_extractions=self.csv_extractions,
             xml_extractions=self.xml_extractions,
+            failure_tag_routes=self.failure_tag_routes,
             unsupported=self.unsupported,
             warnings=self.warnings,
             structured_warnings=self.structured_warnings,
@@ -1403,6 +1468,7 @@ class AnalyzerState:
         clone._static_destination_total_tokens = self._static_destination_total_tokens
         clone._output_anchor_seen = self._output_anchor_seen
         clone._hint_seen_by_kind = self._hint_seen_by_kind
+        clone._failure_tag_route_seen = self._failure_tag_route_seen
         # Per-kind copy-on-write for the extractor hint index. Both parent and
         # clone share the outer dicts and inner buckets by reference; the next
         # call to ``_ensure_extractor_hint_index`` on either side shallow-copies
@@ -1449,6 +1515,7 @@ class AnalyzerState:
             len(self.kv_extractions),
             len(self.csv_extractions),
             len(self.xml_extractions),
+            len(self.failure_tag_routes),
         )
         clone._diagnostic_base_counts = (
             len(self.unsupported),
@@ -1756,7 +1823,7 @@ class AnalyzerState:
     def _merge_branch_metadata_delta(self, records: list[BranchRecord]) -> None:
         for record in records:
             state = record.state
-            a0, j0, k0, c0, x0 = state._metadata_base_counts
+            a0, j0, k0, c0, x0, f0 = state._metadata_base_counts
             # If the branch never took ownership of a metadata container, the
             # branch's reference is still aliased to the parent's list. The
             # branch-local delta is by definition empty in that case (any new
@@ -1777,6 +1844,9 @@ class AnalyzerState:
                 self.add_extraction_hints("csv", state.csv_extractions[c0:])
             if state.xml_extractions is not self.xml_extractions and len(state.xml_extractions) > x0:
                 self.add_extraction_hints("xml", state.xml_extractions[x0:])
+            if state.failure_tag_routes is not self.failure_tag_routes and len(state.failure_tag_routes) > f0:
+                for route in state.failure_tag_routes[f0:]:
+                    self.add_failure_tag_route(route)
 
     def _apply_dropped_path_conditions(
         self, survivors: list[AnalyzerState], dropped_records: list[BranchRecord], records: list[BranchRecord]

@@ -497,6 +497,335 @@ def test_bare_xpath_key_with_equal_is_not_stripped_as_comment():
     assert not result.unsupported
 
 
+def test_dialect_defaults_control_mutate_order():
+    code = r"""
+    filter {
+      mutate {
+        replace => { "source" => "value" }
+        rename => { "source" => "target" }
+      }
+    }
+    """
+
+    secops_state = ReverseParser(code).analyze()
+    logstash_state = ReverseParser(code, dialect="logstash").analyze()
+
+    assert "target" in secops_state.tokens
+    assert logstash_state.tokens["target"][0].status == "unresolved"
+    assert "source" in logstash_state.tokens
+
+
+def test_mutate_order_override_beats_dialect_default():
+    code = r"""
+    filter {
+      mutate {
+        replace => { "source" => "value" }
+        rename => { "source" => "target" }
+      }
+    }
+    """
+
+    source_order = ReverseParser(code, dialect="logstash", mutate_canonical_order=False).analyze()
+    canonical = ReverseParser(code, dialect="secops", mutate_canonical_order=True).analyze()
+
+    assert "target" in source_order.tokens
+    assert canonical.tokens["target"][0].status == "unresolved"
+
+
+def test_dialect_profile_controls_on_error_block_support():
+    code = r"""
+    filter {
+      mutate { replace => { "source" => "value" } }
+      on_error {
+        mutate { replace => { "fallback" => "yes" } }
+      }
+    }
+    """
+    secops = ReverseParser(code, dialect="secops")
+    logstash = ReverseParser(code, dialect="logstash")
+
+    assert "fallback" in secops.analyze().tokens
+    assert any("on_error" in item for item in logstash.analyze().unsupported)
+    assert logstash.compat_report()["dialect_profile"]["supports_on_error_blocks"] is False
+
+
+def test_default_failure_tags_are_possible_not_definite():
+    parser = ReverseParser(
+        r"""
+        filter {
+          grok { match => { "message" => "%{IP:src_ip}" } }
+          if "_grokparsefailure" in [tags] {
+            mutate { replace => { "route" => "fallback" } }
+          }
+        }
+        """,
+        dialect="logstash"
+    )
+    state = parser.analyze()
+    codes = {warning["code"] for warning in parser.analysis_summary()["structured_warnings"]}
+
+    assert "_grokparsefailure" in state.tag_state.possibly
+    assert "_grokparsefailure" not in state.tag_state.definitely
+    assert "conditional_tag_check" in codes
+    assert "unreachable_branch" not in codes
+
+
+def test_empty_failure_tags_suppress_default_failure_route():
+    parser = ReverseParser(
+        r"""
+        filter {
+          grok {
+            match => { "message" => "%{IP:src_ip}" }
+            tag_on_failure => []
+          }
+          if "_grokparsefailure" in [tags] {
+            mutate { replace => { "route" => "fallback" } }
+          }
+        }
+        """,
+        dialect="logstash"
+    )
+    state = parser.analyze()
+    codes = {warning["code"] for warning in parser.analysis_summary()["structured_warnings"]}
+
+    assert "_grokparsefailure" not in state.tag_state.possibly
+    assert "unreachable_branch" in codes
+
+
+def test_custom_failure_tags_and_on_error_are_possible_tags():
+    parser = ReverseParser(
+        r"""
+        filter {
+          json {
+            source => "message"
+            tag_on_failure => ["custom_json_fail"]
+            on_error => "json_on_error"
+          }
+        }
+        """
+    )
+    state = parser.analyze()
+
+    assert "custom_json_fail" in state.tag_state.possibly
+    assert "json_on_error" in state.tag_state.possibly
+    assert "custom_json_fail" not in state.tag_state.definitely
+    assert "json_on_error" in state.tokens
+
+
+def test_known_common_plugin_options_do_not_warn_as_unknown():
+    parser = ReverseParser(
+        r"""
+        filter {
+          json {
+            source => "message"
+            id => "json-1"
+            enable_metric => false
+            tag_on_failure => ["json_fail"]
+            add_field => { "decorated" => "yes" }
+          }
+        }
+        """
+    )
+    summary = parser.analysis_summary()
+
+    assert not any(
+        warning["code"] == "unknown_config_key"
+        and warning.get("source_token") in {"id", "enable_metric", "tag_on_failure", "add_field"}
+        for warning in summary["structured_warnings"]
+    )
+    assert "decorated" in parser.analyze().tokens
+
+
+def test_translate_inline_dictionary_records_derived_mapping():
+    parser = ReverseParser(
+        r"""
+        filter {
+          translate {
+            field => "event_code"
+            destination => "event_action"
+            dictionary => {
+              "100" => "login"
+              "200" => "logout"
+            }
+            fallback => "unknown"
+          }
+        }
+        """
+    )
+    lineages = parser.analyze().tokens["event_action"]
+
+    assert lineages[0].status == "derived"
+    assert "translate_dictionary" in lineages[0].transformations
+    assert "translate_fallback" in lineages[0].transformations
+    assert lineages[0].sources[0].path == "event_code"
+    assert any("login" in note for note in lineages[0].notes)
+
+
+def test_translate_regex_and_dictionary_path_stay_dynamic_with_warning():
+    parser = ReverseParser(
+        r"""
+        filter {
+          translate {
+            field => "ua"
+            destination => "ua_class"
+            dictionary_path => "/tmp/ua.yml"
+            regex => true
+          }
+        }
+        """
+    )
+    state = parser.analyze()
+    codes = {warning["code"] for warning in parser.analysis_summary()["structured_warnings"]}
+
+    assert state.tokens["ua_class"][0].status == "dynamic"
+    assert "translate_regex" in state.tokens["ua_class"][0].transformations
+    assert "dynamic_translate_dictionary" in codes
+
+
+def test_translate_projects_json_object_dictionary_values():
+    parser = ReverseParser(
+        r'''
+        filter {
+          translate {
+            field => "error_code"
+            destination => "error_details"
+            dictionary => {
+              "E1" => "{\"severity\":\"high\",\"action\":\"block\"}"
+            }
+            fallback => "{\"severity\":\"unknown\",\"action\":\"log\"}"
+          }
+        }
+        '''
+    )
+    state = parser.analyze()
+
+    assert "error_details.severity" in state.tokens
+    assert "error_details.action" in state.tokens
+
+
+def test_date_records_timezone_locale_and_dynamic_target_warning():
+    parser = ReverseParser(
+        r"""
+        filter {
+          date {
+            match => ["event_time", "ISO8601", "UNIX_MS"]
+            target => "event.idm.read_only_udm.metadata.%{dynamic_timestamp}"
+            timezone => "%{tz}"
+            locale => "en-US"
+          }
+        }
+        """
+    )
+    state = parser.analyze()
+    warnings = {warning["code"] for warning in parser.analysis_summary()["structured_warnings"]}
+    lineage = state.tokens["event.idm.read_only_udm.metadata.%{dynamic_timestamp}"][0]
+
+    assert "dynamic_date_target" in warnings
+    assert "dynamic_date_timezone" in warnings
+    assert "timezone(%{tz})" in lineage.transformations[0]
+    assert "locale(en-US)" in lineage.transformations[0]
+
+
+def test_ruby_models_set_remove_cancel_yield_and_globals_conservatively():
+    parser = ReverseParser(
+        r"""
+        filter {
+          ruby {
+            code => "
+              $seen = true
+              event.set('derived_field', event.get('source_field'))
+              event.remove('old_field')
+              new_event_block.call(event.clone)
+              event.cancel
+            "
+          }
+        }
+        """
+    )
+    state = parser.analyze()
+    codes = {warning["code"] for warning in parser.analysis_summary()["structured_warnings"]}
+
+    assert state.tokens["derived_field"][0].status == "dynamic"
+    assert state.tokens["derived_field"][0].sources[0].path == "source_field"
+    assert "ruby_set" in state.tokens["derived_field"][0].transformations
+    assert "noop_remove_field" in codes
+    assert "ruby_event_cancel" in codes
+    assert "ruby_event_split" in codes
+    assert "ruby_concurrency_risk" in codes
+
+
+def test_aggregate_models_map_state_and_timeout_tags():
+    parser = ReverseParser(
+        r"""
+        filter {
+          aggregate {
+            task_id => "%{session_id}"
+            code => "map['first_seen'] = event.get('@timestamp'); event.set('seen_at', map['first_seen'])"
+            timeout_tags => ["_aggregate_timeout"]
+          }
+        }
+        """
+    )
+    state = parser.analyze()
+    codes = {warning["code"] for warning in parser.analysis_summary()["structured_warnings"]}
+
+    assert "@metadata.aggregate.first_seen" in state.tokens
+    assert "seen_at" in state.tokens
+    assert state.tokens["seen_at"][0].sources[0].kind in {"aggregate_get", "aggregate_map"}
+    assert "_aggregate_timeout" in state.tag_state.possibly
+    assert state.failure_tag_routes[0].plugin == "aggregate"
+    assert "aggregate_state" in codes
+
+
+def test_aggregate_timeout_flush_projects_map_keys():
+    parser = ReverseParser(
+        r"""
+        filter {
+          aggregate {
+            task_id => "%{session_id}"
+            code => "map['events_count'] ||= 0"
+            push_map_as_event_on_timeout => true
+          }
+        }
+        """
+    )
+    state = parser.analyze()
+
+    assert "events_count" in state.tokens
+    assert "aggregate_timeout_flush" in state.tokens["events_count"][0].transformations
+
+
+def test_lookup_and_enrichment_plugins_project_known_targets():
+    parser = ReverseParser(
+        r"""
+        filter {
+          elasticsearch {
+            query => "id:%{lookup_id}"
+            target => "lookup_result"
+            fields => { "ip" => "event.idm.read_only_udm.target.ip" }
+          }
+          useragent {
+            source => "ua"
+            target => "ua_details"
+            fields => ["name", "os"]
+          }
+          geoip {
+            source => "src_ip"
+            target => "geo"
+            fields => ["country_name"]
+          }
+        }
+        """,
+        dialect="logstash",
+    )
+    state = parser.analyze()
+
+    assert "lookup_result" in state.tokens
+    assert "event.idm.read_only_udm.target.ip" in state.tokens
+    assert "ua_details.name" in state.tokens
+    assert "geo.country_name" in state.tokens
+
+
 def test_config_regex_with_quantifier_parses_as_single_value():
     result = parse_config(r"match => /\d{1,3}\.\d{1,3}/")
     # Expect a single ('match', regex_value) tuple, not a parse error or split into atoms.

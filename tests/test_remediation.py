@@ -105,7 +105,7 @@ def test_rename_normalizes_and_removes_source_descendants():
       mutate { merge => { "@output" => "event" } }
     }
     """
-    rp = ReverseParser(code)
+    rp = ReverseParser(code, dialect="logstash")
     state = rp.analyze()
     assert "old.field" not in state.tokens
     assert "old.other" in state.tokens
@@ -277,7 +277,7 @@ def test_compact_unsupported_warning_catalog_covers_representative_codes():
     code = r"""
     filter {
       unsupported_custom_plugin { url => "https://example.invalid" }
-      mutate { strip => ["message"] }
+      mutate { weird_mutate => ["message"] }
       mutate { replace => { "event.idm.read_only_udm.additional.fields.%{runtime_key}" => "v" } }
       mutate { gsub => [ "message", "(foo)", "\1" ] }
       for a, b, c in ["x"] {
@@ -813,7 +813,7 @@ def test_external_lookup_target_and_get_collision_keeps_both_lineages():
       }
     }
     """
-    rp = ReverseParser(code)
+    rp = ReverseParser(code, dialect="logstash")
     lineages = rp.analyze().tokens.get("es.id", [])
     assert len(lineages) >= 2, lineages
     paths = sorted({src.path or "" for lin in lineages for src in lin.sources})

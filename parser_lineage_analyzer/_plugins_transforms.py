@@ -17,6 +17,7 @@ from ._analysis_diagnostics import (
 from ._analysis_helpers import _add_conditions, _flatten_scalars, _location, _normalize_field_ref
 from ._analysis_state import AnalyzerState
 from ._plugin_config_models import Base64PluginConfig, DatePluginConfig, UrlDecodePluginConfig, compact_validation_error
+from ._plugin_specs import config_key_is_ignored
 from ._types import ConfigValue
 from .ast_nodes import Plugin
 from .config_parser import all_values, as_pairs
@@ -64,6 +65,8 @@ class TransformPluginMixin:
             if str(key) == "on_error":
                 continue
             if str(key) not in validation_data:
+                if config_key_is_ignored(stmt.name, str(key)):
+                    continue
                 validation_data[str(key)] = value
         try:
             return model_cls.model_validate(validation_data)
@@ -71,6 +74,8 @@ class TransformPluginMixin:
             extra_errors = [err for err in exc.errors() if err.get("type") == "extra_forbidden"]
             for err in extra_errors:
                 key = ".".join(str(part) for part in err.get("loc", ())) or "config"
+                if config_key_is_ignored(stmt.name, key):
+                    continue
                 warning = unknown_config_key_warning(stmt.line, stmt.name, key)
                 state.add_warning(
                     warning,
@@ -100,6 +105,7 @@ class TransformPluginMixin:
             stmt, state, "target", "event.idm.read_only_udm.metadata.event_timestamp"
         )
         timezone_raw = self._first_transform_config_value(stmt, state, "timezone")
+        locale_raw = self._first_transform_config_value(stmt, state, "locale")
         config = self._validate_transform_config_model(
             stmt, state, DatePluginConfig, {"match": match_raw, "target": target_raw, "timezone": timezone_raw}
         )
@@ -116,6 +122,10 @@ class TransformPluginMixin:
         )
         timezone = config.timezone if config is not None else (timezone_raw if isinstance(timezone_raw, str) else None)
         loc = _location(stmt.line, "date", f"target={target}")
+        if "%{" in str(target):
+            warning = static_limit_warning(loc, f"dynamic date target {target}")
+            state.add_warning(warning, code="dynamic_date_target", message=warning, parser_location=loc)
+            state.add_taint("dynamic_date_target", f"date target {target!r} is runtime-dependent", loc)
         if timezone is not None and "%{" in str(timezone):
             warning = static_limit_warning(loc, f"dynamic date timezone {timezone}")
             state.add_warning(warning, code="dynamic_date_timezone", message=warning, parser_location=loc)
@@ -123,8 +133,13 @@ class TransformPluginMixin:
         if isinstance(match, list) and match:
             source_token = str(match[0])
             formats = [str(x) for x in _flatten_scalars(match[1:])]
+            transforms = [f"date({', '.join(formats)})"]
+            if timezone is not None:
+                transforms.append(f"timezone({timezone})")
+            if locale_raw is not None:
+                transforms.append(f"locale({locale_raw})")
             lins = [
-                lin.with_transform(f"date({', '.join(formats)})", loc)
+                lin.with_transform(" ".join(transforms), loc)
                 for lin in context._resolve_token(source_token, state, loc)
             ]
             lins = _add_conditions(lins, conditions)
