@@ -292,12 +292,19 @@ class MutatePluginMixin:
         self, op_l: str, dest: str, lineages: list[Lineage], loc: str, state: AnalyzerState
     ) -> None:
         cast(_MutateContext, self)._store_destination(dest, lineages, loc, state, append=op_l == "add_field")
-        # PR-C: ``replace`` and ``update`` overwrite the destination's value, so
-        # any implicit grok-derived regex constraint on it no longer applies.
-        # ``add_field`` only appends a new alternative; the original token's
-        # value (and constraint) may still hold, so do not invalidate.
-        if op_l in {"replace", "update"}:
-            state.invalidate_implicit_path_conditions_for_token(dest)
+        # PR-C: every assignment-mutate op (``replace``, ``update``,
+        # ``add_field``) invalidates any prior implicit grok-derived
+        # regex constraint on the destination.
+        #
+        # ``replace`` / ``update`` overwrite the value outright. ``add_field``
+        # appends an alternative whose value need not satisfy the captured
+        # pattern (e.g. literal ``"appended"`` after ``%{INT:port}``); leaving
+        # the constraint in place would treat the appended alternative as
+        # constrained by INT and falsely flag downstream
+        # ``[port] == "appended"`` as unreachable. (Logstash also widens
+        # add_field on an existing field into an array, so the string-regex
+        # constraint stops applying for the shape change alone.)
+        state.invalidate_implicit_path_conditions_for_token(dest)
 
     def _summarized_self_referential_template(
         self, dest: str, expr: ConfigValue, state: AnalyzerState, loc: str, conditions: list[str]
@@ -439,9 +446,20 @@ class MutatePluginMixin:
             # would orphan the ``[src_ip] =~ /<IP>/`` constraint and lose
             # contradiction-detection precision on the renamed field.
             # Descendant tokens (``src_ip.region`` → ``client_ip.region``)
-            # follow the same path via the descendant loop above.
+            # follow the same path via the descendant loop below.
+            #
+            # Soundness for rename-onto-existing-dest: when ``dest_s``
+            # already has an implicit constraint (e.g. it was previously
+            # grok-captured), a rename overwrites the destination value
+            # with the source's value. Leaving the dest's old constraint
+            # in place would assert *both* the old dest shape and the
+            # moved src shape simultaneously, which can be UNSAT for any
+            # concrete value. Drop dest's constraints (and descendants')
+            # before rewriting src→dest.
+            state.invalidate_implicit_path_conditions_for_token(dest_s)
             state.rename_implicit_path_conditions(src_s, dest_s)
             for descendant, new_token, _child_loc, _child_lins in descendants:
+                state.invalidate_implicit_path_conditions_for_token(new_token)
                 state.rename_implicit_path_conditions(descendant, new_token)
             # Project descendants onto the new namespace before deleting the
             # source. `rename: user => target.user` must move not just `user`

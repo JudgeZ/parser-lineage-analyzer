@@ -1527,17 +1527,44 @@ class AnalyzerState:
         self.implicit_path_conditions.append(condition)
         return True
 
+    def has_implicit_path_condition_for_token(self, token: str) -> bool:
+        """Return True iff at least one implicit constraint targets
+        ``[<token>]`` exactly (not descendants). Used by the grok
+        extractor to detect re-capture into the same token name and
+        drop both the prior and the new constraint instead of
+        unsoundly conjuncting them.
+        """
+        if not self.implicit_path_conditions or not token:
+            return False
+        prefix = f"[{token}] =~ "
+        return any(cond.startswith(prefix) for cond in self.implicit_path_conditions)
+
     def invalidate_implicit_path_conditions_for_token(self, token: str) -> None:
         """Drop every implicit constraint whose leading field reference
-        matches ``[<token>]``. Used by mutate operations that change
-        the post-mutation value of a token (``gsub``, ``replace``,
-        ``convert`` — see ``_plugins_mutate``); the original
-        grok-derived regex constraint no longer applies once the value
-        has been transformed."""
+        matches ``[<token>]`` *or* a descendant ``[<token>.x]``. Used
+        by mutate operations that change the post-mutation value of a
+        token (``gsub``, ``replace``, ``convert`` — see
+        ``_plugins_mutate``); the original grok-derived regex
+        constraint no longer applies once the value has been
+        transformed.
+
+        Descendant invalidation: overwriting a parent token (e.g.
+        ``replace { "user" => "x" }``) makes the value at ``user`` no
+        longer the structured object that previously had child
+        constraints (``[user.id]``, ``[user.email]``). Leaving those
+        descendant constraints in place would assert facts about
+        children of a value that no longer has children, which can
+        unsoundly contradict downstream predicates.
+        """
         if not self.implicit_path_conditions or not token:
             return
         prefix = f"[{token}] =~ "
-        kept = [cond for cond in self.implicit_path_conditions if not cond.startswith(prefix)]
+        child_prefix = f"[{token}."
+        kept = [
+            cond
+            for cond in self.implicit_path_conditions
+            if not (cond.startswith(prefix) or cond.startswith(child_prefix))
+        ]
         if len(kept) != len(self.implicit_path_conditions):
             self.implicit_path_conditions = kept
             self._implicit_path_conditions_seen = set(kept)
@@ -1546,7 +1573,10 @@ class AnalyzerState:
         """Substitute the leading field reference from ``[<src_token>]``
         to ``[<dst_token>]`` in each implicit constraint. Called by
         ``_exec_rename_mutate_op`` so a token rename carries its
-        implicit grok constraint to the new name."""
+        implicit grok constraint to the new name. Order is preserved
+        and duplicates that arise when a rewritten src constraint
+        collides with a pre-existing dst constraint are folded so the
+        list stays canonical for cache-key partitioning."""
         if not self.implicit_path_conditions or not src_token or src_token == dst_token:
             return
         old_prefix = f"[{src_token}] =~ "
@@ -1555,9 +1585,17 @@ class AnalyzerState:
             new_prefix + cond[len(old_prefix) :] if cond.startswith(old_prefix) else cond
             for cond in self.implicit_path_conditions
         ]
-        if rewritten != self.implicit_path_conditions:
-            self.implicit_path_conditions = rewritten
-            self._implicit_path_conditions_seen = set(rewritten)
+        if rewritten == self.implicit_path_conditions:
+            return
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for cond in rewritten:
+            if cond in seen:
+                continue
+            seen.add(cond)
+            deduped.append(cond)
+        self.implicit_path_conditions = deduped
+        self._implicit_path_conditions_seen = seen
 
     def add_unsupported(
         self,

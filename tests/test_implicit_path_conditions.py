@@ -101,6 +101,63 @@ class TestSynthesizerRoundTrip:
         # counts as uninformative.
         assert _is_trivial_grok_body(body)
 
+    @pytest.mark.parametrize(
+        "body,sample,should_match",
+        [
+            # Backslash escapes must keep their regex meaning. The earlier
+            # implementation doubled all backslashes, turning ``\d`` into
+            # ``\\d`` (literal backslash+d) and silently corrupting every
+            # bundled pattern that uses a character-class escape.
+            (r"\d+", "12345", True),
+            (r"\d+", "abcde", False),
+            (r"\b\w+\b", "hello world", True),
+            (r"\bfoo\b", "barbaz", False),
+            (r"^\s*[A-Z]+\s*$", "  HELLO  ", True),
+            (r"^\s*[A-Z]+\s*$", "hello", False),
+        ],
+    )
+    def test_synthesizer_preserves_regex_escape_semantics(self, body: str, sample: str, should_match: bool) -> None:
+        # Regression for the backslash-escape soundness bug: synthesize a
+        # constraint, parse it back, and verify the parsed regex matches
+        # the same strings as the original body. If the synthesizer
+        # doubles backslashes the parsed pattern matches a totally
+        # different language and downstream contradiction reasoning
+        # silently goes wrong.
+        synthesized = _synthesize_implicit_grok_condition("token", body)
+        assert synthesized is not None
+        extracted = extract_regex_literal(synthesized)
+        assert extracted is not None
+        # The body parser preserves the source bytes (modulo slash
+        # delimiter handling). Compiling the extracted body must accept
+        # / reject the same samples as the original body.
+        original = re.compile(body)
+        extracted_pattern = re.compile(extracted.body)
+        assert bool(original.search(sample)) == should_match
+        assert bool(extracted_pattern.search(sample)) == should_match, (
+            f"backslash escape corrupted regex semantics: body={body!r} extracted={extracted.body!r} sample={sample!r}"
+        )
+
+    @pytest.mark.parametrize("token", ["weird]name", "with[bracket", "has/slash", "back\\slash", "line\nbreak"])
+    def test_synthesizer_rejects_invalid_token_chars(self, token: str) -> None:
+        # Token names containing ``[``, ``]``, ``/``, ``\``, newline, or
+        # carriage return would produce a malformed condition string.
+        # The synthesizer must skip them rather than emit a string the
+        # algebra silently rejects.
+        assert _synthesize_implicit_grok_condition(token, r"\d+") is None
+
+    def test_synthesizer_rejects_body_with_newline(self) -> None:
+        assert _synthesize_implicit_grok_condition("t", "abc\ndef") is None
+        assert _synthesize_implicit_grok_condition("t", "abc\rdef") is None
+
+    def test_synthesizer_max_body_bytes_tracks_algebra_constant(self) -> None:
+        # The synthesizer's body cap must stay coupled to the algebra's
+        # constant — drift would mean either skipping constraints
+        # unnecessarily or attempting to synthesize ones that get
+        # rejected later.
+        from parser_lineage_analyzer._regex_algebra import MAX_REGEX_BODY_BYTES
+
+        assert _MAX_IMPLICIT_GROK_BODY_BYTES == MAX_REGEX_BODY_BYTES
+
 
 # ---------------------------------------------------------------------------
 # State plumbing
@@ -156,6 +213,42 @@ class TestStatePlumbing:
         before = list(state.implicit_path_conditions)
         state.rename_implicit_path_conditions("t", "t")
         assert state.implicit_path_conditions == before
+
+    def test_invalidate_drops_descendant_constraints(self) -> None:
+        # When a parent token is overwritten, any constraints on its
+        # descendants (``[parent.child]``) become stale and must be
+        # dropped — the post-overwrite value at ``parent`` no longer
+        # has the structured children that the constraints described.
+        state = AnalyzerState()
+        state.add_implicit_path_condition("[user] =~ /^[A-Z]+$/")
+        state.add_implicit_path_condition("[user.id] =~ /^[0-9]+$/")
+        state.add_implicit_path_condition("[user.email] =~ /^[a-z]+@/")
+        state.add_implicit_path_condition("[unrelated] =~ /^x$/")
+        state.invalidate_implicit_path_conditions_for_token("user")
+        # ``user`` and all ``user.*`` descendants gone; unrelated stays.
+        assert state.implicit_path_conditions == ["[unrelated] =~ /^x$/"]
+
+    def test_invalidate_does_not_drop_sibling_with_shared_prefix(self) -> None:
+        # ``user`` invalidation must drop ``[user]`` and ``[user.x]`` but
+        # not ``[user_alt]`` — the latter is a separate token whose name
+        # only happens to start with the same letters.
+        state = AnalyzerState()
+        state.add_implicit_path_condition("[user] =~ /^x$/")
+        state.add_implicit_path_condition("[user_alt] =~ /^y$/")
+        state.invalidate_implicit_path_conditions_for_token("user")
+        assert state.implicit_path_conditions == ["[user_alt] =~ /^y$/"]
+
+    def test_rename_dedupes_collisions_with_existing_dst_constraints(self) -> None:
+        # If src→dst rename produces a constraint that already exists for
+        # dst, the duplicate must be folded so the list stays canonical
+        # for cache-key partitioning.
+        state = AnalyzerState()
+        state.add_implicit_path_condition("[a] =~ /^X$/")
+        state.add_implicit_path_condition("[b] =~ /^X$/")
+        state.rename_implicit_path_conditions("a", "b")
+        # Both constraints would rewrite to ``[b] =~ /^X$/``; dedupe to one.
+        assert state.implicit_path_conditions == ["[b] =~ /^X$/"]
+        assert state._implicit_path_conditions_seen == {"[b] =~ /^X$/"}
 
 
 # ---------------------------------------------------------------------------
@@ -248,6 +341,38 @@ class TestCrossFeatureWithF1NegMatch:
         assert "UNREACHABLE" not in expressions
         assert "REACHABLE" in expressions
         assert "unreachable_branch" in _summary_codes(parser)
+
+    def test_repeated_grok_into_same_token_does_not_falsely_collapse(self) -> None:
+        # Regression for the re-grok soundness bug: two grok calls into the
+        # same captured name register both bodies as implicit constraints.
+        # Runtime semantics is *disjunction* (one or the other matched);
+        # treating the constraints as conjunction would falsely flag
+        # literals from either alternative as contradictory.
+        #
+        # Repro: %{INT:tok} then %{UUID:tok}. Both bodies fit under the
+        # algebra cap. A literal "123" satisfies INT; a literal UUID
+        # satisfies UUID. Neither should be flagged unreachable.
+        code = """
+        filter {
+          grok { match => { "a" => "%{INT:tok}" } }
+          grok { match => { "b" => "%{UUID:tok}" } }
+          if [tok] == "123" {
+            mutate { replace => { "event.idm.read_only_udm.principal.user.userid" => "INT_LIT" } }
+          } else {
+            mutate { replace => { "event.idm.read_only_udm.principal.user.userid" => "OTHER" } }
+          }
+        }
+        """
+        parser = ReverseParser(code)
+        parser.analyze()
+        result = parser.query("principal.user.userid")
+        expressions = sorted(m.expression for m in result.mappings)
+        # "123" is a valid INT value if grok1 matched; the if-branch must
+        # remain reachable.
+        assert "INT_LIT" in expressions, (
+            f"re-grok soundness regression: expected INT_LIT to remain reachable, got {expressions!r}"
+        )
+        assert "OTHER" in expressions
 
     def test_grok_int_then_literal_eq_valid_int_stays_reachable(self) -> None:
         # ``[port] == "443"`` is consistent with the implicit constraint —
@@ -344,34 +469,33 @@ class TestMutatePropagation:
         assert "REACHABLE_AFTER_REPLACE" in expressions
         assert "ELSE" in expressions
 
-    def test_add_field_does_not_drop_implicit_constraint(self) -> None:
-        # ``add_field`` appends an alternative; the original token's
-        # constraint may still hold. The literal ``"abc"`` predicate should
-        # still collapse (since at least one lineage retains the INT
-        # constraint).
+    def test_add_field_drops_implicit_constraint_so_appended_literal_stays_reachable(
+        self,
+    ) -> None:
+        # Regression for the add_field soundness bug. ``add_field`` widens
+        # an existing field into an array (Logstash semantics) — the
+        # appended literal need not satisfy the captured pattern, so the
+        # implicit string-regex constraint must be dropped to keep
+        # downstream predicates against the appended value reachable.
         code = """
         filter {
           grok { match => { "message" => "%{INT:port}" } }
-          mutate { add_field => { "port" => "appended" } }
-          if [port] == "abc" {
-            mutate { replace => { "event.idm.read_only_udm.principal.port" => "UNREACHABLE" } }
+          mutate { add_field => { "port" => "appended_literal" } }
+          if [port] == "appended_literal" {
+            mutate { replace => { "event.idm.read_only_udm.principal.port" => "MATCHED_APPENDED" } }
           } else {
-            mutate { replace => { "event.idm.read_only_udm.principal.port" => "REACHABLE" } }
+            mutate { replace => { "event.idm.read_only_udm.principal.port" => "OTHER" } }
           }
         }
         """
         parser = ReverseParser(code)
         parser.analyze()
-        # We don't strictly assert UNREACHABLE absence here because
-        # add_field's exact post-mutation semantics interact with the
-        # token's lineage list, not the implicit constraint. The test
-        # asserts the *constraint preservation* by verifying the algebra
-        # arity unchanged at the state level.
-        # (The strong end-to-end assertion lives in
-        #  ``test_replace_drops_implicit_constraint`` above as a foil.)
         result = parser.query("principal.port")
         expressions = sorted(m.expression for m in result.mappings)
-        assert "REACHABLE" in expressions
+        assert "MATCHED_APPENDED" in expressions, (
+            f"add_field soundness regression: expected MATCHED_APPENDED to remain reachable, got {expressions!r}"
+        )
+        assert "OTHER" in expressions
 
     def test_convert_drops_implicit_constraint(self) -> None:
         code = """
@@ -391,6 +515,37 @@ class TestMutatePropagation:
         expressions = sorted(m.expression for m in result.mappings)
         assert "REACHABLE_AFTER_CONVERT" in expressions
         assert "ELSE" in expressions
+
+    def test_rename_onto_existing_grok_dest_drops_old_dest_constraint(self) -> None:
+        # Regression for the rename-onto-existing-dest soundness bug:
+        # if both src and dest had implicit constraints (two grok captures),
+        # rename overwrites dest's value. The pre-existing dest constraint
+        # must be dropped before src's is rewritten — otherwise the algebra
+        # sees both shapes simultaneously and may flag valid literals
+        # unreachable.
+        code = """
+        filter {
+          grok { match => { "a" => "%{UUID:dst}" } }
+          grok { match => { "b" => "%{INT:src}" } }
+          mutate { rename => { "src" => "dst" } }
+          if [dst] == "123" {
+            mutate { replace => { "event.idm.read_only_udm.principal.user.userid" => "INT_VAL" } }
+          } else {
+            mutate { replace => { "event.idm.read_only_udm.principal.user.userid" => "OTHER" } }
+          }
+        }
+        """
+        parser = ReverseParser(code)
+        parser.analyze()
+        result = parser.query("principal.user.userid")
+        expressions = sorted(m.expression for m in result.mappings)
+        # After rename, dst's value is the renamed src's value (INT-shape).
+        # "123" is INT-compatible; the if-branch must remain reachable.
+        # If the old UUID constraint on dst survived, "123" would be
+        # flagged unreachable (UUID requires hyphens).
+        assert "INT_VAL" in expressions, (
+            f"rename-onto-existing-dest regression: expected INT_VAL reachable, got {expressions!r}"
+        )
 
     def test_remove_field_drops_implicit_constraint(self) -> None:
         # After ``remove_field``, the implicit constraint must NOT make
@@ -489,6 +644,16 @@ class TestBranchMergeIntersection:
         # collapses the impossible-literal check post-merge.
         assert "POST_MERGE_UNREACHABLE" not in expressions
         assert "POST_MERGE_REACHABLE" in expressions
+        # Strengthening assertion: the unreachable_branch warning must be
+        # emitted and reference the post-merge predicate. Without this,
+        # a future change that drops constraints across merge would let
+        # the test pass for the wrong reason (POST_MERGE_UNREACHABLE
+        # could be missing because of an unrelated bug).
+        codes = _summary_codes(parser)
+        assert "unreachable_branch" in codes, (
+            "expected unreachable_branch warning when implicit constraint "
+            f"survives intersection-of-survivors merge; got codes={sorted(codes)!r}"
+        )
 
 
 # ---------------------------------------------------------------------------
