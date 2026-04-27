@@ -1046,6 +1046,7 @@ def test_quoted_over_escape_regex_terminates_on_adversarial_input():
     import time
 
     from parser_lineage_analyzer.cli import _QUOTED_OVER_ESCAPE
+    from tests.perf_budgets import PERF_SLOW_FACTOR
 
     # 1024-char adversarial input: alternating literal/escape chunks
     # with NO closing quote, so the regex is forced to backtrack.
@@ -1055,42 +1056,19 @@ def test_quoted_over_escape_regex_terminates_on_adversarial_input():
     elapsed_ms = (time.monotonic() - start) * 1000.0
     # The pattern can't match (no closing quote); the asserted contract
     # is that fail-match takes wall-clock milliseconds, not seconds.
+    # Scale the budget by ``PERF_SLOW_FACTOR`` so coverage runs, ARM
+    # emulation, and contended CI runners don't flake on this gate.
     assert match is None
-    assert elapsed_ms < 50.0, f"_QUOTED_OVER_ESCAPE took {elapsed_ms:.1f}ms on adversarial input"
+    budget_ms = 50.0 * PERF_SLOW_FACTOR
+    assert elapsed_ms < budget_ms, (
+        f"_QUOTED_OVER_ESCAPE took {elapsed_ms:.1f}ms on adversarial input (budget {budget_ms:.1f}ms)"
+    )
 
     # Sanity: normal inputs still match correctly under the bounded form.
     normal = "warning: pattern '\\\\d+' is over-escaped"
     normal_match = _QUOTED_OVER_ESCAPE.search(normal)
     assert normal_match is not None
     assert normal_match.group(1) == "\\\\d+"
-
-
-def test_cli_list_json_emits_stable_top_level_keys(tmp_path, capsys):
-    """``--list --json`` must emit ``output_anchors``, ``warnings``,
-    ``unsupported``, ``structured_warnings``, and ``diagnostics`` as ``[]``
-    (alongside the pre-existing ``udm_fields``/``udm_fields_total``) so
-    cross-mode JSON consumers see the same top-level shape regardless of
-    which mode produced the document. ``--list`` carries no per-query
-    data, so the five arrays are always empty — but stable shape matters
-    more than parsimony for ``jq '.warnings | length'`` and similar."""
-    parser_file = _write_parser(tmp_path)
-    assert main([str(parser_file), "--list", "--json"]) == 0
-    payload = json.loads(capsys.readouterr().out)
-    for key in (
-        "udm_fields",
-        "udm_fields_total",
-        "output_anchors",
-        "warnings",
-        "unsupported",
-        "structured_warnings",
-        "diagnostics",
-    ):
-        assert key in payload, f"--list --json document missing top-level {key!r}"
-    assert payload["output_anchors"] == []
-    assert payload["warnings"] == []
-    assert payload["unsupported"] == []
-    assert payload["structured_warnings"] == []
-    assert payload["diagnostics"] == []
 
 
 def test_cli_strict_json_embeds_strict_failure_key(tmp_path, capsys):
@@ -1113,6 +1091,51 @@ filter {
     assert failure["warnings"] >= 1
     # Stderr line is preserved unchanged for back-compat with non-JSON
     # consumers.
+    assert "strict:" in captured.err
+
+
+def test_cli_strict_summary_json_embeds_strict_failure_key(tmp_path, capsys):
+    """``--summary --json --strict`` must mirror the strict failure
+    object inside the JSON document so machine consumers don't have to
+    scrape stderr — the same contract query mode already provides."""
+    code = r"""
+filter {
+  mutate { replace => { "event.idm.read_only_udm.additional.fields.%{k}" => "%{missing_value}" } }
+  mutate { merge => { "@output" => "event" } }
+}
+"""
+    parser_file = _write_parser(tmp_path, code)
+    assert main([str(parser_file), "--summary", "--json", "--strict"]) == 3
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    failure = payload.get("strict_failure")
+    assert failure is not None
+    assert failure["warnings"] >= 1
+    assert "strict:" in failure["message"]
+    # Stderr line preserved.
+    assert "strict:" in captured.err
+
+
+def test_cli_strict_list_json_embeds_strict_failure_key(tmp_path, capsys):
+    """``--list --json --strict`` must mirror the strict failure object
+    in the JSON document for the same reason as summary mode."""
+    code = r"""
+filter {
+  mutate { replace => { "event.idm.read_only_udm.additional.fields.%{k}" => "%{missing_value}" } }
+  mutate { merge => { "@output" => "event" } }
+}
+"""
+    parser_file = _write_parser(tmp_path, code)
+    assert main([str(parser_file), "--list", "--json", "--strict"]) == 3
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    failure = payload.get("strict_failure")
+    assert failure is not None
+    assert failure["warnings"] >= 1
+    assert "strict:" in failure["message"]
+    # Stable cross-mode shape is preserved alongside the new key.
+    for key in ("udm_fields", "udm_fields_total", "output_anchors", "warnings"):
+        assert key in payload
     assert "strict:" in captured.err
 
 

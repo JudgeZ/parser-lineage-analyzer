@@ -272,7 +272,10 @@ class TestTomlLoader:
         # Need > 1 MiB total; comment line is 83 bytes.
         repeats = (1024 * 1024 // len(comment)) + 100
         body = comment * repeats + '[ok]\nsemantic_class = "passthrough"\nsource_keys = []\ndest_keys = []\n'
-        f.write_text(body, encoding="utf-8")
+        # ``write_bytes`` rather than ``write_text`` so Windows doesn't
+        # translate ``\n`` -> ``\r\n`` and silently inflate the file size
+        # past the cap we're trying to test.
+        f.write_bytes(body.encode("utf-8"))
         # Sanity-check the test fixture itself is over the cap.
         assert f.stat().st_size > 1024 * 1024
         reg = PluginSignatureRegistry()
@@ -289,7 +292,9 @@ class TestTomlLoader:
         pad = "# " + ("x" * 80) + "\n"
         pad_count = (target - len(prefix)) // len(pad)
         body = prefix + pad * max(0, pad_count)
-        f.write_text(body, encoding="utf-8")
+        # ``write_bytes`` rather than ``write_text`` so Windows doesn't
+        # translate ``\n`` -> ``\r\n`` and inflate the file past the cap.
+        f.write_bytes(body.encode("utf-8"))
         assert f.stat().st_size < 1024 * 1024
         reg = PluginSignatureRegistry()
         reg.load_toml(f)

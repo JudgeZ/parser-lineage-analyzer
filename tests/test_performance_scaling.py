@@ -18,7 +18,7 @@ from parser_lineage_analyzer.config_parser import (
 )
 from parser_lineage_analyzer.model import Lineage, QueryResult, SourceRef, TaintReason, _freeze_details
 from parser_lineage_analyzer.render import render_compact_json, render_text
-from tests.conftest import PERF_SLOW_FACTOR
+from tests.perf_budgets import PERF_SLOW_FACTOR
 
 _NATIVE_DISABLED = os.environ.get("PARSER_LINEAGE_ANALYZER_NO_EXT", "").lower() in {"1", "true", "yes", "on"}
 

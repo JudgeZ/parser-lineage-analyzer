@@ -478,6 +478,41 @@ class TestCrossFeatureWithF1NegMatch:
             f"oversize re-grok left a stale [tok] constraint: {parser.state.implicit_path_conditions!r}"
         )
 
+    def test_alternation_with_oversize_first_alt_does_not_synthesize_from_second(self) -> None:
+        # Within a *single* grok call, alternation that captures the
+        # same token from multiple branches is disjunctive at runtime:
+        # ``tok`` got its value from whichever alternative matched, not
+        # both. If iter 1 fails synthesis (oversize) and iter 2
+        # succeeds, naïvely adding the iter-2 constraint would falsely
+        # claim ``tok`` always matches the iter-2 shape — but a runtime
+        # value from the iter-1 alternative could violate that. The
+        # ``seen_tokens_this_call`` guard ensures iter 2 sees
+        # ``had_prior=True`` and skips the add (the disjunctive-runtime
+        # drop-both rule).
+        from parser_lineage_analyzer._grok_patterns import bundled_library, expand_pattern
+        from parser_lineage_analyzer._regex_algebra import MAX_REGEX_BODY_BYTES
+
+        ipv6_body = expand_pattern("IPV6", bundled_library())
+        assert ipv6_body is not None
+        assert len(ipv6_body.encode("utf-8")) > MAX_REGEX_BODY_BYTES
+
+        # Single grok call, two alternatives capturing the same token.
+        # IPV6 is oversize (synthesis skipped), INT would otherwise
+        # synthesize a digit-only constraint — but seen_tokens_this_call
+        # suppresses that.
+        code = """
+        filter {
+          grok { match => { "a" => "%{IPV6:tok}|%{INT:tok}" } }
+        }
+        """
+        parser = ReverseParser(code)
+        parser.analyze()
+        assert not any("[tok]" in cond for cond in parser.state.implicit_path_conditions), (
+            "alternation re-grok added a constraint from the second alternative; "
+            "the oversize first alternative should have suppressed it via "
+            f"seen_tokens_this_call. State: {parser.state.implicit_path_conditions!r}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Mutate propagation: rename / gsub / remove

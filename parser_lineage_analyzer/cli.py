@@ -282,15 +282,30 @@ def _summary_has_strict_findings(summary: Mapping[str, object]) -> bool:
     return bool(summary.get("unsupported") or summary.get("warnings") or summary.get("taints") or has_strict_diagnostic)
 
 
-def _print_strict_summary_failure(summary: Mapping[str, object]) -> None:
+def _summary_strict_failure_payload(summary: Mapping[str, object]) -> dict[str, object]:
+    """Build the ``strict_failure`` object embedded in summary/list JSON.
+
+    The ``message`` field is identical to the stderr line emitted by
+    :func:`_print_strict_summary_failure`, so machine consumers reading
+    ``strict_failure.message`` see the same text non-JSON consumers see
+    on stderr — without scraping.
+    """
     unsupported_count = _summary_count(summary, "unsupported")
     warnings_count = _summary_count(summary, "warnings")
     taints_count = _summary_count(summary, "taints")
-    print(
-        f"strict: {unsupported_count} unsupported, {warnings_count} warning(s), "
-        f"{taints_count} taint(s) in parser summary",
-        file=sys.stderr,
-    )
+    return {
+        "unsupported": unsupported_count,
+        "warnings": warnings_count,
+        "taints": taints_count,
+        "message": (
+            f"strict: {unsupported_count} unsupported, {warnings_count} warning(s), "
+            f"{taints_count} taint(s) in parser summary"
+        ),
+    }
+
+
+def _print_strict_summary_failure(summary: Mapping[str, object]) -> None:
+    print(_summary_strict_failure_payload(summary)["message"], file=sys.stderr)
 
 
 def _print_summary_count_map(
@@ -508,7 +523,14 @@ def main(argv: list[str] | None = None) -> int:
         summary = rp.analysis_summary(compact=args.compact_summary)
         _warn_if_parse_recovery(_summary_sequence(summary, "structured_warnings"))
         if args.json:
-            print(json.dumps(summary, indent=2))
+            # Embed ``strict_failure`` in the JSON document when --strict
+            # triggers so machine consumers don't have to scrape stderr.
+            # The stderr line below is preserved unchanged for non-JSON
+            # consumers; both surfaces share the same ``message`` text.
+            summary_payload = dict(summary)
+            if args.strict and _summary_has_strict_findings(summary):
+                summary_payload["strict_failure"] = _summary_strict_failure_payload(summary)
+            print(json.dumps(summary_payload, indent=2))
         else:
             from .render import sanitize_for_terminal
 
@@ -564,6 +586,15 @@ def main(argv: list[str] | None = None) -> int:
         # is only needed for the strict gate. Defer the expensive build.
         state = rp.analyze()
         _warn_if_parse_recovery(state.structured_warnings)
+        # Compute the strict gate up front so the JSON path can embed
+        # ``strict_failure`` alongside the cross-mode-stable shape;
+        # ``analysis_summary()`` is the only thing strict needs and is
+        # itself memoised on the parser, so this is cheap.
+        list_strict_payload: dict[str, object] | None = None
+        if args.strict:
+            list_summary = rp.analysis_summary()
+            if _summary_has_strict_findings(list_summary):
+                list_strict_payload = _summary_strict_failure_payload(list_summary)
         if args.json:
             # Cross-mode JSON consumers expect the same top-level keys
             # regardless of which mode produced the document. ``--list``
@@ -572,20 +603,18 @@ def main(argv: list[str] | None = None) -> int:
             # always empty; emitting them as ``[]`` (instead of omitting)
             # keeps the shape stable for ``jq '.warnings | length'`` and
             # similar across query/summary/list modes.
-            print(
-                json.dumps(
-                    {
-                        "udm_fields": fields,
-                        "udm_fields_total": len(fields),
-                        "output_anchors": [],
-                        "warnings": [],
-                        "unsupported": [],
-                        "structured_warnings": [],
-                        "diagnostics": [],
-                    },
-                    indent=2,
-                )
-            )
+            list_payload: dict[str, object] = {
+                "udm_fields": fields,
+                "udm_fields_total": len(fields),
+                "output_anchors": [],
+                "warnings": [],
+                "unsupported": [],
+                "structured_warnings": [],
+                "diagnostics": [],
+            }
+            if list_strict_payload is not None:
+                list_payload["strict_failure"] = list_strict_payload
+            print(json.dumps(list_payload, indent=2))
         elif not fields:
             print("No UDM fields found.")
         else:
@@ -593,12 +622,10 @@ def main(argv: list[str] | None = None) -> int:
 
             for f in fields:
                 print(sanitize_for_terminal(f))
-        if args.strict:
-            list_summary = rp.analysis_summary()
-            if _summary_has_strict_findings(list_summary):
-                sys.stdout.flush()
-                _print_strict_summary_failure(list_summary)
-                return 3
+        if list_strict_payload is not None:
+            sys.stdout.flush()
+            print(list_strict_payload["message"], file=sys.stderr)
+            return 3
         return 0
     if not args.udm_field:
         print(
@@ -647,10 +674,18 @@ def main(argv: list[str] | None = None) -> int:
     else:
         from .render import render_text
 
+        # Clean only the warning *payload*, not the entire rendered
+        # report — applying the regex post-process to mappings/conditions/
+        # locations text would risk rewriting user data that happens to
+        # contain quoted spans with doubled backslashes (a parser literal
+        # like ``replace => { "x" => '\\\\d+' }`` showing up in a
+        # location label, for instance). Pre-clean ``result.warnings``
+        # before render_text reads it; clean the hint string inline.
+        if result.warnings:
+            result.warnings = [_clean_warning_escapes(w) for w in result.warnings]
         rendered = render_text(result, verbose=args.verbose)
-        rendered = _clean_warning_escapes(rendered)
         if hint is not None:
-            rendered = f"{rendered}\n\nHint:\n  - {hint['warning']}"
+            rendered = f"{rendered}\n\nHint:\n  - {_clean_warning_escapes(hint['warning'])}"
         print(rendered)
     if strict_failure_payload is not None:
         sys.stdout.flush()

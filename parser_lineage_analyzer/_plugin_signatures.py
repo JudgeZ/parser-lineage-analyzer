@@ -194,24 +194,37 @@ class PluginSignatureRegistry:
             return
         try:
             resolved_directory = directory.resolve()
-        except OSError:  # pragma: no cover - defensive
+        except (OSError, RuntimeError):  # pragma: no cover - defensive
+            # ``Path.resolve()`` raises ``RuntimeError`` on infinite
+            # symlink loops — same skip-worthy outcome as a missing
+            # path: drop back to the un-resolved directory rather than
+            # leaking a traceback.
             resolved_directory = directory
         for entry in sorted(directory.iterdir()):
+            # Default to opening ``entry`` directly. Symlinks that pass
+            # the containment check are loaded via ``resolved_target``
+            # so a retarget between ``resolve()`` and the open can't
+            # bypass the check we just performed.
+            load_path = entry
             if entry.is_symlink():
                 # Reject symlinks that escape the configured directory.
                 # ``resolve()`` walks the chain; ``path_is_within``
                 # checks containment via ``os.path.normcase`` so a
                 # case-mismatched directory argument on Windows doesn't
                 # false-positive (POSIX is byte-equal — see helper
-                # docstring for the fail-safe rationale).
+                # docstring for the fail-safe rationale). ``resolve()``
+                # raises ``RuntimeError`` on a self-referential or
+                # mutually-referential symlink chain — treat that as
+                # another skip-worthy resolution failure.
                 try:
                     resolved_target = entry.resolve()
-                except OSError:
+                except (OSError, RuntimeError):
                     continue
                 if not path_is_within(resolved_target, resolved_directory):
                     continue
-            if entry.is_file() and entry.suffix == ".toml":
-                self.load_toml(entry)
+                load_path = resolved_target
+            if load_path.is_file() and load_path.suffix == ".toml":
+                self.load_toml(load_path)
 
     def merge(self, other: PluginSignatureRegistry) -> PluginSignatureRegistry:
         """Return a new registry combining ``self`` and ``other``.

@@ -488,3 +488,32 @@ def test_executor_collision_message_includes_both_modules():
     assert "AdHocOwner" in rendered
     assert "AdHocNewcomer" in rendered
     assert rendered.startswith("colliding_method (")
+
+
+def test_executor_collision_check_uses_full_owner_identity():
+    """Two mixins from *different modules* but sharing the same class name
+    must still register as a collision. The earlier ``owner_name`` check
+    let same-name-different-module shadowing pass undetected; the
+    contract is now ``(name, module)`` identity equality."""
+    from parser_lineage_analyzer._analysis_executor import _compute_collision_messages
+
+    class Helpers:  # noqa: D401 - synthetic fixture
+        def shared_method(self) -> None:
+            pass
+
+    class Helpers2:  # noqa: D401 - synthetic fixture
+        def shared_method(self) -> None:
+            pass
+
+    # Same class name, different modules — without full-identity comparison
+    # this collision would have been missed.
+    Helpers.__name__ = "Helpers"
+    Helpers2.__name__ = "Helpers"
+    Helpers.__module__ = "tests.synthetic.module_a"
+    Helpers2.__module__ = "tests.synthetic.module_b"
+
+    collisions = _compute_collision_messages((Helpers, Helpers2))
+    assert len(collisions) == 1
+    assert "tests.synthetic.module_a" in collisions[0]
+    assert "tests.synthetic.module_b" in collisions[0]
+    assert collisions[0].startswith("shared_method (")

@@ -259,11 +259,19 @@ def load_library_from_paths(paths: Iterable[Path]) -> GrokLibrary:
         if path.is_dir():
             try:
                 resolved_directory = path.resolve()
-            except OSError:  # pragma: no cover - defensive
+            except (OSError, RuntimeError):  # pragma: no cover - defensive
+                # ``Path.resolve()`` raises ``RuntimeError`` on infinite
+                # symlink loops — drop back to the unresolved directory
+                # rather than leaking a traceback.
                 resolved_directory = path
             for entry in sorted(path.iterdir(), key=lambda p: p.name):
                 if entry.name.startswith("."):
                     continue
+                # Default to reading ``entry`` directly. Symlinks that
+                # pass the containment check are loaded via
+                # ``resolved_target`` so a retarget between
+                # ``resolve()`` and the read can't bypass containment.
+                load_path = entry
                 if entry.is_symlink():
                     # Skip symlinks that escape the configured directory.
                     # ``resolve()`` walks the chain; ``path_is_within``
@@ -271,20 +279,23 @@ def load_library_from_paths(paths: Iterable[Path]) -> GrokLibrary:
                     # case-insensitive filesystems (macOS APFS, Windows
                     # NTFS) don't false-positive on a case-mismatched
                     # directory argument. In-dir symlinks (sibling
-                    # links) are still followed.
+                    # links) are still followed. ``resolve()`` raises
+                    # ``RuntimeError`` on cyclic symlink chains — also
+                    # skip those.
                     try:
                         resolved_target = entry.resolve()
-                    except OSError:
+                    except (OSError, RuntimeError):
                         continue
                     if not path_is_within(resolved_target, resolved_directory):
                         continue
-                if not entry.is_file():
+                    load_path = resolved_target
+                if not load_path.is_file():
                     continue
                 # Directory walk: silently drop oversize files (matches
                 # the silent-drop convention for malformed pattern lines
                 # in ``_parse_pattern_file_text``).
                 try:
-                    text = _read_pattern_file_text(entry)
+                    text = _read_pattern_file_text(load_path)
                 except ValueError:
                     continue
                 merged.update(_parse_pattern_file_text(text))

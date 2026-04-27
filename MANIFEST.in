@@ -8,9 +8,13 @@ recursive-include tests/fixtures *
 # setuptools regenerates `PKG-INFO` and `SOURCES.txt` after MANIFEST
 # processing — these two are spec-required in every sdist. The `prune`
 # line strips any other stale egg-info entries (dependency_links.txt,
-# requires.txt, etc.) left from prior in-tree builds, plus any
-# `__pycache__` trees `recursive-include grok_patterns *` would
-# otherwise sweep in.
+# requires.txt, etc.) left from prior in-tree builds. The
+# ``global-exclude *.py[cod]`` line below matches file basenames
+# (setuptools convention), so it covers ``.pyc``/``.pyo``/``.pyd``
+# anywhere in the tree — including inside ``__pycache__`` directories
+# that ``recursive-include grok_patterns *`` would otherwise sweep in.
+# We don't ``prune __pycache__`` here because that path doesn't exist
+# in the source tree at sdist time; the file-pattern exclude is
+# sufficient to keep bytecode out of the distribution.
 prune parser_lineage_analyzer.egg-info
-global-exclude __pycache__
 global-exclude *.py[cod]

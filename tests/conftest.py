@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
@@ -10,27 +9,6 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-
-# CI-tunable wall-clock slack multiplier for performance tests. Default is
-# 1.0 (no behavior change on developer machines); slow CI runners can
-# export ``PERF_SLOW_FACTOR=5`` to widen every elapsed-vs-budget assert
-# in ``test_performance_scaling.py`` and ``test_benchmark_smoke.py``
-# without editing the test files. Tests pre-multiply their literal
-# budgets by this constant at module import time, so set the variable
-# before pytest starts. See ``docs/performance-budgets.md`` for guidance
-# on when to bump this versus when a regression has actually landed.
-def _perf_slow_factor() -> float:
-    raw = os.environ.get("PERF_SLOW_FACTOR")
-    if not raw:
-        return 1.0
-    try:
-        value = float(raw)
-    except ValueError:
-        return 1.0
-    return value if value > 0 else 1.0
-
-
-PERF_SLOW_FACTOR: float = _perf_slow_factor()
 
 try:
     from hypothesis import HealthCheck, settings

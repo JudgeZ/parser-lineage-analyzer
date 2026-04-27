@@ -771,6 +771,16 @@ class ExtractorPluginMixin:
     ) -> None:
         loc = _location(line, "grok.capture", f"source={source_token}")
         source_lineages, _source_resolved = self._resolve_extractor_source("grok", source_token, state, loc)
+        # Track tokens already visited *in this single grok call* so a
+        # later alternative for the same token doesn't paper over an
+        # earlier oversize/trivial alternative. Without this, a pattern
+        # like ``%{HUGE:x}|%{IP:x}`` would invalidate on iter 1 (HUGE
+        # oversize, no constraint added), then iter 2 (IP) would see
+        # ``had_prior=False`` and synthesize an IP-only constraint —
+        # but runtime ``x`` could have come from the HUGE alternative.
+        # Treating "already visited this call" as a prior preserves the
+        # disjunctive-runtime drop-both rule across alternation.
+        seen_tokens_this_call: set[str] = set()
         for m in _GROK_NAMED_RE.finditer(pattern):
             token = m.group("token")
             if not token:
@@ -809,8 +819,9 @@ class ExtractorPluginMixin:
             # *before* invalidation so the disjunctive-runtime rule
             # below ("don't replace; let UNKNOWN reign") still fires
             # correctly when the second grok's body is also synthesizable.
-            had_prior = state.has_implicit_path_condition_for_token(token)
+            had_prior = state.has_implicit_path_condition_for_token(token) or token in seen_tokens_this_call
             state.invalidate_implicit_path_conditions_for_token(token)
+            seen_tokens_this_call.add(token)
             if resolved_body and not _is_trivial_grok_body(resolved_body):
                 implicit = _synthesize_implicit_grok_condition(token, resolved_body)
                 if implicit is not None and not had_prior:

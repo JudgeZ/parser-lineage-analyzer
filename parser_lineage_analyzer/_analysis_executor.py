@@ -35,13 +35,20 @@ def _compute_collision_messages(components: tuple[type, ...]) -> list[str]:
     code) so the regression test in
     ``tests/test_maximal_cleanup_contracts.py`` can pin it by invoking
     this helper rather than re-implementing the loop.
+
+    Identity is the full ``(name, module)`` tuple — two mixins from
+    different modules that happen to share a class name (e.g. both
+    named ``Helpers``) still register as a collision. Comparing only
+    ``__name__`` would have left this real shadowing case undetected.
     """
     seen_methods: dict[str, tuple[str, str]] = {}
     messages: list[str] = []
     for component in components:
+        identity = (component.__name__, component.__module__)
         for method in _component_methods(component):
-            owner_name, owner_module = seen_methods.setdefault(method, (component.__name__, component.__module__))
-            if owner_name != component.__name__:
+            owner = seen_methods.setdefault(method, identity)
+            if owner != identity:
+                owner_name, owner_module = owner
                 messages.append(
                     f"{method} ({owner_name} from {owner_module}, {component.__name__} from {component.__module__})"
                 )

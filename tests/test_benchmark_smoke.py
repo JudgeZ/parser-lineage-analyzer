@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from scripts import benchmark_native_modes
-from tests.conftest import PERF_SLOW_FACTOR
+from tests.perf_budgets import PERF_SLOW_FACTOR
 from tests.test_performance_scaling import (
     _analysis_seconds,
     _hot_branch_append_parser,
@@ -20,7 +20,7 @@ from tests.test_performance_scaling import (
 
 # Wall-clock budgets are pre-multiplied by ``PERF_SLOW_FACTOR`` (default
 # 1.0; CI can export ``PERF_SLOW_FACTOR=N`` to widen the wall budgets
-# without editing this file). See ``tests/conftest.py``.
+# without editing this file). See ``tests/perf_budgets.py``.
 SMOKE_BUDGET_SECONDS = 10.0 * PERF_SLOW_FACTOR
 
 
