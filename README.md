@@ -34,11 +34,14 @@ Mappings:
           source_token: network
           capture_name: dstAddr
           pattern: %{IP:dstAddr}
+
+Warnings:
+  - line 31: mutate.merge duplicate map key 'event.idm.read_only_udm.observer.ip' appears 2 times; keeping the last value (replace/update/add_field/copy/rename/convert) or appending all values (merge)
 ```
 
-(Parser-level warnings, when present, follow the mappings under a `Warnings:`
-heading; pass `--verbose` for parser locations, notes, taints, and
-structured-warning detail.)
+The shipped fixture intentionally contains a duplicate `merge =>` map key so
+the example also demonstrates parser-diagnostic output. Pass `--verbose` for
+parser locations, notes, taints, and structured-warning detail.
 
 A conditional parser returns every reachable mapping with its predicates:
 
@@ -110,10 +113,23 @@ parser-lineage-analyzer PARSER_FILE [UDM_FIELD] [flags]
 | `--summary` | Emit parser/analyzer coverage summary. |
 | `--compact-json` | Bound query JSON for high-cardinality output; samples large arrays, preserves `*_total` counters. |
 | `--compact-summary` | Bound summary diagnostics; includes counts by code. Implies `--summary`. |
-| `--strict` | Exit `3` if the result is unresolved/partial/dynamic, or any warning, taint, or unsupported construct is present. |
+| `--strict` | Exit `3` if any parser-level warning, taint, or unsupported construct is present, OR if the query-level result is unresolved/partial/dynamic. When combined with `--json`/`--compact-json` the same summary is also embedded under a top-level `strict_failure` key. |
 | `--verbose` | Include parser locations, notes, taints, and structured warnings in text output. |
 | `--max-parser-bytes N` | Cap input size in bytes (default `25000000`; `-1` for unlimited). |
 | `--mutate-canonical-order` | Reorder ops within each `mutate{}` block into Logstash's canonical execution order. Default is source order. |
+| `--include-pattern-bodies` | Include the resolved grok regex body in JSON `details`. Off by default to keep `jq` output readable; `resolved_pattern_name` is always emitted. In `--verbose` text mode the body is shown unconditionally. |
+| `--grok-patterns-dir DIR` | Add a directory (or single file) of grok pattern definitions to the bundled Logstash legacy library. Repeatable; later entries override earlier ones. |
+| `--plugin-signatures FILE` | Load plugin signatures from a TOML file. Repeatable; later files override earlier ones. |
+| `--plugin-signatures-dir DIR` | Load every `*.toml` file in DIR as plugin signatures (non-recursive). Repeatable; processed before individual `--plugin-signatures` files. |
+| `--version` | Print the package version and exit. |
+
+Output is plain ASCII; if color is added in a future release, `NO_COLOR`
+will be honored.
+
+`--json` always emits `output_anchors`, `unsupported`, `warnings`,
+`structured_warnings`, and `diagnostics` — as `[]` when empty — so
+downstream consumers can rely on a stable key set. `*_total` counters are
+emitted only by `--compact-json` and remain omitted from plain `--json`.
 
 ### Exit codes
 
@@ -210,6 +226,8 @@ mixed resolved/removed/unresolved paths.
 - Custom or undocumented plugins are reported under `unsupported`.
 - "Which branch did *this* event take?" requires a sample log and is out of
   scope.
+- Regex algebra contradiction-detection is ASCII-aware only; non-ASCII
+  regex predicates degrade to conservative `UNKNOWN`.
 
 ## Testing
 

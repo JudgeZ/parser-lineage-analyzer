@@ -287,8 +287,49 @@ def render_text(result: QueryResult, *, verbose: bool = False, limit: int | None
     return sanitize_for_terminal("\n".join(lines))
 
 
-def render_json(result: QueryResult) -> str:
-    return json.dumps(result.to_json(), indent=2, sort_keys=False)
+# Detail keys that bloat default JSON output without adding lookup-by-name
+# value. The corresponding name (``resolved_pattern_name``) is always
+# preserved, so consumers can join against an external pattern library when
+# they actually need the body. Opt back in via ``--include-pattern-bodies``.
+_DEFAULT_JSON_DETAIL_OMIT = ("resolved_pattern_body",)
+
+
+def _strip_detail_keys(payload: JSONDict, omit: Sequence[str]) -> JSONDict:
+    """Drop ``omit`` keys from every ``mappings[*].sources[*].details`` dict.
+
+    **Mutates ``payload`` in place** and returns it for call-site convenience.
+    Both callers (:func:`render_json`, :func:`render_compact_json`) construct
+    a fresh payload via ``QueryResult.to_json`` / inline-built dicts before
+    handing it here, so the in-place mutation is safe today; if a future
+    caller passes a payload it wants to keep intact, deep-copy it first.
+    """
+    if not omit:
+        return payload
+    mappings = payload.get("mappings")
+    if isinstance(mappings, list):
+        for mapping in mappings:
+            if not isinstance(mapping, dict):
+                continue
+            sources = mapping.get("sources")
+            if not isinstance(sources, list):
+                continue
+            for source in sources:
+                if not isinstance(source, dict):
+                    continue
+                details = source.get("details")
+                if isinstance(details, dict):
+                    for key in omit:
+                        details.pop(key, None)
+                    if not details:
+                        source.pop("details", None)
+    return payload
+
+
+def render_json(result: QueryResult, *, include_pattern_bodies: bool = False) -> str:
+    payload = result.to_json()
+    if not include_pattern_bodies:
+        payload = _strip_detail_keys(payload, _DEFAULT_JSON_DETAIL_OMIT)
+    return json.dumps(payload, indent=2, sort_keys=False)
 
 
 def _compact_mapping_json(mapping: Lineage, limit: int) -> JSONDict:
@@ -315,7 +356,12 @@ def _compact_mapping_json(mapping: Lineage, limit: int) -> JSONDict:
     return out
 
 
-def render_compact_json(result: QueryResult, *, limit: int = COMPACT_JSON_SAMPLE_LIMIT) -> str:
+def render_compact_json(
+    result: QueryResult,
+    *,
+    limit: int = COMPACT_JSON_SAMPLE_LIMIT,
+    include_pattern_bodies: bool = False,
+) -> str:
     compact_limit = _clamp_limit(limit, max_limit=COMPACT_JSON_SAMPLE_LIMIT)
     if compact_limit is None:
         compact_limit = COMPACT_JSON_SAMPLE_LIMIT
@@ -349,4 +395,6 @@ def render_compact_json(result: QueryResult, *, limit: int = COMPACT_JSON_SAMPLE
         "diagnostics": [diagnostic.to_json() for diagnostic in diagnostics[:compact_limit]],
         "diagnostics_total": len(diagnostics),
     }
+    if not include_pattern_bodies:
+        _strip_detail_keys(cast(JSONDict, data), _DEFAULT_JSON_DETAIL_OMIT)
     return json.dumps(data, indent=2, sort_keys=False)

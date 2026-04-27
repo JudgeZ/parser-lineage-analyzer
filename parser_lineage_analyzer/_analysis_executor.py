@@ -25,13 +25,37 @@ def _component_methods(component: type) -> set[str]:
     return {name for name in component.__dict__ if not name.startswith("__")}
 
 
-_seen_methods: dict[str, str] = {}
-_collisions: list[str] = []
-for _component in _EXECUTOR_COMPONENTS:
-    for _method in _component_methods(_component):
-        owner = _seen_methods.setdefault(_method, _component.__name__)
-        if owner != _component.__name__:
-            _collisions.append(f"{_method} ({owner}, {_component.__name__})")
+def _compute_collision_messages(components: tuple[type, ...]) -> list[str]:
+    """Return one diagnostic message per (component, method) collision.
+
+    Each message has the form
+    ``"<method> (<owner_name> from <owner_module>, <new_name> from <new_module>)"``
+    so an operator can identify both offending mixins without spelunking
+    through the mixin order. The format string lives here (production
+    code) so the regression test in
+    ``tests/test_maximal_cleanup_contracts.py`` can pin it by invoking
+    this helper rather than re-implementing the loop.
+
+    Identity is the full ``(name, module)`` tuple — two mixins from
+    different modules that happen to share a class name (e.g. both
+    named ``Helpers``) still register as a collision. Comparing only
+    ``__name__`` would have left this real shadowing case undetected.
+    """
+    seen_methods: dict[str, tuple[str, str]] = {}
+    messages: list[str] = []
+    for component in components:
+        identity = (component.__name__, component.__module__)
+        for method in _component_methods(component):
+            owner = seen_methods.setdefault(method, identity)
+            if owner != identity:
+                owner_name, owner_module = owner
+                messages.append(
+                    f"{method} ({owner_name} from {owner_module}, {component.__name__} from {component.__module__})"
+                )
+    return messages
+
+
+_collisions = _compute_collision_messages(_EXECUTOR_COMPONENTS)
 if _collisions:
     raise RuntimeError(f"AnalysisExecutor mixin method collision(s): {', '.join(sorted(_collisions))}")
 

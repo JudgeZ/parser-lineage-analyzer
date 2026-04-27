@@ -18,8 +18,20 @@ from parser_lineage_analyzer.config_parser import (
 )
 from parser_lineage_analyzer.model import Lineage, QueryResult, SourceRef, TaintReason, _freeze_details
 from parser_lineage_analyzer.render import render_compact_json, render_text
+from tests.perf_budgets import PERF_SLOW_FACTOR
 
 _NATIVE_DISABLED = os.environ.get("PARSER_LINEAGE_ANALYZER_NO_EXT", "").lower() in {"1", "true", "yes", "on"}
+
+
+def _budget(seconds: float) -> float:
+    """Wall-clock budget multiplied by ``PERF_SLOW_FACTOR``.
+
+    The default factor is 1.0 so production CI sees no behavior change;
+    slow runners can export ``PERF_SLOW_FACTOR=N`` to widen every
+    elapsed-vs-budget assert in this file at once. See
+    ``tests/conftest.py`` for the env-var contract.
+    """
+    return seconds * PERF_SLOW_FACTOR
 
 
 def _compact_summary(parser: ReverseParser) -> CompactAnalysisSummaryDict:
@@ -567,32 +579,32 @@ def _real_slow_3_diagnostic_shape_parser() -> str:
 @pytest.mark.parametrize(("count", "budget"), [(5_000, 5.0), (10_000, 8.0), (20_000, 15.0)])
 def test_independent_conditionals_scale_near_linearly(count: int, budget: float):
     elapsed, parser = _analysis_seconds(_independent_if_parser(count))
-    assert elapsed < budget
+    assert elapsed < _budget(budget)
     assert len(parser.analyze().tokens) == (count * 2) + 1
 
 
 def test_large_mutate_only_parser_avoids_descendant_scan_quadratic_behavior():
     elapsed, parser = _analysis_seconds(_mutate_only_parser(20_000))
-    assert elapsed < 8.0
+    assert elapsed < _budget(8.0)
     assert len(parser.analyze().tokens) == 20_001
 
 
 def test_end_to_end_large_flat_mutates_stays_within_total_budget():
     elapsed, parser = _parse_and_analysis_seconds(_mutate_only_parser(20_000))
-    assert elapsed < 15.0
+    assert elapsed < _budget(15.0)
     assert len(parser.analyze().tokens) == 20_001
 
 
 def test_end_to_end_independent_ifs_stays_within_total_budget():
     elapsed, parser = _parse_and_analysis_seconds(_independent_if_parser(20_000))
-    assert elapsed < 22.0
+    assert elapsed < _budget(22.0)
     assert len(parser.analyze().tokens) == 40_001
 
 
 def test_mega_parser_fixture_stays_fast_end_to_end():
     fixture = Path(__file__).parent / "fixtures" / "test_corpus" / "challenge" / "test_mega_parser_perf_budget.cbn"
     elapsed, parser = _parse_and_analysis_seconds(fixture.read_text(encoding="utf-8"))
-    assert elapsed < 3.0
+    assert elapsed < _budget(3.0)
     assert parser.analyze().tokens
 
 
@@ -603,7 +615,7 @@ def test_scanner_strips_many_trailing_comments_without_mangling_comment_like_bod
     stripped = strip_comments_keep_offsets(code)
     elapsed = time.perf_counter() - start
 
-    assert elapsed < 1.0
+    assert elapsed < _budget(1.0)
     assert len(stripped) == len(code)
     assert stripped.count("http://example.com/a//b/") == 10_000
     assert stripped.count("//node") == 10_000
@@ -617,14 +629,14 @@ def test_scanner_comment_free_fast_path_returns_original_text_without_full_scan(
     stripped = strip_comments_keep_offsets(code)
     elapsed = time.perf_counter() - start
 
-    assert elapsed < 0.05
+    assert elapsed < _budget(0.05)
     assert stripped is code
 
 
 @pytest.mark.parametrize(("count", "budget"), [(1_000, 3.0), (2_000, 6.0), (5_000, 20.0)])
 def test_drop_guards_scale_with_delta_merge_and_compact_path_conditions(count: int, budget: float):
     elapsed, parser = _analysis_seconds(_drop_guard_parser(count))
-    assert elapsed < budget
+    assert elapsed < _budget(budget)
     result = parser.query(f"additional.fields.k{count - 1}")
     assert any("drop parser may drop events" in warning for warning in result.warnings)
     conditions = list(result.mappings[0].conditions)
@@ -636,7 +648,7 @@ def test_drop_guards_scale_with_delta_merge_and_compact_path_conditions(count: i
 
 def test_standalone_on_error_blocks_use_delta_reconciliation():
     elapsed, parser = _analysis_seconds(_standalone_on_error_parser(1_000))
-    assert elapsed < 4.0
+    assert elapsed < _budget(4.0)
     result = parser.query("additional.fields.err999")
     assert any("on_error" in cond for mapping in result.mappings for cond in mapping.conditions)
     assert any("NOT(on_error)" in cond for mapping in result.mappings for cond in mapping.conditions)
@@ -645,7 +657,7 @@ def test_standalone_on_error_blocks_use_delta_reconciliation():
 @pytest.mark.parametrize(("count", "budget"), [(1_000, 2.0), (2_000, 4.0), (4_000, 8.0)])
 def test_branch_local_extractors_and_anchors_do_not_force_full_token_merge(count: int, budget: float):
     elapsed, parser = _analysis_seconds(_branch_local_metadata_parser(count))
-    assert elapsed < budget
+    assert elapsed < _budget(budget)
     summary = _compact_summary(parser)
     assert summary["json_extractions_total"] == count
     assert summary["output_anchors_total"] == count
@@ -653,13 +665,13 @@ def test_branch_local_extractors_and_anchors_do_not_force_full_token_merge(count
 
 def test_branch_local_metadata_avoids_quadratic_probe_shape():
     elapsed, parser = _analysis_seconds(_branch_local_metadata_parser(4_000, seed_count=0))
-    assert elapsed < 5.0
+    assert elapsed < _budget(5.0)
     assert _compact_summary(parser)["json_extractions_total"] == 4_000
 
 
 def test_dynamic_loop_alternatives_merge_only_loop_deltas():
     elapsed, parser = _analysis_seconds(_dynamic_loop_parser(1_000))
-    assert elapsed < 8.0
+    assert elapsed < _budget(8.0)
     assert "event.idm.read_only_udm.additional.fields.loop999_4" in parser.analyze().tokens
 
 
@@ -686,7 +698,7 @@ def test_nested_static_loop_over_cumulative_fanout_is_summarized_fast():
     elapsed = time.perf_counter() - start
     result = parser.query("additional.fields.combo")
 
-    assert elapsed < 1.0
+    assert elapsed < _budget(1.0)
     assert summary["warning_counts"]["loop_fanout"] >= 1
     assert summary["taint_counts"]["loop_fanout"] >= 1
     assert result.status == "dynamic"
@@ -701,7 +713,7 @@ def test_nested_dynamic_loop_over_cumulative_fanout_is_summarized_fast():
     elapsed = time.perf_counter() - start
     result = parser.query("additional.fields.cross")
 
-    assert elapsed < 1.0
+    assert elapsed < _budget(1.0)
     assert summary["warning_counts"]["loop_fanout"] >= 1
     assert summary["taint_counts"]["loop_fanout"] >= 1
     assert result.status == "dynamic"
@@ -715,7 +727,7 @@ def test_real_slow_shape_completes_with_loop_fanout_diagnostics():
     summary = _compact_summary(parser)
     elapsed = time.perf_counter() - start
 
-    assert elapsed < 2.0
+    assert elapsed < _budget(2.0)
     assert summary["warning_counts"]["loop_fanout"] >= 2
     assert summary["taint_counts"]["loop_fanout"] >= 2
 
@@ -727,7 +739,7 @@ def test_gsub_transform_fanout_is_summarized_fast():
     elapsed = time.perf_counter() - start
     result = parser.query("additional.fields.posture")
 
-    assert elapsed < 2.0
+    assert elapsed < _budget(2.0)
     assert summary["warning_counts"]["gsub_transform_fanout"] >= 1
     assert summary["taint_counts"]["gsub_transform_fanout"] >= 1
     assert any(
@@ -758,7 +770,7 @@ def test_self_referential_template_chain_is_summarized_fast():
     summary = _compact_summary(parser)
     result = parser.query("target_taxonomy_role")
 
-    assert elapsed < 1.0
+    assert elapsed < _budget(1.0)
     assert summary["warning_counts"]["template_fanout"] >= 1
     assert any(diagnostic.code == "dynamic_loop_iterable" for diagnostic in result.effective_diagnostics)
 
@@ -767,7 +779,7 @@ def test_same_field_independent_branch_chain_uses_cached_condition_facts():
     elapsed, parser = _analysis_seconds(_same_field_port_chain_parser(250))
     result = parser.query("additional.fields.proto")
 
-    assert elapsed < 3.0
+    assert elapsed < _budget(3.0)
     assert any(diagnostic.code == "branch_lineage_fanout" for diagnostic in result.effective_diagnostics)
 
 
@@ -777,7 +789,7 @@ def test_real_slow_2_shape_completes_with_transform_and_branch_fanout_diagnostic
     summary = _compact_summary(parser)
     elapsed = time.perf_counter() - start
 
-    assert elapsed < 5.0
+    assert elapsed < _budget(5.0)
     assert summary["warning_counts"]["gsub_transform_fanout"] >= 1
     assert summary["warning_counts"]["branch_lineage_fanout"] >= 1
     assert summary["warning_counts"]["unresolved_extractor_source"] == 8_000
@@ -797,7 +809,7 @@ def test_literal_collection_merge_over_cap_is_summarized_fast():
     summary = _compact_summary(parser)
     lineages = parser.analyze().tokens["global_threat_feed"]
 
-    assert elapsed < 1.0
+    assert elapsed < _budget(1.0)
     assert len(lineages) == 1
     assert lineages[0].status == "dynamic"
     assert summary["warning_counts"]["literal_collection_fanout"] == 1
@@ -812,7 +824,7 @@ def test_unresolved_json_extractor_diagnostics_are_coalesced_with_logical_counts
         warning for warning in parser.analyze().structured_warnings if warning.code == "unresolved_extractor_source"
     ]
 
-    assert elapsed < 2.0
+    assert elapsed < _budget(2.0)
     assert len(warnings) <= 129
     assert summary["warning_counts"]["unresolved_extractor_source"] == count
     assert summary["taint_counts"]["unresolved_extractor_source"] == count
@@ -824,7 +836,7 @@ def test_coalesced_extractor_counts_survive_branch_merges():
     elapsed, parser = _analysis_seconds(_branched_unresolved_json_extractor_parser(count_per_branch))
     summary = _compact_summary(parser)
 
-    assert elapsed < 1.0
+    assert elapsed < _budget(1.0)
     assert summary["warning_counts"]["unresolved_extractor_source"] == count_per_branch * 2
     assert summary["taint_counts"]["unresolved_extractor_source"] == count_per_branch * 2
 
@@ -849,7 +861,7 @@ def test_real_slow_3_shape_combines_template_and_extractor_summarization():
         warning for warning in parser.analyze().structured_warnings if warning.code == "unresolved_extractor_source"
     ]
 
-    assert elapsed < 5.0
+    assert elapsed < _budget(5.0)
     assert len(unresolved_warnings) <= 129
     assert summary["warning_counts"]["template_fanout"] >= 1
     assert summary["warning_counts"]["gsub_transform_fanout"] >= 1
@@ -858,11 +870,11 @@ def test_real_slow_3_shape_combines_template_and_extractor_summarization():
 
 def test_object_merge_and_parent_remove_rename_use_descendant_indexes():
     elapsed, parser = _analysis_seconds(_object_merge_parser(2_000))
-    assert elapsed < 5.0
+    assert elapsed < _budget(5.0)
     assert "event.idm.read_only_udm.additional.fields.obj1999.child" in parser.analyze().tokens
 
     elapsed, parser = _analysis_seconds(_parent_remove_rename_parser(4_000))
-    assert elapsed < 8.0
+    assert elapsed < _budget(8.0)
     state = parser.analyze()
     assert state.tokens["root3999.child"][0].status == "removed"
     assert "keep3999.child" not in state.tokens
@@ -870,26 +882,26 @@ def test_object_merge_and_parent_remove_rename_use_descendant_indexes():
 
 def test_large_extractor_hint_reference_lookup_uses_target_index():
     elapsed, parser = _analysis_seconds(_json_hint_reference_parser(10_000))
-    assert elapsed < 12.0
+    assert elapsed < _budget(12.0)
     result = parser.query("additional.fields.hint9999")
     assert result.mappings
 
 
 def test_interleaved_extractor_hint_index_updates_incrementally():
     elapsed, parser = _analysis_seconds(_interleaved_json_hint_reference_parser(5_000))
-    assert elapsed < 8.0
+    assert elapsed < _budget(8.0)
     assert parser.query("additional.fields.hint4999").mappings
 
 
 def test_deep_extractor_target_hint_chains_are_indexed_by_prefix():
     elapsed, parser = _analysis_seconds(_json_target_chain_parser(1_000))
-    assert elapsed < 2.0
+    assert elapsed < _budget(2.0)
 
     start = time.perf_counter()
     result = parser.query("additional.fields.deep")
     query_elapsed = time.perf_counter() - start
 
-    assert query_elapsed < 0.25
+    assert query_elapsed < _budget(0.25)
     assert len(result.mappings) == 1_000
     # C1 fix: chained json extractions all flow through a single
     # `mutate.replace` (overwrite), so these 1000 mappings represent
@@ -918,7 +930,7 @@ def test_untargeted_extractor_hints_are_coalesced_before_token_inference_fanout(
     hints = state.extractor_hints_for_token("json", "deep.field")
     elapsed = time.perf_counter() - start
 
-    assert elapsed < 0.5
+    assert elapsed < _budget(0.5)
     assert len(state.json_extractions) == 5_000
     assert len(hints) == 1
     assert len(tuple(hints[0].parser_locations)) == 128
@@ -926,7 +938,7 @@ def test_untargeted_extractor_hints_are_coalesced_before_token_inference_fanout(
 
 def test_repeated_appends_to_same_token_are_incremental():
     elapsed, parser = _analysis_seconds(_repeated_append_parser(20_000))
-    assert elapsed < 10.0
+    assert elapsed < _budget(10.0)
     result = parser.query("additional.fields.repeat")
     assert len(result.mappings) == 20_000
 
@@ -938,7 +950,7 @@ def test_dynamic_destination_query_uses_template_index_for_unrelated_prefixes():
     start = time.perf_counter()
     miss = parser.query("principal.ip")
     unrelated_elapsed = time.perf_counter() - start
-    assert unrelated_elapsed < 0.25
+    assert unrelated_elapsed < _budget(0.25)
     assert miss.status == "unresolved"
 
     hit = parser.query("additional.fields.anything")
@@ -953,7 +965,7 @@ def test_duplicate_anchors_do_not_multiply_dynamic_query_work():
     result = parser.query("additional.fields.anything")
     elapsed = time.perf_counter() - start
 
-    assert elapsed < 1.0
+    assert elapsed < _budget(1.0)
     assert len(result.output_anchors) == 1
     assert len(result.mappings) == 1_000
 
@@ -966,7 +978,7 @@ def test_root_dynamic_templates_use_literal_guard_for_unrelated_query_misses():
     result = parser.query("event.idm.read_only_udm.principal.ip")
     elapsed = time.perf_counter() - start
 
-    assert elapsed < 0.5
+    assert elapsed < _budget(0.5)
     assert result.status == "unresolved"
 
 
@@ -974,7 +986,7 @@ def test_destination_template_static_fanout_is_capped_before_materializing_token
     elapsed, parser = _analysis_seconds(_destination_template_fanout_parser(11))
     state = parser.analyze()
 
-    assert elapsed < 1.0
+    assert elapsed < _budget(1.0)
     assert len(state.tokens) < 100
     assert any(diagnostic.code == "template_fanout" for diagnostic in state.diagnostics)
     assert any(warning.code == "dynamic_destination" for warning in state.structured_warnings)
@@ -992,13 +1004,13 @@ def test_unique_output_anchor_queries_use_prefix_index(count: int, budget: float
     result = parser.query("principal.ip")
     elapsed = time.perf_counter() - start
 
-    assert elapsed < budget
+    assert elapsed < _budget(budget)
     assert len(result.output_anchors) == count
 
 
 def test_hot_repeated_branch_appends_do_not_reclone_existing_lineages():
     elapsed, parser = _analysis_seconds(_hot_branch_append_parser(10_000))
-    assert elapsed < 12.0
+    assert elapsed < _budget(12.0)
     result = parser.query("additional.fields.repeat")
     assert len(result.mappings) <= 4_097
     assert any(diagnostic.code == "branch_lineage_fanout" for diagnostic in result.effective_diagnostics)
@@ -1006,7 +1018,7 @@ def test_hot_repeated_branch_appends_do_not_reclone_existing_lineages():
 
 def test_explicit_else_self_rewrite_lineage_doubling_is_capped():
     elapsed, parser = _analysis_seconds(_explicit_else_self_rewrite_parser(16))
-    assert elapsed < 3.0
+    assert elapsed < _budget(3.0)
     result = parser.query("additional.fields.x")
     assert len(result.mappings) == 1
     assert result.mappings[0].status == "conditional"
@@ -1022,7 +1034,7 @@ def test_anchor_conditioned_dynamic_query_is_sampled_in_compact_output():
     elapsed = time.perf_counter() - start
     payload = render_compact_json(result)
 
-    assert elapsed < 2.0
+    assert elapsed < _budget(2.0)
     assert result.total_mappings == 2_000_000
     assert len(result.mappings) <= 50
     assert '"mappings_total": 2000000' in payload
@@ -1113,7 +1125,7 @@ def test_compact_summary_many_static_fields_samples_without_scanning_full_payloa
     summary = _compact_summary(parser)
     elapsed = time.perf_counter() - start
 
-    assert elapsed < 0.5
+    assert elapsed < _budget(0.5)
     assert summary["udm_fields_total"] == 20_000
     assert len(summary["udm_fields"]) == 50
     assert summary["token_count"] == 20_001
@@ -1127,7 +1139,7 @@ def test_compact_summary_aggregates_high_volume_taints_without_full_payload_grow
     summary = _compact_summary(parser)
     elapsed = time.perf_counter() - start
 
-    assert elapsed < 0.5
+    assert elapsed < _budget(0.5)
     assert summary["taints_total"] == 6_000
     assert summary["taint_counts"]["dynamic_destination"] == 2_000
     assert summary["taint_counts"]["unresolved_token"] == 4_000
@@ -1170,14 +1182,14 @@ def test_text_render_limits_mapping_taints_without_unbounded_output():
     text = render_text(result, verbose=True, limit=5)
     elapsed = time.perf_counter() - start
 
-    assert elapsed < 0.5
+    assert elapsed < _budget(0.5)
     assert text.count("dynamic_destination: taint") == 5
     assert "... 1995 more taints omitted" in text
 
 
 def test_large_else_if_chain_remains_fast():
     elapsed, parser = _analysis_seconds(_else_if_chain_parser(4_000))
-    assert elapsed < 5.0
+    assert elapsed < _budget(5.0)
     result = parser.query("security_result.action")
     assert len(result.mappings) == 4_000
 
@@ -1187,7 +1199,7 @@ def test_secops_routing_else_if_chain_uses_sparse_branch_merge(count: int, budge
     if _NATIVE_DISABLED:
         pytest.skip("strict parse+analysis budget requires native scanner/config acceleration")
     elapsed, parser = _parse_and_analysis_seconds(_secops_routing_chain_parser(count))
-    assert elapsed < budget
+    assert elapsed < _budget(budget)
     summary = _compact_summary(parser)
     assert summary["token_count"] == (count * 3) + 18
     assert summary["json_extractions_total"] == 1
@@ -1360,7 +1372,7 @@ def test_nested_array_config_cache_fast_path_scales_and_returns_fresh_values():
         parsed = parse_config(config)
     elapsed = time.perf_counter() - start
 
-    assert elapsed < 0.5
+    assert elapsed < _budget(0.5)
     assert parsed == [("x", [["a", "b"], ["c", ["d", "e"]], ["f", ["g", ["h"]]]])]
     parsed[0][1].append(["polluted"])
     assert parse_config(config) == [("x", [["a", "b"], ["c", ["d", "e"]], ["f", ["g", ["h"]]]])]
@@ -1414,7 +1426,7 @@ def test_with_conditions_long_existing_tuple_uses_set_membership_fast_path():
     # fast path (cached frozenset, O(1) lookup) finishes in tens of ms on
     # fast hardware; budget is loose to absorb noisy CI runners (Windows
     # py3.11 GHA observed ~0.5s; macOS/Linux observed <0.05s).
-    assert elapsed < 1.5
+    assert elapsed < _budget(1.5)
 
 
 def test_analyzer_state_clone_uses_cow_for_inferred_token_caches():
@@ -1457,7 +1469,7 @@ def test_analyzer_state_clone_uses_cow_for_inferred_token_caches():
     # catching a regression to the unconditional eager-copy path, which
     # would balloon to several seconds at this iteration count once the
     # inferred-cache dicts inflate to realistic sizes.
-    assert elapsed < 3.0
+    assert elapsed < _budget(3.0)
 
     # Sanity-check COW semantics: parent state remains untouched even
     # though every clone mutated its view of the inferred caches.
@@ -1548,7 +1560,7 @@ def test_analyzer_state_clone_uses_per_kind_cow_for_extractor_hint_index():
     # 8s budget still catches a regression with 100% margin while absorbing
     # CI variance. Don't tighten this without re-measuring the pre-fix wall
     # on the slowest runner in the matrix.
-    assert elapsed < 8.0
+    assert elapsed < _budget(8.0)
 
     # Sanity-check COW semantics: parent's index is untouched and still sized
     # to the original 1000 hints per kind, while every clone sees 1001 json

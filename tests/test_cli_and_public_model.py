@@ -213,7 +213,15 @@ def test_cli_list_text_reports_empty_state(tmp_path, capsys):
     assert capsys.readouterr().out == "No UDM fields found.\n"
 
     assert main([str(parser_file), "--list", "--json"]) == 0
-    assert json.loads(capsys.readouterr().out) == {"udm_fields": [], "udm_fields_total": 0}
+    assert json.loads(capsys.readouterr().out) == {
+        "udm_fields": [],
+        "udm_fields_total": 0,
+        "output_anchors": [],
+        "warnings": [],
+        "unsupported": [],
+        "structured_warnings": [],
+        "diagnostics": [],
+    }
 
 
 def test_cli_rejects_json_with_compact_json(tmp_path, capsys):
@@ -927,3 +935,242 @@ def test_legacy_status_alias_is_not_exported():
     assert "Status" not in parser_lineage_analyzer.__all__
     with pytest.raises(AttributeError):
         parser_lineage_analyzer.Status  # noqa: B018  # attribute access asserts removal
+
+
+def test_cli_module_does_not_eagerly_import_analyzer_or_render():
+    """Importing only ``parser_lineage_analyzer.cli`` must not pull in the
+    heavy analyzer/render/model dependency tree (pydantic, lark, native
+    extensions). ``--help`` and ``--version`` rely on this to keep cold
+    startup under ~50ms; a regression here turns those subcommands into
+    multi-hundred-millisecond invocations.
+    """
+    import subprocess
+
+    # Run in a fresh interpreter so import-cache from earlier tests doesn't
+    # contaminate the result.
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys, parser_lineage_analyzer.cli;"
+            "missing = [m for m in ('parser_lineage_analyzer.analyzer',"
+            " 'parser_lineage_analyzer.render', 'parser_lineage_analyzer.model',"
+            " 'pydantic') if m in sys.modules];"
+            "print('|'.join(missing))",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.stdout.strip() == "", f"cli imports must stay lazy; eager loads detected: {result.stdout.strip()}"
+
+
+def test_cli_json_emits_stable_key_set_when_empty(tmp_path, capsys):
+    """``--json`` must always emit ``output_anchors``, ``unsupported``,
+    ``warnings``, ``structured_warnings``, ``diagnostics`` (as ``[]`` when
+    empty) so downstream consumers don't need conditional ``.get()`` reads.
+    ``*_total`` counters remain compact-only.
+    """
+    parser_file = _write_parser(tmp_path)
+    assert main([str(parser_file), "target.ip", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    for key in ("output_anchors", "unsupported", "warnings", "structured_warnings", "diagnostics"):
+        assert key in payload, f"--json missing stable key: {key}"
+    # No sampling occurred → ``*_total`` counters stay out of plain --json.
+    assert "unsupported_total" not in payload
+    assert "warnings_total" not in payload
+
+
+def test_cli_json_and_compact_json_share_stable_keys(tmp_path, capsys):
+    parser_file = _write_parser(tmp_path)
+    assert main([str(parser_file), "target.ip", "--json"]) == 0
+    plain = json.loads(capsys.readouterr().out)
+    assert main([str(parser_file), "target.ip", "--compact-json"]) == 0
+    compact = json.loads(capsys.readouterr().out)
+    shared = {"output_anchors", "unsupported", "warnings", "structured_warnings", "diagnostics"}
+    assert shared.issubset(plain.keys())
+    assert shared.issubset(compact.keys())
+
+
+def test_cli_json_omits_resolved_pattern_body_by_default(tmp_path, capsys):
+    """The 1.3 KB grok pattern body bloats default JSON for downstream
+    consumers piping to ``jq | head``. ``resolved_pattern_name`` is always
+    preserved so consumers can join against an external pattern library;
+    ``--include-pattern-bodies`` opts back in to the body."""
+    code = r"""
+filter {
+  grok { match => { "message" => "%{IP:dstAddr}" } }
+  mutate { replace => { "event.idm.read_only_udm.target.ip" => "%{dstAddr}" } }
+  mutate { merge => { "@output" => "event" } }
+}
+"""
+    parser_file = _write_parser(tmp_path, code)
+
+    assert main([str(parser_file), "target.ip", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    serialized = json.dumps(payload)
+    assert "resolved_pattern_body" not in serialized
+    assert "resolved_pattern_name" in serialized
+
+    assert main([str(parser_file), "target.ip", "--json", "--include-pattern-bodies"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    serialized = json.dumps(payload)
+    assert "resolved_pattern_body" in serialized
+    assert "resolved_pattern_name" in serialized
+
+
+def test_cli_warning_text_uses_single_backslash_repr(tmp_path, capsys):
+    """The shipped fixture has ``\\d`` (single-escape, regex literal-backslash
+    + ``d``); the warning constructor wraps that with ``!r``, doubling each
+    backslash a second time. The CLI must un-double that doubling so users
+    see the regex they wrote."""
+    examples = Path(__file__).resolve().parents[1] / "examples" / "conditional_parser.cbn"
+    assert main([str(examples), "security_result.action"]) == 0
+    out = capsys.readouterr().out
+    assert "Warnings:" in out
+    # The pattern as the user wrote it has exactly two backslashes per
+    # metachar; the over-escape from ``!r`` would produce four.
+    assert "'\\\\d+\\\\.\\\\d+\\\\.\\\\d+\\\\.\\\\d+'" in out
+    assert "'\\\\\\\\d+" not in out
+
+
+def test_quoted_over_escape_regex_terminates_on_adversarial_input():
+    """``_QUOTED_OVER_ESCAPE`` previously had unbounded inner repetitions
+    (``(?:[^'\\\\]|\\\\.)*``) which catastrophic-backtracks on input that
+    lacks a closing quote. The bounded variant (``{0,1024}``) must
+    fail-match in milliseconds — not seconds — on a >1KB adversarial
+    input. Each warning-rendered quoted span is upstream-bounded by
+    ``MAX_REGEX_BODY_BYTES = 512`` so 1024-per-side covers the cap with
+    slack.
+    """
+    import time
+
+    from parser_lineage_analyzer.cli import _QUOTED_OVER_ESCAPE
+    from tests.perf_budgets import PERF_SLOW_FACTOR
+
+    # 1024-char adversarial input: alternating literal/escape chunks
+    # with NO closing quote, so the regex is forced to backtrack.
+    adversarial = "'" + ("a\\\\a\\\\" * 200) + "X"
+    start = time.monotonic()
+    match = _QUOTED_OVER_ESCAPE.search(adversarial)
+    elapsed_ms = (time.monotonic() - start) * 1000.0
+    # The pattern can't match (no closing quote); the asserted contract
+    # is that fail-match takes wall-clock milliseconds, not seconds.
+    # Scale the budget by ``PERF_SLOW_FACTOR`` so coverage runs, ARM
+    # emulation, and contended CI runners don't flake on this gate.
+    assert match is None
+    budget_ms = 50.0 * PERF_SLOW_FACTOR
+    assert elapsed_ms < budget_ms, (
+        f"_QUOTED_OVER_ESCAPE took {elapsed_ms:.1f}ms on adversarial input (budget {budget_ms:.1f}ms)"
+    )
+
+    # Sanity: normal inputs still match correctly under the bounded form.
+    normal = "warning: pattern '\\\\d+' is over-escaped"
+    normal_match = _QUOTED_OVER_ESCAPE.search(normal)
+    assert normal_match is not None
+    assert normal_match.group(1) == "\\\\d+"
+
+
+def test_cli_strict_json_embeds_strict_failure_key(tmp_path, capsys):
+    """``--strict --json`` must not require stderr scraping: the same
+    summary that's printed to stderr is mirrored as a top-level
+    ``strict_failure`` object on the JSON document."""
+    code = r"""
+filter {
+  mutate { replace => { "event.idm.read_only_udm.additional.fields.%{k}" => "%{missing_value}" } }
+  mutate { merge => { "@output" => "event" } }
+}
+"""
+    parser_file = _write_parser(tmp_path, code)
+    assert main([str(parser_file), "additional.fields.foo", "--json", "--strict"]) == 3
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    failure = payload.get("strict_failure")
+    assert failure is not None
+    assert failure["status"] == "dynamic"
+    assert failure["warnings"] >= 1
+    # Stderr line is preserved unchanged for back-compat with non-JSON
+    # consumers.
+    assert "strict:" in captured.err
+
+
+def test_cli_strict_summary_json_embeds_strict_failure_key(tmp_path, capsys):
+    """``--summary --json --strict`` must mirror the strict failure
+    object inside the JSON document so machine consumers don't have to
+    scrape stderr — the same contract query mode already provides."""
+    code = r"""
+filter {
+  mutate { replace => { "event.idm.read_only_udm.additional.fields.%{k}" => "%{missing_value}" } }
+  mutate { merge => { "@output" => "event" } }
+}
+"""
+    parser_file = _write_parser(tmp_path, code)
+    assert main([str(parser_file), "--summary", "--json", "--strict"]) == 3
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    failure = payload.get("strict_failure")
+    assert failure is not None
+    assert failure["warnings"] >= 1
+    assert "strict:" in failure["message"]
+    # Stderr line preserved.
+    assert "strict:" in captured.err
+
+
+def test_cli_strict_list_json_embeds_strict_failure_key(tmp_path, capsys):
+    """``--list --json --strict`` must mirror the strict failure object
+    in the JSON document for the same reason as summary mode."""
+    code = r"""
+filter {
+  mutate { replace => { "event.idm.read_only_udm.additional.fields.%{k}" => "%{missing_value}" } }
+  mutate { merge => { "@output" => "event" } }
+}
+"""
+    parser_file = _write_parser(tmp_path, code)
+    assert main([str(parser_file), "--list", "--json", "--strict"]) == 3
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    failure = payload.get("strict_failure")
+    assert failure is not None
+    assert failure["warnings"] >= 1
+    assert "strict:" in failure["message"]
+    # Stable cross-mode shape is preserved alongside the new key.
+    for key in ("udm_fields", "udm_fields_total", "output_anchors", "warnings"):
+        assert key in payload
+    assert "strict:" in captured.err
+
+
+def test_cli_compact_summary_always_shows_taint_counts_heading(tmp_path, capsys):
+    """``--compact-summary`` must emit the ``Taint counts by code:`` heading
+    (with ``(none)`` when empty) so users discover the field exists."""
+    parser_file = _write_parser(tmp_path)
+    assert main([str(parser_file), "--compact-summary"]) == 0
+    out = capsys.readouterr().out
+    assert "Taint counts by code:" in out
+    assert "(none)" in out
+
+
+def test_cli_strict_help_text_disambiguates_warning_levels():
+    from parser_lineage_analyzer.cli import build_arg_parser
+
+    help_text = build_arg_parser().format_help()
+    # argparse may wrap long lines; collapse whitespace before asserting so
+    # ``query-\n  level`` still passes.
+    flat = " ".join(help_text.split())
+    # The disambiguated help string must mention BOTH parser-level and
+    # query-level gates so users know which conditions trip exit 3.
+    assert "parser-level" in flat
+    assert "query-level" in flat
+
+
+def test_readme_documents_new_cli_flags():
+    readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
+    for flag in (
+        "--grok-patterns-dir",
+        "--plugin-signatures",
+        "--plugin-signatures-dir",
+        "--include-pattern-bodies",
+        "--version",
+    ):
+        assert flag in readme, f"README CLI flag table missing: {flag}"
+    assert "NO_COLOR" in readme
+    assert "ASCII-aware only" in readme

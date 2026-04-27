@@ -1,5 +1,4 @@
 """Pydantic models for plugin configuration validation."""
-# mypy: disable-error-code="explicit-any"
 
 from __future__ import annotations
 
@@ -8,23 +7,23 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 
-class _PluginConfig(BaseModel):
+class _PluginConfig(BaseModel):  # type: ignore[explicit-any]
     model_config = ConfigDict(extra="forbid", strict=True)
 
 
-class JsonPluginConfig(_PluginConfig):
+class JsonPluginConfig(_PluginConfig):  # type: ignore[explicit-any]
     source: str = "message"
     target: str | None = None
     array_function: str | None = None
 
 
-class XmlPluginConfig(_PluginConfig):
+class XmlPluginConfig(_PluginConfig):  # type: ignore[explicit-any]
     source: str = "message"
     xpath: list[object] = Field(default_factory=list)
     namespaces: list[object] = Field(default_factory=list)
 
 
-class KvPluginConfig(_PluginConfig):
+class KvPluginConfig(_PluginConfig):  # type: ignore[explicit-any]
     source: str = "message"
     target: str | None = None
     field_split: str | None = None
@@ -38,29 +37,29 @@ class KvPluginConfig(_PluginConfig):
     allow_duplicate_values: bool | None = None
 
 
-class CsvPluginConfig(_PluginConfig):
+class CsvPluginConfig(_PluginConfig):  # type: ignore[explicit-any]
     source: str = "message"
     separator: str = ","
     columns: list[str] | None = None
 
 
-class GrokPluginConfig(_PluginConfig):
+class GrokPluginConfig(_PluginConfig):  # type: ignore[explicit-any]
     match: list[object] = Field(default_factory=list)
     pattern_definitions: list[object] = Field(default_factory=list)
 
 
-class DissectPluginConfig(_PluginConfig):
+class DissectPluginConfig(_PluginConfig):  # type: ignore[explicit-any]
     mapping: list[object] = Field(default_factory=list)
     match: list[object] = Field(default_factory=list)
 
 
-class DatePluginConfig(_PluginConfig):
+class DatePluginConfig(_PluginConfig):  # type: ignore[explicit-any]
     match: list[object] | None = None
     target: str = "event.idm.read_only_udm.metadata.event_timestamp"
     timezone: str | None = None
 
 
-class Base64PluginConfig(_PluginConfig):
+class Base64PluginConfig(_PluginConfig):  # type: ignore[explicit-any]
     source: str | None = None
     field: str | None = None
     fields: list[object] | str | None = None
@@ -68,7 +67,7 @@ class Base64PluginConfig(_PluginConfig):
     encoding: str = "Standard"
 
 
-class UrlDecodePluginConfig(_PluginConfig):
+class UrlDecodePluginConfig(_PluginConfig):  # type: ignore[explicit-any]
     source: str | None = None
     field: str | None = None
     fields: list[object] | str | None = None
@@ -89,7 +88,7 @@ class UrlDecodePluginConfig(_PluginConfig):
 # TOML load time rather than silently degrading to UNKNOWN) with
 # ``strict=True`` (no implicit type coercion on ``in_place: bool``,
 # etc.).
-class PluginSignature(_PluginConfig):
+class PluginSignature(_PluginConfig):  # type: ignore[explicit-any]
     name: str
     semantic_class: Literal["extractor", "enricher", "transform", "mutate_like", "passthrough"]
     source_keys: list[str] = Field(default_factory=list)

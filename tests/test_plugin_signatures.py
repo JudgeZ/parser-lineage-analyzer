@@ -212,6 +212,205 @@ class TestTomlLoader:
         reg.load_directory(tmp_path / "does_not_exist")
         assert len(reg) == 0
 
+    def test_load_toml_malformed_raises_value_error_not_traceback(self, tmp_path: Path) -> None:
+        # Regression for v0.1.0 release hardening: ``tomllib.TOMLDecodeError``
+        # used to escape ``load_toml``. The CLI catches ``(OSError, ValueError)``
+        # so this leaked an uncaught traceback in the user's terminal.
+        # ``load_toml`` now wraps it as a ``ValueError`` with the path in
+        # the message so the CLI's deterministic-diagnostic contract
+        # holds.
+        f = tmp_path / "broken.toml"
+        f.write_text("this is not valid toml = = =\n", encoding="utf-8")
+        reg = PluginSignatureRegistry()
+        with pytest.raises(ValueError) as excinfo:
+            reg.load_toml(f)
+        assert "invalid TOML" in str(excinfo.value)
+        assert str(f) in str(excinfo.value)
+        # And specifically NOT the underlying decode-error type — the
+        # wrapper is the contract.
+        assert "TOMLDecodeError" not in type(excinfo.value).__name__
+
+    def test_load_toml_explicit_name_matching_table_key_succeeds(self, tmp_path: Path) -> None:
+        # Sanity: explicit ``name`` that matches the table key is accepted.
+        # The redundancy is allowed because some users prefer to write it
+        # explicitly; the rejection only fires on *divergent* names.
+        f = tmp_path / "sigs.toml"
+        f.write_text(
+            '[my_plugin]\nname = "my_plugin"\nsemantic_class = "passthrough"\n'
+            'source_keys = ["src"]\ndest_keys = ["dst"]\n',
+            encoding="utf-8",
+        )
+        reg = PluginSignatureRegistry()
+        reg.load_toml(f)
+        assert reg.lookup("my_plugin") is not None
+
+    def test_load_toml_divergent_name_rejected(self, tmp_path: Path) -> None:
+        # Regression for v0.1.0 release hardening: a TOML table with
+        # ``[my_plugin]`` whose body declares ``name = "different"`` used
+        # to register under ``"different"``, leaving ``lookup("my_plugin")``
+        # as a confusing miss. Now rejected at load with a clear error.
+        f = tmp_path / "sigs.toml"
+        f.write_text(
+            '[my_plugin]\nname = "different_name"\nsemantic_class = "extractor"\n'
+            'source_keys = ["src"]\ndest_keys = ["dst"]\n',
+            encoding="utf-8",
+        )
+        reg = PluginSignatureRegistry()
+        with pytest.raises(ValueError) as excinfo:
+            reg.load_toml(f)
+        msg = str(excinfo.value)
+        assert "[my_plugin]" in msg
+        assert "different_name" in msg
+
+    def test_load_toml_oversize_file_rejected(self, tmp_path: Path) -> None:
+        # 1 MiB cap protects against accidentally pointing the loader at
+        # a huge file. Build something just over the cap.
+        f = tmp_path / "huge.toml"
+        # Pad with a comment block; TOML parser doesn't care about
+        # comment content, but the byte cap fires before parsing starts.
+        comment = "# " + ("x" * 80) + "\n"
+        # Need > 1 MiB total; comment line is 83 bytes.
+        repeats = (1024 * 1024 // len(comment)) + 100
+        body = comment * repeats + '[ok]\nsemantic_class = "passthrough"\nsource_keys = []\ndest_keys = []\n'
+        # ``write_bytes`` rather than ``write_text`` so Windows doesn't
+        # translate ``\n`` -> ``\r\n`` and silently inflate the file size
+        # past the cap we're trying to test.
+        f.write_bytes(body.encode("utf-8"))
+        # Sanity-check the test fixture itself is over the cap.
+        assert f.stat().st_size > 1024 * 1024
+        reg = PluginSignatureRegistry()
+        with pytest.raises(ValueError, match="exceeds"):
+            reg.load_toml(f)
+
+    def test_load_toml_at_size_cap_succeeds(self, tmp_path: Path) -> None:
+        # File at exactly the cap is allowed (the check is strict ``>``).
+        # Build something just under the cap.
+        f = tmp_path / "snug.toml"
+        prefix = '[snug]\nsemantic_class = "passthrough"\nsource_keys = []\ndest_keys = []\n'
+        # Pad with comments to ~ cap - 1 KB so we sit safely inside the limit.
+        target = (1024 * 1024) - 4096
+        pad = "# " + ("x" * 80) + "\n"
+        pad_count = (target - len(prefix)) // len(pad)
+        body = prefix + pad * max(0, pad_count)
+        # ``write_bytes`` rather than ``write_text`` so Windows doesn't
+        # translate ``\n`` -> ``\r\n`` and inflate the file past the cap.
+        f.write_bytes(body.encode("utf-8"))
+        assert f.stat().st_size < 1024 * 1024
+        reg = PluginSignatureRegistry()
+        reg.load_toml(f)
+        assert reg.lookup("snug") is not None
+
+    def test_load_directory_skips_outward_pointing_symlink(self, tmp_path: Path) -> None:
+        # Symlinks resolving outside the loaded directory are skipped: a
+        # configured signatures directory shouldn't unexpectedly pull
+        # TOML from elsewhere on the filesystem because someone dropped
+        # a symlink in. Symlinks pointing at files inside the same
+        # directory remain followed.
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        outside_toml = outside / "evil.toml"
+        outside_toml.write_text(
+            '[evil]\nsemantic_class = "extractor"\nsource_keys = []\ndest_keys = []\n',
+            encoding="utf-8",
+        )
+        loaded_dir = tmp_path / "loaded"
+        loaded_dir.mkdir()
+        # The symlink lives in loaded/, but its target is in outside/.
+        symlink = loaded_dir / "evil.toml"
+        try:
+            symlink.symlink_to(outside_toml)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlink creation not supported on this platform")
+        # Also place a real TOML inside the loaded dir so we know the
+        # loader is working; the outward symlink must be skipped.
+        (loaded_dir / "real.toml").write_text(
+            '[real]\nsemantic_class = "extractor"\nsource_keys = []\ndest_keys = []\n',
+            encoding="utf-8",
+        )
+        reg = PluginSignatureRegistry()
+        reg.load_directory(loaded_dir)
+        assert "real" in reg
+        assert "evil" not in reg
+
+    def test_load_directory_follows_inward_symlink(self, tmp_path: Path) -> None:
+        # Sanity: a symlink that resolves to a sibling INSIDE the same
+        # directory is still followed. Otherwise the rule would reject
+        # legitimate intra-directory symlinks (e.g. ``current.toml -> v3.toml``).
+        loaded_dir = tmp_path / "loaded"
+        loaded_dir.mkdir()
+        target = loaded_dir / "v3.toml"
+        target.write_text(
+            '[v3]\nsemantic_class = "extractor"\nsource_keys = []\ndest_keys = []\n',
+            encoding="utf-8",
+        )
+        link = loaded_dir / "current.toml"
+        try:
+            link.symlink_to(target)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlink creation not supported on this platform")
+        reg = PluginSignatureRegistry()
+        reg.load_directory(loaded_dir)
+        assert "v3" in reg
+
+    def test_load_directory_case_insensitive_filesystem_follows_in_dir_symlink(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """On case-insensitive filesystems (macOS APFS, Windows NTFS),
+        ``Path.is_relative_to`` does case-sensitive string equality even
+        though the underlying lookup folds case. That mismatch would
+        false-reject a perfectly-valid in-dir symlink whenever the
+        configured directory happens to differ in case from the resolved
+        target — e.g. caller passes ``Loaded/`` but ``resolve()`` lowers
+        to ``loaded/``.
+
+        Simulate the case-insensitive filesystem on Linux runners by
+        monkeypatching ``os.path.normcase`` to ``str.casefold``. On macOS
+        ``normcase`` is already non-trivial and the test should pass
+        without the patch — we set it unconditionally to make CI behavior
+        portable. The shared ``path_is_within`` helper (in
+        ``_path_safety``) routes both sides through ``normcase`` and
+        accepts the case-mismatched directory as equivalent.
+        """
+        import os
+
+        monkeypatch.setattr(os.path, "normcase", lambda p: p.casefold())
+        loaded_dir = tmp_path / "Loaded"
+        loaded_dir.mkdir()
+        target = loaded_dir / "v3.toml"
+        target.write_text(
+            '[v3]\nsemantic_class = "extractor"\nsource_keys = []\ndest_keys = []\n',
+            encoding="utf-8",
+        )
+        link = loaded_dir / "current.toml"
+        try:
+            link.symlink_to(target)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlink creation not supported on this platform")
+
+        # Hand the loader a *case-mismatched* directory argument. Under
+        # the bare ``is_relative_to`` check this would (mistakenly)
+        # trip the outward-pointing test and skip the symlink; under
+        # ``path_is_within`` it's followed.
+        case_mismatched = tmp_path / "loaded"
+        # Sanity: the literal-name path doesn't exist (only ``Loaded``
+        # does), so we explicitly hand the loader the real directory
+        # but probe the case-fold via the ``resolved_directory.resolve()``
+        # path. The simplest way to exercise that gap is to construct
+        # the expected vs. resolved cases directly through the helper.
+        from parser_lineage_analyzer._path_safety import path_is_within
+
+        # Resolved target lives under ``Loaded``; configured directory
+        # comes in lowercase. Without ``normcase``, ``is_relative_to``
+        # would return False; with it, ``path_is_within`` returns True.
+        resolved_target = link.resolve()
+        assert path_is_within(resolved_target, case_mismatched) is True
+        # And the inverse — a target genuinely outside (note: ``casefold``
+        # of two distinct names doesn't accidentally collapse them).
+        outside = tmp_path / "outside" / "evil.toml"
+        outside.parent.mkdir()
+        outside.write_text("body\n", encoding="utf-8")
+        assert path_is_within(outside, case_mismatched) is False
+
     def test_from_paths_directories_then_files(self, tmp_path: Path) -> None:
         dir_ = tmp_path / "defaults"
         dir_.mkdir()

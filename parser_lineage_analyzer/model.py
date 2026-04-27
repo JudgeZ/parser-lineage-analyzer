@@ -971,6 +971,13 @@ class QueryResult:
     def to_json(self) -> JSONDict:
         aggregate = self.aggregate()
         diagnostics = self.compute_effective_diagnostics(aggregate)
+        # Schema-stable shape: ``output_anchors``, ``unsupported``,
+        # ``warnings``, ``structured_warnings``, and ``diagnostics`` are
+        # always present (as ``[]`` when empty) so downstream consumers can
+        # rely on a single key set instead of conditional ``.get`` reads.
+        # ``*_total`` counters remain compact-only — they only appear when
+        # the analyzer actually sampled the underlying list (preserving
+        # back-compat with the documented ``--compact-json`` contract).
         data: JSONDict = {
             "udm_field": self.udm_field,
             "status": aggregate.status,
@@ -980,21 +987,16 @@ class QueryResult:
             "has_taints": aggregate.has_taints,
             "normalized_candidates": self.normalized_candidates,
             "mappings": [m.to_json() for m in self.mappings],
+            "output_anchors": [a.to_json() for a in self.output_anchors],
+            "unsupported": list(self.unsupported),
+            "warnings": list(self.warnings),
+            "structured_warnings": [warning.to_json() for warning in self.structured_warnings],
+            "diagnostics": [diagnostic.to_json() for diagnostic in diagnostics],
         }
         if self.normalized_candidates_total is not None:
             data["normalized_candidates_total"] = self.normalized_candidates_total
         if self.mappings_total is not None:
             data["mappings_total"] = self.mappings_total
-        if self.output_anchors:
-            data["output_anchors"] = [a.to_json() for a in self.output_anchors]
-        if self.unsupported:
-            data["unsupported"] = self.unsupported
-        if self.warnings:
-            data["warnings"] = self.warnings
-        if self.structured_warnings:
-            data["structured_warnings"] = [warning.to_json() for warning in self.structured_warnings]
-        if diagnostics:
-            data["diagnostics"] = [diagnostic.to_json() for diagnostic in diagnostics]
         return data
 
 

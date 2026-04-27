@@ -116,25 +116,15 @@ def _literal_fact_from_normalized_condition(condition: str) -> LiteralFact | Non
     # model uses Python ``re.search`` semantics, where ``$`` matches
     # before a final ``\n``. So ``!~ /^foo$/`` excludes both ``"foo"``
     # *and* ``"foo\n"``, while ``LiteralFact("foo", neq)`` would only
-    # exclude ``"foo"``. Sound on its own, but ``negated_literal_fact_from_condition``
-    # would flip the LiteralFact's ``is_equal`` and produce the false
-    # claim that ``NOT(!~ /^foo$/)`` means ``[t] == "foo"`` — a
-    # *narrower* match-set than the true ``=~ /^foo$/`` semantics. That
-    # narrower set unsoundly contradicts a peer fact like ``[t] != "foo"``
-    # whose witness ``"foo\n"`` lies *outside* the narrowed set but
-    # *inside* the true regex language. Letting ``!~`` stay as a
-    # :class:`RegexFact` keeps the algebra reasoning faithful.
+    # exclude ``"foo"``. Sound on its own, but the negated-literal
+    # reduction would flip the LiteralFact's ``is_equal`` and produce
+    # the false claim that ``NOT(!~ /^foo$/)`` means ``[t] == "foo"``
+    # — a *narrower* match-set than the true ``=~ /^foo$/`` semantics.
+    # That narrower set unsoundly contradicts a peer fact like
+    # ``[t] != "foo"`` whose witness ``"foo\n"`` lies *outside* the
+    # narrowed set but *inside* the true regex language. Letting ``!~``
+    # stay as a :class:`RegexFact` keeps the algebra reasoning faithful.
     return None
-
-
-def negated_literal_fact_from_condition(condition: str) -> LiteralFact | None:
-    m = _NEGATED_RE.match(_normalize_condition(condition))
-    if not m:
-        return None
-    fact = _literal_fact_from_normalized_condition(_normalize_condition(m.group("inner")))
-    if fact is None:
-        return None
-    return fact.negated()
 
 
 def _regex_fact_from_normalized_condition(condition: str) -> RegexFact | None:

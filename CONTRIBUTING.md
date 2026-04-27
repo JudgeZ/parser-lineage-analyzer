@@ -58,6 +58,13 @@ component while leaving the others native:
 - `PARSER_LINEAGE_ANALYZER_USE_NATIVE_DEDUPE=0`
 - `PARSER_LINEAGE_ANALYZER_USE_NATIVE_BRANCH_MERGE=0`
 
+Only `_DEDUPE` and `_BRANCH_MERGE` expose per-module toggles. The other
+native components (`_SCANNER`, `_TEMPLATE`, `_CONFIG_FAST`) are gated only
+by the global `PARSER_LINEAGE_ANALYZER_NO_EXT=1` switch — there is no
+fine-grained `USE_NATIVE_*` env var for them today, so debugging a
+suspected mismatch in those modules currently requires the global toggle
+plus a bisect.
+
 ## Lint and type-check
 
 The CI bar is the same set of commands a contributor runs locally:

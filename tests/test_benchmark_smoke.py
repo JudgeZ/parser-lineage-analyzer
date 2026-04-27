@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from scripts import benchmark_native_modes
+from tests.perf_budgets import PERF_SLOW_FACTOR
 from tests.test_performance_scaling import (
     _analysis_seconds,
     _hot_branch_append_parser,
@@ -17,7 +18,10 @@ from tests.test_performance_scaling import (
     _repeated_append_parser,
 )
 
-SMOKE_BUDGET_SECONDS = 10.0
+# Wall-clock budgets are pre-multiplied by ``PERF_SLOW_FACTOR`` (default
+# 1.0; CI can export ``PERF_SLOW_FACTOR=N`` to widen the wall budgets
+# without editing this file). See ``tests/perf_budgets.py``.
+SMOKE_BUDGET_SECONDS = 10.0 * PERF_SLOW_FACTOR
 
 
 @pytest.mark.parametrize(
@@ -84,7 +88,7 @@ def test_native_modes_benchmark_fails_cleanly_when_runner_times_out(monkeypatch,
 # sub-millisecond; the budget below is wide enough for the slowest
 # macos-26 / windows-2022 runners we've observed, narrow enough to flag
 # a genuine order-of-magnitude regression.
-GROK_RESOLVER_BUDGET_SECONDS = 0.500
+GROK_RESOLVER_BUDGET_SECONDS = 0.500 * PERF_SLOW_FACTOR
 
 
 def test_grok_resolver_cold_plus_cached_within_budget(monkeypatch) -> None:

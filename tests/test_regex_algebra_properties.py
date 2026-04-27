@@ -46,16 +46,22 @@ from parser_lineage_analyzer._regex_algebra import (
 
 # The production budget (``ALGEBRA_TIME_BUDGET_MS = 25``) is sized for
 # the analyzer's hot path: many algebra calls per branch, all required
-# to settle within a parser run. Property tests run hundreds of varied
-# inputs in succession and want to verify the algebra's *correctness*,
-# not its bail-out behavior — under runner contention (CI GC pauses,
-# scheduler delays) a 25 ms wall-clock budget can fire on inputs that
-# locally complete in <1 ms, producing asymmetric ``UNKNOWN`` results
-# that break properties like ``test_disjoint_is_symmetric``.
+# to settle within a parser run. A subset of property tests run two
+# algebra calls and require their results to agree (e.g. symmetry of
+# ``regex_languages_disjoint`` calls under both argument orders, or a
+# ground-truth cross-check that depends on a definite YES/NO from the
+# algebra). Under runner contention (CI GC pauses, scheduler delays) a
+# 25 ms wall-clock budget can fire on inputs that locally complete in
+# <1 ms, producing asymmetric ``UNKNOWN`` results that broke
+# ``test_disjoint_is_symmetric`` historically.
 #
-# A 1 s budget per call is still bounded (so a genuine pathological
-# input still bails out) but eliminates the budget-noise flake.
-@pytest.fixture(autouse=True)
+# Rather than inflating the budget for *every* property test in this
+# file (which would mask any real budget regression detected by the
+# simpler tests below), expose this as an opt-in fixture and apply it
+# only to tests that actually pair multiple algebra calls. A 1 s budget
+# per call is still bounded (so a genuine pathological input still bails
+# out) but eliminates the budget-noise flake.
+@pytest.fixture
 def _generous_algebra_budget(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_regex_algebra, "ALGEBRA_TIME_BUDGET_MS", 1000)
 
@@ -159,15 +165,23 @@ def test_subset_is_reflexive(body: str) -> None:
     assert result in (Trilean.YES, Trilean.UNKNOWN)
 
 
+@pytest.mark.usefixtures("_generous_algebra_budget")
 @given(_maybe_alternation(), _maybe_alternation())
 @_HYP_SETTINGS
 def test_disjoint_is_symmetric(a: str, b: str) -> None:
+    # Symmetry pairs two algebra calls and requires them to agree. This
+    # is the original budget-flake offender (see fixture comment above).
     assert regex_languages_disjoint(a, "", b, "") == regex_languages_disjoint(b, "", a, "")
 
 
+@pytest.mark.usefixtures("_generous_algebra_budget")
 @given(_maybe_alternation(), _maybe_alternation())
 @_HYP_SETTINGS
 def test_disjoint_yes_means_no_string_matches_both(a: str, b: str) -> None:
+    # Cross-checks an algebra YES against brute-force enumeration: a
+    # budget-bail UNKNOWN here is fine in isolation but interacts with
+    # the YES->ground-truth contract enough that we hold the budget
+    # stable for clean results across CI variance.
     result = regex_languages_disjoint(a, "", b, "")
     assume(result == Trilean.YES)
     for s in _ALL_STRINGS:
@@ -176,6 +190,7 @@ def test_disjoint_yes_means_no_string_matches_both(a: str, b: str) -> None:
         assert not (a_match and b_match), f"algebra said {a!r} and {b!r} disjoint, but {s!r} matches both"
 
 
+@pytest.mark.usefixtures("_generous_algebra_budget")
 @given(_maybe_alternation(), _maybe_alternation())
 @_HYP_SETTINGS
 def test_disjoint_no_means_some_string_matches_both(a: str, b: str) -> None:
@@ -213,9 +228,12 @@ def test_literal_in_language_no_agrees_with_re(body: str, s: str) -> None:
     assert not _matches_via_re(body, s), f"algebra said {s!r} doesn't match {body!r}, but re finds a match"
 
 
+@pytest.mark.usefixtures("_generous_algebra_budget")
 @given(_maybe_alternation(), _maybe_alternation())
 @_HYP_SETTINGS
 def test_subset_yes_implies_no_witness_in_a_minus_b(a: str, b: str) -> None:
+    # Cross-checks an algebra YES against brute-force enumeration; same
+    # reasoning as the disjoint cross-checks above.
     result = language_subset(a, "", b, "")
     assume(result == Trilean.YES)
     for s in _ALL_STRINGS:
@@ -272,11 +290,15 @@ def _condition_satisfied(body: str, is_match: bool, value: str) -> bool:
     return matched if is_match else not matched
 
 
+@pytest.mark.usefixtures("_generous_algebra_budget")
 @given(_maybe_alternation(), _maybe_alternation(), st.booleans(), st.booleans())
 @_HYP_SETTINGS
 def test_compatible_false_means_no_witness(body_a: str, body_b: str, op_a_is_match: bool, op_b_is_match: bool) -> None:
     """If the algebra calls a pair contradicted, no enumerated value
     satisfies both halves. This is the load-bearing soundness check."""
+    # ``conditions_are_compatible`` runs multiple algebra calls under the
+    # hood, so we hold the budget steady to avoid budget-bail noise
+    # leaking into the contradiction oracle.
     op_a = "=~" if op_a_is_match else "!~"
     op_b = "=~" if op_b_is_match else "!~"
     cond_a = f"[t] {op_a} /{body_a}/"
