@@ -747,7 +747,12 @@ class FlowExecutorMixin:
         )
 
     def _branch_is_reachable(self, cond: str, prior_conditions: list[str], line: int, state: AnalyzerState) -> bool:
-        if condition_is_contradicted(cond, prior_conditions):
+        # PR-C: pass ``implicit_path_conditions`` so synthetic grok-derived
+        # constraints (e.g. ``[src_ip] =~ /<IP_BODY>/`` from a prior
+        # ``%{IP:src_ip}`` capture) participate in the contradiction check.
+        # Empty tuple when no implicit constraints have been recorded —
+        # pre-PR-C behavior preserved exactly.
+        if condition_is_contradicted(cond, prior_conditions, tuple(state.implicit_path_conditions)):
             self._emit_unreachable_branch(cond, line, state)
             return False
         # Phase 3B: tag-set membership reasoning. If a condition checks for a

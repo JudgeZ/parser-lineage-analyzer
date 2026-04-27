@@ -292,6 +292,12 @@ class MutatePluginMixin:
         self, op_l: str, dest: str, lineages: list[Lineage], loc: str, state: AnalyzerState
     ) -> None:
         cast(_MutateContext, self)._store_destination(dest, lineages, loc, state, append=op_l == "add_field")
+        # PR-C: ``replace`` and ``update`` overwrite the destination's value, so
+        # any implicit grok-derived regex constraint on it no longer applies.
+        # ``add_field`` only appends a new alternative; the original token's
+        # value (and constraint) may still hold, so do not invalidate.
+        if op_l in {"replace", "update"}:
+            state.invalidate_implicit_path_conditions_for_token(dest)
 
     def _summarized_self_referential_template(
         self, dest: str, expr: ConfigValue, state: AnalyzerState, loc: str, conditions: list[str]
@@ -428,6 +434,15 @@ class MutatePluginMixin:
                 descendants.append((descendant, new_token, child_loc, child_lins))
             lins = [lin.with_transform("rename", loc) for lin in context._resolve_token(str(src), state, loc)]
             context._store_destination(dest_s, _add_conditions(lins, conditions), loc, state)
+            # PR-C: a token rename carries its implicit grok constraint
+            # to the new name. Without this, ``rename src_ip => client_ip``
+            # would orphan the ``[src_ip] =~ /<IP>/`` constraint and lose
+            # contradiction-detection precision on the renamed field.
+            # Descendant tokens (``src_ip.region`` → ``client_ip.region``)
+            # follow the same path via the descendant loop above.
+            state.rename_implicit_path_conditions(src_s, dest_s)
+            for descendant, new_token, _child_loc, _child_lins in descendants:
+                state.rename_implicit_path_conditions(descendant, new_token)
             # Project descendants onto the new namespace before deleting the
             # source. `rename: user => target.user` must move not just `user`
             # but also `user.name` -> `target.user.name`, mirroring the way
@@ -559,7 +574,14 @@ class MutatePluginMixin:
                 lin.with_transform(f"convert({typ})", loc).with_value_type("string")
                 for lin in context._resolve_token(str(token), state, loc)
             ]
-            context._store_destination(_normalize_field_ref(str(token)), _add_conditions(lins, conditions), loc, state)
+            normalized = _normalize_field_ref(str(token))
+            context._store_destination(normalized, _add_conditions(lins, conditions), loc, state)
+            # PR-C: type-converted tokens no longer satisfy the
+            # original captured-string regex (e.g. an IP captured by
+            # grok then ``convert => "integer"`` is no longer a string
+            # in IP shape). Drop the implicit constraint so downstream
+            # contradiction reasoning falls back to UNKNOWN-as-compatible.
+            state.invalidate_implicit_path_conditions_for_token(normalized)
 
     def _exec_case_mutate_op(
         self, stmt: Plugin, op_l: str, value: ConfigValue, state: AnalyzerState, conditions: list[str]
@@ -569,7 +591,12 @@ class MutatePluginMixin:
         for token in tokens:
             loc = _location(stmt.line, f"mutate.{op_l}", str(token))
             lins = [lin.with_transform(op_l, loc) for lin in context._resolve_token(str(token), state, loc)]
-            context._store_destination(_normalize_field_ref(str(token)), _add_conditions(lins, conditions), loc, state)
+            normalized = _normalize_field_ref(str(token))
+            context._store_destination(normalized, _add_conditions(lins, conditions), loc, state)
+            # PR-C: lowercase/uppercase/strip/merge can change which characters
+            # are present in the value, so a prior grok-derived regex (e.g.
+            # ``[A-Z]+`` after lowercase) may no longer match. Invalidate.
+            state.invalidate_implicit_path_conditions_for_token(normalized)
 
     def _exec_gsub_mutate_op(
         self, stmt: Plugin, op_l: str, value: ConfigValue, state: AnalyzerState, conditions: list[str]
@@ -624,9 +651,11 @@ class MutatePluginMixin:
                     )
                     transform = f"gsub({len(token_triples)} replacements summarized)"
                     lins = [lin.with_transform(transform, loc) for lin in current_lineages]
-                    context._store_destination(
-                        _normalize_field_ref(token_s), _add_conditions(lins, conditions), loc, state
-                    )
+                    normalized = _normalize_field_ref(token_s)
+                    context._store_destination(normalized, _add_conditions(lins, conditions), loc, state)
+                    # PR-C: gsub regex substitution mutates the value, so any
+                    # prior grok-derived implicit constraint no longer holds.
+                    state.invalidate_implicit_path_conditions_for_token(normalized)
                     summarized_tokens.add(token_s)
                     continue
             self._record_gsub_backreference_warning(token, repl, loc, state)
@@ -634,7 +663,10 @@ class MutatePluginMixin:
                 lin.with_transform(f"gsub(pattern={regex}, replacement={repl})", loc)
                 for lin in context._resolve_token(token_s, state, loc)
             ]
-            context._store_destination(_normalize_field_ref(token_s), _add_conditions(lins, conditions), loc, state)
+            normalized = _normalize_field_ref(token_s)
+            context._store_destination(normalized, _add_conditions(lins, conditions), loc, state)
+            # PR-C: see comment above — invalidate post-substitution.
+            state.invalidate_implicit_path_conditions_for_token(normalized)
 
     def _record_gsub_backreference_warning(
         self, token: ConfigValue, repl: ConfigValue, loc: str, state: AnalyzerState
@@ -664,6 +696,9 @@ class MutatePluginMixin:
                 for lin in context._resolve_token(field_s, state, loc)
             ]
             context._store_destination(field_s, _add_conditions(lins, conditions), loc, state)
+            # PR-C: split changes the field's shape (string -> array); the
+            # prior string-regex implicit constraint no longer applies.
+            state.invalidate_implicit_path_conditions_for_token(field_s)
 
     def _exec_join_mutate_op(
         self, stmt: Plugin, op_l: str, value: ConfigValue, state: AnalyzerState, conditions: list[str]
@@ -681,6 +716,10 @@ class MutatePluginMixin:
                 for lin in context._resolve_token(field_s, state, loc)
             ]
             context._store_destination(field_s, _add_conditions(lins, conditions), loc, state)
+            # PR-C: join changes the field's shape (array -> string); the
+            # prior implicit constraint (typically captured pre-array) no
+            # longer reflects the post-join value.
+            state.invalidate_implicit_path_conditions_for_token(field_s)
 
     def _exec_remove_field_mutate_op(
         self, stmt: Plugin, op_l: str, value: ConfigValue, state: AnalyzerState, conditions: list[str]
@@ -730,6 +769,12 @@ class MutatePluginMixin:
                         state.tokens[existing] = removed_lineages
                 else:
                     state.tokens[existing] = [self._removed_lineage(existing, token_s, loc, conditions)]
+                # PR-C: a removed field's value no longer exists, so any
+                # implicit grok-derived constraint over it is moot. Leaving
+                # the constraint in place would let the algebra spuriously
+                # flag downstream ``!~`` predicates as contradictory even
+                # though the field has no value to match against.
+                state.invalidate_implicit_path_conditions_for_token(existing)
 
     def _removed_lineage(self, removed_token: str, original_token: str, loc: str, conditions: list[str]) -> Lineage:
         return Lineage(

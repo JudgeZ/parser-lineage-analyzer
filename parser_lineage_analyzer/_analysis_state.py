@@ -587,6 +587,17 @@ class AnalyzerState:
     diagnostics: list[DiagnosticRecord] = field(default_factory=list)
     dropped: bool = False
     path_conditions: list[str] = field(default_factory=list)
+    # PR-C (F2 algebra wiring): synthetic ``[<token>] =~ /<resolved_body>/``
+    # conditions injected by the grok extractor when a captured field's
+    # pattern name resolves to a known regex via the bundled library.
+    # These constraints are passed alongside ``path_conditions`` to the
+    # contradiction engine so a condition like ``[src_ip] =~ /^[A-Z]+$/``
+    # against an IP-captured token can be proven unreachable. They are
+    # **intentionally separate** from ``path_conditions`` and MUST NOT be
+    # surfaced into emitted ``Lineage.conditions`` — see the audit in
+    # ``_plugins_extractors._extract_grok_captures``.
+    implicit_path_conditions: list[str] = field(default_factory=list)
+    _implicit_path_conditions_seen: set[str] = field(default_factory=set, init=False, repr=False, compare=False)
     _defer_token_index: bool = field(default=False, repr=False, compare=False)
     _unsupported_seen: set[str] = field(default_factory=set, init=False, repr=False, compare=False)
     _warning_seen: set[str] = field(default_factory=set, init=False, repr=False, compare=False)
@@ -1353,8 +1364,13 @@ class AnalyzerState:
             diagnostics=self.diagnostics,
             dropped=self.dropped,
             path_conditions=list(self.path_conditions),
+            implicit_path_conditions=list(self.implicit_path_conditions),
             _defer_token_index=True,
         )
+        # The dedupe-companion set must mirror the cloned list — without
+        # this the cloned branch would re-add already-tracked synthetic
+        # conditions and drift from the parent.
+        clone._implicit_path_conditions_seen = set(self._implicit_path_conditions_seen)
         clone.tokens = (
             self.tokens.fork(clone) if isinstance(self.tokens, TokenStore) else TokenStore(clone, self.tokens)
         )
@@ -1496,6 +1512,53 @@ class AnalyzerState:
         )
         return reason
 
+    def add_implicit_path_condition(self, condition: str) -> bool:
+        """Append a synthetic ``[<token>] =~ /<body>/`` constraint to
+        ``implicit_path_conditions`` if not already present.
+
+        Returns ``True`` if the condition was newly added, ``False`` if
+        it was a duplicate. The dedupe set is checked with O(1) lookup
+        so callers can inject per-grok-capture constraints in tight
+        loops without quadratic growth.
+        """
+        if not condition or condition in self._implicit_path_conditions_seen:
+            return False
+        self._implicit_path_conditions_seen.add(condition)
+        self.implicit_path_conditions.append(condition)
+        return True
+
+    def invalidate_implicit_path_conditions_for_token(self, token: str) -> None:
+        """Drop every implicit constraint whose leading field reference
+        matches ``[<token>]``. Used by mutate operations that change
+        the post-mutation value of a token (``gsub``, ``replace``,
+        ``convert`` — see ``_plugins_mutate``); the original
+        grok-derived regex constraint no longer applies once the value
+        has been transformed."""
+        if not self.implicit_path_conditions or not token:
+            return
+        prefix = f"[{token}] =~ "
+        kept = [cond for cond in self.implicit_path_conditions if not cond.startswith(prefix)]
+        if len(kept) != len(self.implicit_path_conditions):
+            self.implicit_path_conditions = kept
+            self._implicit_path_conditions_seen = set(kept)
+
+    def rename_implicit_path_conditions(self, src_token: str, dst_token: str) -> None:
+        """Substitute the leading field reference from ``[<src_token>]``
+        to ``[<dst_token>]`` in each implicit constraint. Called by
+        ``_exec_rename_mutate_op`` so a token rename carries its
+        implicit grok constraint to the new name."""
+        if not self.implicit_path_conditions or not src_token or src_token == dst_token:
+            return
+        old_prefix = f"[{src_token}] =~ "
+        new_prefix = f"[{dst_token}] =~ "
+        rewritten = [
+            new_prefix + cond[len(old_prefix) :] if cond.startswith(old_prefix) else cond
+            for cond in self.implicit_path_conditions
+        ]
+        if rewritten != self.implicit_path_conditions:
+            self.implicit_path_conditions = rewritten
+            self._implicit_path_conditions_seen = set(rewritten)
+
     def add_unsupported(
         self,
         unsupported: str,
@@ -1628,6 +1691,25 @@ class AnalyzerState:
             if path_condition_sets and all(p == path_condition_sets[0] for p in path_condition_sets)
             else []
         )
+        # PR-C (F2 algebra wiring): implicit grok constraints use
+        # *intersection* across survivors, NOT the all-equal-or-empty
+        # rule used for ``path_conditions``. A constraint like
+        # ``[src_ip] =~ /<IP_BODY>/`` may have been added by a grok
+        # capture on one branch and not another; post-merge it only
+        # holds when every survivor saw the same capture. Order is
+        # preserved from the first survivor for deterministic
+        # downstream cache keys.
+        if survivors:
+            implicit_intersection: set[str] = set(survivors[0].implicit_path_conditions)
+            for st in survivors[1:]:
+                implicit_intersection.intersection_update(st.implicit_path_conditions)
+            self.implicit_path_conditions = [
+                cond for cond in survivors[0].implicit_path_conditions if cond in implicit_intersection
+            ]
+            self._implicit_path_conditions_seen = set(self.implicit_path_conditions)
+        else:
+            self.implicit_path_conditions = []
+            self._implicit_path_conditions_seen = set()
         # T2: merge per-branch tag_state so post-merge `definitely` keeps only
         # tags added on every surviving path, while `possibly` is the union.
         # Branches that dropped (drop {}) don't constrain the merge.

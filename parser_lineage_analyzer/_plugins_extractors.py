@@ -62,6 +62,66 @@ DefaultValue = TypeVar("DefaultValue")
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
 
+# PR-C (F2 algebra wiring) — synthesizing implicit grok constraints.
+#
+# When the grok extractor resolves a captured pattern (e.g. ``%{IP:src_ip}``)
+# we synthesize a synthetic ``[<token>] =~ /<resolved_body>/`` condition
+# string and inject it into ``state.implicit_path_conditions``. The
+# contradiction engine consults that list alongside the user-visible
+# ``path_conditions`` so a downstream ``[src_ip] =~ /^[A-Z]+$/`` can be
+# proven unreachable. Soundness contract: when the synthesis can't
+# produce a parseable condition (e.g. body would need impossible
+# escaping, exceeds the algebra's body cap), we skip it and the algebra
+# returns its UNKNOWN-as-compatible default — never less safe than the
+# pre-PR-C state.
+
+# Bodies that constrain nothing — synthesizing a condition over them
+# would only bloat the cache key and the algebra would return UNKNOWN
+# anyway. The set is conservative: anything not on this list goes
+# through to the algebra and lets it decide.
+_TRIVIAL_GROK_BODIES = frozenset({"", ".*", ".+", "(.*)", "(.+)", "(?:.*)", "(?:.+)"})
+
+# Aligns with ``_regex_algebra.MAX_REGEX_BODY_BYTES`` (currently 512).
+# Synthesizing a longer body would parse-fail downstream in the
+# algebra's ``extract_regex_literal``, so the constraint would have no
+# effect — better to skip the synthesis altogether than spend cache
+# slots on dead conditions.
+#
+# v0.2 limitation: this cap means large bundled patterns (``IP`` ≈ 1.3 KB,
+# ``URI`` ≈ 1.5 KB, ``COMMONAPACHELOG`` ≈ 2.3 KB) don't get implicit
+# constraints. 241 of 316 bundled patterns DO fit. Future PR can either
+# bump ``MAX_REGEX_BODY_BYTES`` or route implicit conditions through a
+# separate code path with a higher per-body budget.
+_MAX_IMPLICIT_GROK_BODY_BYTES = 512
+
+
+def _is_trivial_grok_body(body: str) -> bool:
+    return body in _TRIVIAL_GROK_BODIES
+
+
+def _synthesize_implicit_grok_condition(token: str, body: str) -> str | None:
+    """Build a ``[<token>] =~ /<body>/`` condition string parseable by
+    the regex algebra's ``_EXTRACT_REGEX_LITERAL_RE``.
+
+    Returns ``None`` if the body is too large for the algebra's cap, or
+    contains a newline (the algebra rejects multi-line bodies). Escapes
+    ``/`` characters in the body so the literal-delimited form parses
+    correctly. The token name is wrapped in a single ``[...]`` segment;
+    the algebra's field-extraction regex accepts that form.
+    """
+    if not token or not body:
+        return None
+    if "\n" in body or "\r" in body:
+        return None
+    if len(body.encode("utf-8")) > _MAX_IMPLICIT_GROK_BODY_BYTES:
+        return None
+    # Escape ``\`` first (so subsequent ``/`` escapes don't double-escape),
+    # then ``/`` so the literal delimiter survives. The algebra's body
+    # parser accepts ``\.`` style escapes, so this round-trips cleanly.
+    escaped = body.replace("\\", "\\\\").replace("/", "\\/")
+    return f"[{token}] =~ /{escaped}/"
+
+
 class _ExtractorContext(Protocol):
     def _lineage_from_expression(
         self, expr: str, state: AnalyzerState, loc: str, conditions: list[str], bare_is_token: bool = False
@@ -696,6 +756,18 @@ class ExtractorPluginMixin:
             fragment = m.group(0)
             pattern_name = m.group("pattern")
             resolved_body = expand_pattern(pattern_name, library) if library is not None else None
+            # PR-C (F2 algebra wiring): synthesize an implicit constraint
+            # for the captured field so downstream contradiction reasoning
+            # can leverage the resolved-body shape. Skipped for trivial
+            # bodies (``.*`` family) — they constrain nothing and would
+            # only bloat the cache key. Skipped for bodies that exceed
+            # the algebra's body cap — the resulting condition would be
+            # parsed but the algebra would return UNKNOWN, which is
+            # sound but wasteful.
+            if resolved_body and not _is_trivial_grok_body(resolved_body):
+                implicit = _synthesize_implicit_grok_condition(token, resolved_body)
+                if implicit is not None:
+                    state.add_implicit_path_condition(implicit)
             captured_tokens.setdefault(token, []).extend(
                 self._capture_lineages(
                     "grok_capture",

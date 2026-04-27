@@ -155,7 +155,12 @@ class AssignmentMixin:
                 conditions.extend(ref_conditions)
                 locations.extend(ref_locations)
                 taints.extend(ref_taints)
-            if not conditions_are_compatible(conditions):
+            # PR-C: implicit grok constraints participate in template-
+            # expansion compatibility checks too — a destination expansion
+            # whose conditions are now provably contradictory thanks to a
+            # captured field's resolved-body constraint should be pruned
+            # rather than emitted as a no-op branch.
+            if not conditions_are_compatible(conditions, tuple(state.implicit_path_conditions)):
                 continue
             if all_static:
                 out.append((concrete, _dedupe_strings(conditions), _dedupe_strings(locations)))
@@ -198,9 +203,12 @@ class AssignmentMixin:
             else:
                 self._assign(dest, lineages, state)
             return
+        implicit = tuple(state.implicit_path_conditions)
         for concrete_dest, ref_conditions, ref_locations in expanded:
             concrete_lineages = _add_conditions(lineages, ref_conditions)
-            concrete_lineages = [lin for lin in concrete_lineages if conditions_are_compatible(list(lin.conditions))]
+            concrete_lineages = [
+                lin for lin in concrete_lineages if conditions_are_compatible(list(lin.conditions), implicit)
+            ]
             if not concrete_lineages:
                 continue
             if not ref_locations:
@@ -233,7 +241,7 @@ class AssignmentMixin:
             dynamic_lineages: list[Lineage] = []
             for ref_conditions, ref_locations, ref_taints in dynamic_branches:
                 for lin in _add_conditions(lineages, ref_conditions):
-                    if not conditions_are_compatible(list(lin.conditions)):
+                    if not conditions_are_compatible(list(lin.conditions), implicit):
                         continue
                     clone = lin.with_status("dynamic").with_parser_locations(_dedupe_strings(ref_locations + [loc]))
                     clone = clone.with_notes([f"Dynamic destination field name: {dest}"])

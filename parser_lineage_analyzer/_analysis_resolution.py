@@ -194,7 +194,12 @@ class ResolutionMixin:
                     else:
                         concrete_expr = concrete_expr.replace(f"%{{{ref}}}", static_value)
                 all_conditions = _dedupe_strings(combo_conditions + list(conditions))
-                if not conditions_are_compatible(all_conditions):
+                # PR-C: implicit grok constraints participate so a
+                # template expansion whose conditions become provably
+                # contradictory (e.g. ``[src_ip] == "FOO"`` against an
+                # IP-captured src_ip) is pruned from the resolved
+                # combinations rather than emitted with bad lineage.
+                if not conditions_are_compatible(all_conditions, tuple(state.implicit_path_conditions)):
                     continue
                 if all_static:
                     status: LineageStatus = "conditional" if all_conditions else "constant"
