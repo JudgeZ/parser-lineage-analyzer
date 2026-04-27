@@ -68,6 +68,7 @@ from typing import cast
 
 from pydantic import ValidationError
 
+from ._path_safety import path_is_within
 from ._plugin_config_models import PluginSignature, compact_validation_error
 
 # Standard 3.10-compatible tomllib idiom. ``tomli`` is a runtime dep on
@@ -83,32 +84,6 @@ else:  # pragma: no cover - exercised on 3.10 only
 # file. Enforced before ``tomllib.load`` so a malicious or accidental
 # huge file can't pin memory or stall the parser.
 _MAX_TOML_BYTES = 1024 * 1024
-
-
-def _path_is_within(target: Path, base: Path) -> bool:
-    """Return True if ``target`` lies within ``base``, normalising case where
-    ``os.path.normcase`` does (Windows NTFS).
-
-    ``Path.is_relative_to`` compares path strings byte-for-byte and stays
-    case-sensitive even when the underlying filesystem is not. On Windows
-    that mis-classifies an in-dir symlink whose configured directory
-    differs only in case (``C:\\Foo`` vs ``c:\\foo``) as outward-pointing.
-    Routing both sides through ``os.path.normcase`` closes that gap on
-    Windows; on POSIX (Linux, macOS — both case-sensitive at the
-    Python-path-string level) ``normcase`` is identity so behaviour is
-    unchanged. The check is fail-safe: if a case-insensitive volume is
-    ever encountered with case-mismatched arguments, an in-dir symlink is
-    conservatively rejected rather than falsely accepted.
-    """
-    try:
-        target_norm = os.path.normcase(os.fspath(target))
-        base_norm = os.path.normcase(os.fspath(base))
-    except (OSError, ValueError):
-        return False
-    # Ensure ``base`` ends in a separator so ``/foo/bar`` isn't accepted
-    # as inside ``/foo/barbecue``.
-    base_norm_with_sep = base_norm if base_norm.endswith(os.sep) else base_norm + os.sep
-    return target_norm == base_norm_with_sep.rstrip(os.sep) or target_norm.startswith(base_norm_with_sep)
 
 
 class PluginSignatureRegistry:
@@ -224,7 +199,7 @@ class PluginSignatureRegistry:
         for entry in sorted(directory.iterdir()):
             if entry.is_symlink():
                 # Reject symlinks that escape the configured directory.
-                # ``resolve()`` walks the chain; ``_path_is_within``
+                # ``resolve()`` walks the chain; ``path_is_within``
                 # checks containment via ``os.path.normcase`` so a
                 # case-mismatched directory argument on Windows doesn't
                 # false-positive (POSIX is byte-equal — see helper
@@ -233,7 +208,7 @@ class PluginSignatureRegistry:
                     resolved_target = entry.resolve()
                 except OSError:
                     continue
-                if not _path_is_within(resolved_target, resolved_directory):
+                if not path_is_within(resolved_target, resolved_directory):
                     continue
             if entry.is_file() and entry.suffix == ".toml":
                 self.load_toml(entry)

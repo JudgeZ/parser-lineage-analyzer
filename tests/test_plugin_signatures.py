@@ -362,9 +362,9 @@ class TestTomlLoader:
         monkeypatching ``os.path.normcase`` to ``str.casefold``. On macOS
         ``normcase`` is already non-trivial and the test should pass
         without the patch — we set it unconditionally to make CI behavior
-        portable. The fix in ``_path_is_within`` routes both sides
-        through ``normcase`` and accepts the case-mismatched directory as
-        equivalent.
+        portable. The shared ``path_is_within`` helper (in
+        ``_path_safety``) routes both sides through ``normcase`` and
+        accepts the case-mismatched directory as equivalent.
         """
         import os
 
@@ -385,26 +385,26 @@ class TestTomlLoader:
         # Hand the loader a *case-mismatched* directory argument. Under
         # the bare ``is_relative_to`` check this would (mistakenly)
         # trip the outward-pointing test and skip the symlink; under
-        # ``_path_is_within`` it's followed.
+        # ``path_is_within`` it's followed.
         case_mismatched = tmp_path / "loaded"
         # Sanity: the literal-name path doesn't exist (only ``Loaded``
         # does), so we explicitly hand the loader the real directory
         # but probe the case-fold via the ``resolved_directory.resolve()``
         # path. The simplest way to exercise that gap is to construct
         # the expected vs. resolved cases directly through the helper.
-        from parser_lineage_analyzer._plugin_signatures import _path_is_within
+        from parser_lineage_analyzer._path_safety import path_is_within
 
         # Resolved target lives under ``Loaded``; configured directory
         # comes in lowercase. Without ``normcase``, ``is_relative_to``
-        # would return False; with it, ``_path_is_within`` returns True.
+        # would return False; with it, ``path_is_within`` returns True.
         resolved_target = link.resolve()
-        assert _path_is_within(resolved_target, case_mismatched) is True
+        assert path_is_within(resolved_target, case_mismatched) is True
         # And the inverse — a target genuinely outside (note: ``casefold``
         # of two distinct names doesn't accidentally collapse them).
         outside = tmp_path / "outside" / "evil.toml"
         outside.parent.mkdir()
         outside.write_text("body\n", encoding="utf-8")
-        assert _path_is_within(outside, case_mismatched) is False
+        assert path_is_within(outside, case_mismatched) is False
 
     def test_from_paths_directories_then_files(self, tmp_path: Path) -> None:
         dir_ = tmp_path / "defaults"

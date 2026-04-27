@@ -446,15 +446,19 @@ def test_executor_components_have_no_method_collisions():
 
 
 def test_executor_collision_message_includes_both_modules():
-    """Whitebox: the collision-detection loop in ``_analysis_executor`` formats
+    """Whitebox: ``_analysis_executor._compute_collision_messages`` must format
     each finding as
     ``"<method> (<owner_name> from <owner_module>, <new_name> from <new_module>)"``
     so a real collision diagnostic identifies both offending mixins
     unambiguously. Construct two ad-hoc classes with a colliding method
-    name but distinct ``__module__``s, run the same loop, and verify the
-    rendered string includes both module paths in the documented format.
+    name but distinct ``__module__``s, invoke the production helper, and
+    verify the rendered string includes both module paths.
+
+    Invoking the production helper (rather than re-implementing the
+    loop body in the test) means a future drift in the format string
+    fails this test instead of going unnoticed.
     """
-    from parser_lineage_analyzer._analysis_executor import _component_methods
+    from parser_lineage_analyzer._analysis_executor import _compute_collision_messages
 
     class AdHocOwner:
         def colliding_method(self) -> None:
@@ -470,16 +474,7 @@ def test_executor_collision_message_includes_both_modules():
     AdHocOwner.__module__ = "tests.synthetic.module_owner"
     AdHocNewcomer.__module__ = "tests.synthetic.module_newcomer"
 
-    components = (AdHocOwner, AdHocNewcomer)
-    seen_methods: dict[str, tuple[str, str]] = {}
-    collisions: list[str] = []
-    for component in components:
-        for method in _component_methods(component):
-            owner_name, owner_module = seen_methods.setdefault(method, (component.__name__, component.__module__))
-            if owner_name != component.__name__:
-                collisions.append(
-                    f"{method} ({owner_name} from {owner_module}, {component.__name__} from {component.__module__})"
-                )
+    collisions = _compute_collision_messages((AdHocOwner, AdHocNewcomer))
 
     assert collisions == [
         "colliding_method (AdHocOwner from tests.synthetic.module_owner,"

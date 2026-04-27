@@ -32,6 +32,8 @@ from functools import lru_cache
 from importlib import resources
 from pathlib import Path
 
+from ._path_safety import path_is_within
+
 # Pattern recursion depth — guards against self-references that slip
 # through cycle detection (e.g. mutual recursion through ≥ 33 layers).
 # Set well above the deepest chain in the upstream legacy library
@@ -63,24 +65,6 @@ MAX_PATTERN_FILE_BYTES = 1024 * 1024
 # metadata is the analyzer's concern, handled separately by
 # ``_extract_grok_captures``.
 _GROK_REF_RE = re.compile(r"%\{(?P<name>[A-Za-z0-9_]+)(?::[^}]*)?\}")
-
-
-def _path_is_within(target: Path, base: Path) -> bool:
-    """Return True if ``target`` lies within ``base``, normalising case where
-    ``os.path.normcase`` does (Windows NTFS).
-
-    Mirrors the helper in ``_plugin_signatures.py`` — the two loaders
-    share the same symlink-containment policy and must not drift. See
-    that copy for the full rationale and the POSIX-vs-Windows behaviour
-    of ``os.path.normcase``.
-    """
-    try:
-        target_norm = os.path.normcase(os.fspath(target))
-        base_norm = os.path.normcase(os.fspath(base))
-    except (OSError, ValueError):
-        return False
-    base_norm_with_sep = base_norm if base_norm.endswith(os.sep) else base_norm + os.sep
-    return target_norm == base_norm_with_sep.rstrip(os.sep) or target_norm.startswith(base_norm_with_sep)
 
 
 class GrokLibrary:
@@ -189,19 +173,20 @@ def _is_pattern_data_file(name: str) -> bool:
 def _read_pattern_file_text(path: Path) -> str:
     """Read a pattern file enforcing :data:`MAX_PATTERN_FILE_BYTES`.
 
-    Sizes the file via ``os.path.getsize`` before invoking ``read_text``
-    so we never load a multi-megabyte file into memory. Raises
-    ``ValueError`` when the cap is exceeded; callers that want
-    silent-drop semantics (e.g. directory walks) handle the
-    ``ValueError`` and continue.
+    Sizes the file via ``os.fstat`` on the open handle before reading
+    its contents so the cap check and the read see the same file (no
+    stat-then-open TOCTOU window). Raises ``ValueError`` when the cap
+    is exceeded; callers that want silent-drop semantics (e.g.
+    directory walks) handle the ``ValueError`` and continue.
     """
-    try:
-        size = os.path.getsize(path)
-    except OSError:
-        size = -1
-    if size >= 0 and size > MAX_PATTERN_FILE_BYTES:
-        raise ValueError(f"{path}: grok pattern file exceeds {MAX_PATTERN_FILE_BYTES} bytes")
-    return path.read_text(encoding="utf-8")
+    with path.open("rb") as handle:
+        try:
+            size = os.fstat(handle.fileno()).st_size
+        except OSError:  # pragma: no cover - defensive (fstat almost never fails on an open fd)
+            size = -1
+        if size >= 0 and size > MAX_PATTERN_FILE_BYTES:
+            raise ValueError(f"{path}: grok pattern file exceeds {MAX_PATTERN_FILE_BYTES} bytes")
+        return handle.read().decode("utf-8")
 
 
 def _load_bundled_patterns() -> dict[str, str]:
@@ -281,7 +266,7 @@ def load_library_from_paths(paths: Iterable[Path]) -> GrokLibrary:
                     continue
                 if entry.is_symlink():
                     # Skip symlinks that escape the configured directory.
-                    # ``resolve()`` walks the chain; ``_path_is_within``
+                    # ``resolve()`` walks the chain; ``path_is_within``
                     # checks containment via ``os.path.normcase`` so
                     # case-insensitive filesystems (macOS APFS, Windows
                     # NTFS) don't false-positive on a case-mismatched
@@ -291,7 +276,7 @@ def load_library_from_paths(paths: Iterable[Path]) -> GrokLibrary:
                         resolved_target = entry.resolve()
                     except OSError:
                         continue
-                    if not _path_is_within(resolved_target, resolved_directory):
+                    if not path_is_within(resolved_target, resolved_directory):
                         continue
                 if not entry.is_file():
                     continue

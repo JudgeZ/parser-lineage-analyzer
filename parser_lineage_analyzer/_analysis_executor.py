@@ -25,15 +25,30 @@ def _component_methods(component: type) -> set[str]:
     return {name for name in component.__dict__ if not name.startswith("__")}
 
 
-_seen_methods: dict[str, tuple[str, str]] = {}
-_collisions: list[str] = []
-for _component in _EXECUTOR_COMPONENTS:
-    for _method in _component_methods(_component):
-        owner_name, owner_module = _seen_methods.setdefault(_method, (_component.__name__, _component.__module__))
-        if owner_name != _component.__name__:
-            _collisions.append(
-                f"{_method} ({owner_name} from {owner_module}, {_component.__name__} from {_component.__module__})"
-            )
+def _compute_collision_messages(components: tuple[type, ...]) -> list[str]:
+    """Return one diagnostic message per (component, method) collision.
+
+    Each message has the form
+    ``"<method> (<owner_name> from <owner_module>, <new_name> from <new_module>)"``
+    so an operator can identify both offending mixins without spelunking
+    through the mixin order. The format string lives here (production
+    code) so the regression test in
+    ``tests/test_maximal_cleanup_contracts.py`` can pin it by invoking
+    this helper rather than re-implementing the loop.
+    """
+    seen_methods: dict[str, tuple[str, str]] = {}
+    messages: list[str] = []
+    for component in components:
+        for method in _component_methods(component):
+            owner_name, owner_module = seen_methods.setdefault(method, (component.__name__, component.__module__))
+            if owner_name != component.__name__:
+                messages.append(
+                    f"{method} ({owner_name} from {owner_module}, {component.__name__} from {component.__module__})"
+                )
+    return messages
+
+
+_collisions = _compute_collision_messages(_EXECUTOR_COMPONENTS)
 if _collisions:
     raise RuntimeError(f"AnalysisExecutor mixin method collision(s): {', '.join(sorted(_collisions))}")
 

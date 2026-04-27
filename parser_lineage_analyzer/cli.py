@@ -520,17 +520,29 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Unsupported: {_summary_count(summary, 'unsupported')}")
             print(f"Warnings: {_summary_count(summary, 'warnings')}")
             if args.compact_summary:
-                _print_summary_count_map(summary, "warning_counts", "Warning counts by code")
-                # Always emit the taint heading in compact-summary text mode so
-                # users learn the field exists; ``_print_summary_count_map``
-                # still prints the ``(none)`` placeholder for empty maps.
+                # All three count maps emit their heading even when empty
+                # (with a ``(none)`` placeholder). The discoverability
+                # argument is symmetric: a user who has never seen
+                # warnings/taints/diagnostics shouldn't have to read the
+                # source to learn the field exists.
+                _print_summary_count_map(
+                    summary,
+                    "warning_counts",
+                    "Warning counts by code",
+                    always_show=True,
+                )
                 _print_summary_count_map(
                     summary,
                     "taint_counts",
                     "Taint counts by code",
                     always_show=True,
                 )
-                _print_summary_count_map(summary, "diagnostic_counts", "Diagnostic counts by code")
+                _print_summary_count_map(
+                    summary,
+                    "diagnostic_counts",
+                    "Diagnostic counts by code",
+                    always_show=True,
+                )
             if unsupported:
                 print("Unsupported constructs:")
                 for item in unsupported:

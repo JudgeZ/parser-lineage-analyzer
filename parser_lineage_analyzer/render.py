@@ -295,6 +295,14 @@ _DEFAULT_JSON_DETAIL_OMIT = ("resolved_pattern_body",)
 
 
 def _strip_detail_keys(payload: JSONDict, omit: Sequence[str]) -> JSONDict:
+    """Drop ``omit`` keys from every ``mappings[*].sources[*].details`` dict.
+
+    **Mutates ``payload`` in place** and returns it for call-site convenience.
+    Both callers (:func:`render_json`, :func:`render_compact_json`) construct
+    a fresh payload via ``QueryResult.to_json`` / inline-built dicts before
+    handing it here, so the in-place mutation is safe today; if a future
+    caller passes a payload it wants to keep intact, deep-copy it first.
+    """
     if not omit:
         return payload
     mappings = payload.get("mappings")

@@ -302,16 +302,17 @@ class TestLoadLibraryFromPathsSafety:
     ) -> None:
         """On macOS APFS / Windows NTFS, ``Path.is_relative_to`` does
         case-sensitive string equality even though the underlying lookup
-        folds case. The fix in ``_path_is_within`` routes both sides
-        through ``os.path.normcase`` so a case-mismatched directory
-        argument doesn't false-reject an in-dir symlink. Mirrors the
+        folds case. The shared ``path_is_within`` helper (in
+        ``_path_safety``) routes both sides through ``os.path.normcase``
+        so a case-mismatched directory argument doesn't false-reject an
+        in-dir symlink. Mirrors the
         ``test_load_directory_case_insensitive_filesystem_follows_in_dir_symlink``
         test in the plugin-signatures suite — the two loaders share the
         same containment policy.
         """
         import os
 
-        from parser_lineage_analyzer._grok_patterns import _path_is_within
+        from parser_lineage_analyzer._path_safety import path_is_within
 
         monkeypatch.setattr(os.path, "normcase", lambda p: p.casefold())
         patterns_dir = tmp_path / "Patterns"
@@ -325,18 +326,18 @@ class TestLoadLibraryFromPathsSafety:
             pytest.skip("symlinks unavailable on this filesystem")
 
         # Configured-directory argument differs only in case from the
-        # resolved target's parent. Without ``_path_is_within`` this
+        # resolved target's parent. Without ``path_is_within`` this
         # would mis-classify the in-dir symlink as outward.
         case_mismatched = tmp_path / "patterns"
         resolved_target = link.resolve()
-        assert _path_is_within(resolved_target, case_mismatched) is True
+        assert path_is_within(resolved_target, case_mismatched) is True
         # Sanity: a genuinely-outside path is still rejected even with
         # casefold normalization.
         outside = tmp_path / "elsewhere"
         outside.mkdir()
         outside_file = outside / "secret"
         outside_file.write_text("SECRET secret\n", encoding="utf-8")
-        assert _path_is_within(outside_file, case_mismatched) is False
+        assert path_is_within(outside_file, case_mismatched) is False
 
 
 class TestParserIntegration:
