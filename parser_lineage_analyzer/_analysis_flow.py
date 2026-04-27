@@ -1655,6 +1655,7 @@ class FlowExecutorMixin:
         # template-fanout caps, and dedup apply consistently with the rest
         # of the analyzer instead of the inline ``[]``→``.`` shortcut.
         sets = re.findall(r"event\.set\(\s*['\"]([^'\"]+)['\"]\s*,", full_code)
+        sets.extend(re.findall(r"event\[['\"]([^'\"]+)['\"]\]\s*=", full_code))
         for dest in sets:
             normalized = _normalize_field_ref(dest)
             if not normalized:

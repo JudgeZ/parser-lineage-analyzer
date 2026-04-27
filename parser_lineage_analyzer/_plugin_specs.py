@@ -247,6 +247,7 @@ PLUGIN_SPECS: dict[str, PluginSpec] = {
         runtime_notes=("Ruby is modeled by conservative event API patterns only",),
     ),
     "translate": PluginSpec(
+
         "_exec_translate",
         semantic_class="transform",
         source_keys=("field", "source"),
@@ -395,7 +396,7 @@ PLUGIN_SPECS: dict[str, PluginSpec] = {
     ),
     "elasticsearch": PluginSpec(
         "_exec_external_lookup",
-        dialects=("logstash",),
+
         semantic_class="enricher",
         source_keys=("query", "statement", "url"),
         dest_keys=("target", "get", "fields"),
@@ -420,7 +421,7 @@ PLUGIN_SPECS: dict[str, PluginSpec] = {
     ),
     "memcached": PluginSpec(
         "_exec_external_lookup",
-        dialects=("logstash",),
+
         semantic_class="enricher",
         dest_keys=("target", "get"),
         dest_value_kind="map",
@@ -429,7 +430,7 @@ PLUGIN_SPECS: dict[str, PluginSpec] = {
     ),
     "jdbc_streaming": PluginSpec(
         "_exec_external_lookup",
-        dialects=("logstash",),
+
         semantic_class="enricher",
         source_keys=("statement",),
         dest_keys=("target",),
@@ -449,7 +450,7 @@ PLUGIN_SPECS: dict[str, PluginSpec] = {
     ),
     "http": PluginSpec(
         "_exec_external_lookup",
-        dialects=("logstash",),
+
         semantic_class="enricher",
         source_keys=("url",),
         dest_keys=("target",),
@@ -458,7 +459,7 @@ PLUGIN_SPECS: dict[str, PluginSpec] = {
     ),
     "rest": PluginSpec(
         "_exec_external_lookup",
-        dialects=("logstash",),
+
         semantic_class="enricher",
         source_keys=("url",),
         dest_keys=("target",),
