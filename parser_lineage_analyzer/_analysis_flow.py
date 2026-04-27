@@ -544,6 +544,26 @@ class FlowExecutorMixin:
             branch_records.append(BranchRecord(else_state, else_conditions, False))
         else:
             # No-op path: fields can retain their original lineage.
+            #
+            # Perf note: this clone is a per-``if``-without-``else`` allocation
+            # that microbenchmarks attributed ~7% of analyze time to on
+            # parsers dominated by single-arm ``if`` constructs. A COW
+            # alternative (defer the clone to ``_condition_no_op_record``'s
+            # first write) was investigated and rejected here: the no-op
+            # state is also read by ``_apply_dropped_path_conditions``
+            # (which writes ``path_conditions`` when a sibling drops) and
+            # by ``merge_branch_records`` itself (which reads
+            # ``implicit_path_conditions``, ``tag_state``, and
+            # ``path_conditions`` from each survivor). Sharing
+            # ``original`` directly would alias those fields between the
+            # comparison baseline and the no-op survivor, producing
+            # writes to ``original.path_conditions`` and corrupting later
+            # branch comparisons. The minimal-clone path that would work
+            # requires an "AnalyzerState lite" mode whose blast radius
+            # across the existing COW machinery is larger than the perf
+            # win justifies for v0.1. Revisit when we have a concrete,
+            # measured workload that puts this clone on the critical
+            # path beyond the current 7%.
             no_op_state = original.clone()
             no_op_conditions = _dedupe_strings(conditions + _prior_negation_conditions(prior_negations))
             branch_records.append(BranchRecord(no_op_state, no_op_conditions, True))

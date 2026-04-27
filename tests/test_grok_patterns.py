@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from parser_lineage_analyzer._grok_patterns import (
     MAX_EXPANDED_BODY_BYTES,
     MAX_GROK_RECURSION_DEPTH,
@@ -61,6 +63,21 @@ class TestBundledLibrary:
             if body is None:
                 continue  # pattern hit a budget bound; that's also sound
             assert "%{" not in body, f"{name} expansion still contains %{{...}}: {body[:60]}..."
+
+    def test_uri_expands_within_budget(self) -> None:
+        # The module's recursion-depth comment claims the deepest chain in
+        # the upstream legacy library tops out around URI's 5-layer fan-in
+        # (URIPROTO/USER/URIHOST/URIPATH/...). Pin that as a positive
+        # assertion: ``expand_pattern("URI")`` must return a non-``None``
+        # body so the bundled library — and the comment's depth claim —
+        # cannot silently regress past either the depth bound or
+        # ``MAX_EXPANDED_BODY_BYTES``.
+        body = expand_pattern("URI")
+        assert body is not None, (
+            "URI no longer expands — depth or byte budget regressed; if intentional, "
+            "update _grok_patterns.py:27-30 and remove this assertion."
+        )
+        assert "%{" not in body
 
 
 class TestExpansionFailureModes:
@@ -205,6 +222,121 @@ class TestLoadLibraryFromPaths:
         # tolerates missing paths by returning an empty library.
         lib = load_library_from_paths([tmp_path / "does_not_exist"])
         assert len(lib) == 0
+
+
+class TestLoadLibraryFromPathsSafety:
+    """Loader robustness: byte cap and symlink containment."""
+
+    def test_explicit_oversize_file_raises_value_error(self, tmp_path: Path) -> None:
+        # An explicit file argument that exceeds the per-file byte cap
+        # surfaces as a loud ``ValueError`` so a typo or wrong path
+        # doesn't silently produce an empty library.
+        from parser_lineage_analyzer._grok_patterns import MAX_PATTERN_FILE_BYTES
+
+        oversize = tmp_path / "huge"
+        # 2 MiB of pattern-shaped lines (well past the 1 MiB cap).
+        oversize.write_bytes(b"FOO foo\n" * ((2 * MAX_PATTERN_FILE_BYTES) // 8))
+        with pytest.raises(ValueError, match="exceeds .* bytes"):
+            load_library_from_paths([oversize])
+
+    def test_directory_oversize_file_silently_skipped(self, tmp_path: Path) -> None:
+        # When walking a directory, oversize files are silently skipped
+        # (matches the silent-drop convention for malformed lines).
+        # Sibling files that are within the cap still load.
+        from parser_lineage_analyzer._grok_patterns import MAX_PATTERN_FILE_BYTES
+
+        big = tmp_path / "big"
+        big.write_bytes(b"BIG big\n" * ((2 * MAX_PATTERN_FILE_BYTES) // 8))
+        small = tmp_path / "small"
+        small.write_text("SMALL small\n", encoding="utf-8")
+        lib = load_library_from_paths([tmp_path])
+        # Big was silently skipped; small still loads.
+        assert "BIG" not in lib
+        assert "SMALL" in lib
+        assert expand_pattern("SMALL", lib) == "small"
+
+    def test_in_directory_symlink_is_followed(self, tmp_path: Path) -> None:
+        # Symlinks pointing inside the same directory must still be
+        # followed — the safety bar is "no escape", not "no symlinks".
+        target = tmp_path / "real"
+        target.write_text("VIA_LINK via_link\n", encoding="utf-8")
+        link = tmp_path / "link"
+        try:
+            link.symlink_to(target)
+        except (OSError, NotImplementedError):  # pragma: no cover - filesystem-specific
+            pytest.skip("symlinks unavailable on this filesystem")
+        lib = load_library_from_paths([tmp_path])
+        # Both the original file and the symlink resolve to the same
+        # pattern definitions.
+        assert "VIA_LINK" in lib
+        assert expand_pattern("VIA_LINK", lib) == "via_link"
+
+    def test_outside_directory_symlink_is_skipped(self, tmp_path: Path) -> None:
+        # A symlink whose resolved target sits outside the configured
+        # directory is skipped — a configured patterns dir shouldn't
+        # silently pull pattern data from elsewhere on the filesystem
+        # just because someone dropped a symlink in.
+        outside_dir = tmp_path / "outside"
+        outside_dir.mkdir()
+        outside_file = outside_dir / "secret"
+        outside_file.write_text("SECRET secret\n", encoding="utf-8")
+
+        patterns_dir = tmp_path / "patterns"
+        patterns_dir.mkdir()
+        # Friendly local file that should still load.
+        (patterns_dir / "ok").write_text("OK ok\n", encoding="utf-8")
+        # Escaping symlink: should be skipped.
+        link = patterns_dir / "escape_link"
+        try:
+            link.symlink_to(outside_file)
+        except (OSError, NotImplementedError):  # pragma: no cover - filesystem-specific
+            pytest.skip("symlinks unavailable on this filesystem")
+
+        lib = load_library_from_paths([patterns_dir])
+        assert "OK" in lib
+        # The escaping symlink's target was not loaded.
+        assert "SECRET" not in lib
+
+    def test_case_insensitive_filesystem_follows_in_dir_symlink(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """On macOS APFS / Windows NTFS, ``Path.is_relative_to`` does
+        case-sensitive string equality even though the underlying lookup
+        folds case. The fix in ``_path_is_within`` routes both sides
+        through ``os.path.normcase`` so a case-mismatched directory
+        argument doesn't false-reject an in-dir symlink. Mirrors the
+        ``test_load_directory_case_insensitive_filesystem_follows_in_dir_symlink``
+        test in the plugin-signatures suite — the two loaders share the
+        same containment policy.
+        """
+        import os
+
+        from parser_lineage_analyzer._grok_patterns import _path_is_within
+
+        monkeypatch.setattr(os.path, "normcase", lambda p: p.casefold())
+        patterns_dir = tmp_path / "Patterns"
+        patterns_dir.mkdir()
+        target = patterns_dir / "real"
+        target.write_text("VIA_LINK via_link\n", encoding="utf-8")
+        link = patterns_dir / "link"
+        try:
+            link.symlink_to(target)
+        except (OSError, NotImplementedError):  # pragma: no cover - filesystem-specific
+            pytest.skip("symlinks unavailable on this filesystem")
+
+        # Configured-directory argument differs only in case from the
+        # resolved target's parent. Without ``_path_is_within`` this
+        # would mis-classify the in-dir symlink as outward.
+        case_mismatched = tmp_path / "patterns"
+        resolved_target = link.resolve()
+        assert _path_is_within(resolved_target, case_mismatched) is True
+        # Sanity: a genuinely-outside path is still rejected even with
+        # casefold normalization.
+        outside = tmp_path / "elsewhere"
+        outside.mkdir()
+        outside_file = outside / "secret"
+        outside_file.write_text("SECRET secret\n", encoding="utf-8")
+        assert _path_is_within(outside_file, case_mismatched) is False
 
 
 class TestParserIntegration:

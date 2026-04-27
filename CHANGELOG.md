@@ -13,6 +13,8 @@ Initial public release.
 - `parser-lineage-analyzer` CLI for tracing UDM fields back to the raw-log
   fields, captures, or expressions that populate them in Google SecOps /
   Chronicle parser code.
+- `--include-pattern-bodies` flag opts the resolved grok regex body into JSON `details`.
+- `PERF_SLOW_FACTOR` env var lets CI runners scale perf-test budgets for variance.
 - Public Python API under `parser_lineage_analyzer`:
   - `ReverseParser`, `QueryResult`, `Lineage`, `SourceRef` — analyzer
     entry point and result types.
@@ -43,5 +45,13 @@ Initial public release.
   https://pypi.org/manage/account/publishing/ with the `pypi` environment.
 - Architecture notes in `docs/ARCHITECTURE.md`, security policy in
   `SECURITY.md`, and contributor guide in `CONTRIBUTING.md`.
+
+### Changed
+- `--strict` exit-code semantics clarified in `--help`: parser-level warnings and query-level uncertainty both trigger exit 3.
+- Plain `--json` always emits `unsupported`, `warnings`, `output_anchors`, `structured_warnings`, `diagnostics` (as `[]` when empty); `--json --strict` adds a `strict_failure` object alongside the existing stderr line.
+- Plugin-signature TOML loader: 1 MiB byte cap, malformed TOML wrapped to `ValueError` (no traceback), divergent `[table]` key vs explicit `name` rejected, outward symlink targets in `--plugin-signatures-dir` skipped.
+- Grok pattern loader: 1 MiB per-file size cap and outward symlink targets are skipped.
+- CLI cold-start: `--help` and `--version` no longer import `analyzer`/`pydantic` (~138 ms → ~22 ms on M-series).
+- Re-grok now invalidates a prior implicit grok constraint regardless of body size.
 
 [0.1.0]: https://github.com/JudgeZ/parser-lineage-analyzer/releases/tag/v0.1.0

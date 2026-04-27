@@ -25,13 +25,15 @@ def _component_methods(component: type) -> set[str]:
     return {name for name in component.__dict__ if not name.startswith("__")}
 
 
-_seen_methods: dict[str, str] = {}
+_seen_methods: dict[str, tuple[str, str]] = {}
 _collisions: list[str] = []
 for _component in _EXECUTOR_COMPONENTS:
     for _method in _component_methods(_component):
-        owner = _seen_methods.setdefault(_method, _component.__name__)
-        if owner != _component.__name__:
-            _collisions.append(f"{_method} ({owner}, {_component.__name__})")
+        owner_name, owner_module = _seen_methods.setdefault(_method, (_component.__name__, _component.__module__))
+        if owner_name != _component.__name__:
+            _collisions.append(
+                f"{_method} ({owner_name} from {owner_module}, {_component.__name__} from {_component.__module__})"
+            )
 if _collisions:
     raise RuntimeError(f"AnalysisExecutor mixin method collision(s): {', '.join(sorted(_collisions))}")
 

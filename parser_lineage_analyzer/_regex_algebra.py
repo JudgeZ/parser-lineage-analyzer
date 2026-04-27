@@ -159,12 +159,18 @@ def extract_regex_literal(condition: str) -> RegexLiteral | None:
     condition string.
 
     Returns ``None`` if the condition is not a single ``=~``/``!~``
-    comparison or if the body exceeds ``MAX_REGEX_BODY_BYTES``.
+    comparison, if the body is empty (``[t] =~ //``), or if the body
+    exceeds ``MAX_REGEX_BODY_BYTES``. An empty body matches the empty
+    string under Python's ``re``, so it carries no shape constraint —
+    treating it as a valid extracted literal would only bloat algebra
+    cache keys with degenerate entries.
     """
     match = _EXTRACT_REGEX_LITERAL_RE.match(condition)
     if match is None:
         return None
     body = match.group("body")
+    if not body:
+        return None
     if len(body.encode("utf-8")) > MAX_REGEX_BODY_BYTES:
         return None
     return RegexLiteral(
@@ -362,8 +368,8 @@ def exact_literal_value(condition: str) -> tuple[str, str] | None:
     sibling: under Python ``re.search`` semantics ``$`` matches before a
     final ``\\n``, so ``!~ /^literal$/`` excludes both ``"literal"`` and
     ``"literal\\n"``. Reducing it to ``LiteralFact(literal, is_equal=False)``
-    is sound in isolation but ``negated_literal_fact_from_condition``
-    would flip the ``is_equal`` and produce a *narrower* match-set than
+    is sound in isolation, but the negated-literal reduction would
+    flip the ``is_equal`` and produce a *narrower* match-set than
     ``=~ /^literal$/`` actually has — unsoundly contradicting peer
     facts whose witnesses live outside the narrowed set. ``!~``
     conditions therefore stay as :class:`RegexFact` and the symbolic
@@ -1329,9 +1335,17 @@ def _complete_and_complement_dfa(dfa: _DFA, budget: _Budget) -> _DFA | None:
 def _intersect_empty_dfa(dfa_a: _DFA, dfa_b: _DFA, budget: _Budget) -> Trilean:
     """Intersection emptiness over two DFAs that share an alphabet
     partition. Used by language-subset (where one side is the complement
-    DFA, which only makes sense when fully constructed)."""
+    DFA, which only makes sense when fully constructed).
+
+    A partition mismatch indicates a caller bug, but the file's stated
+    soundness contract is "never raise; degrade to UNKNOWN" — a raised
+    exception would propagate up and crash the analyzer where the only
+    correct fallback is "give up on this comparison and treat the
+    conditions as compatible". Return UNKNOWN so the upstream
+    contradiction check sees a sound-conservative answer.
+    """
     if dfa_a.partition != dfa_b.partition:
-        raise ValueError("DFAs must share the same alphabet partition")
+        return Trilean.UNKNOWN
     num_classes = len(dfa_a.partition)
     start = (dfa_a.start, dfa_b.start)
     seen: set[tuple[int, int]] = {start}
@@ -1395,15 +1409,26 @@ def _ir_for_cached(body: str, flags: str) -> _IR | None:
 # safety from the GIL, but our hand-rolled `if-len; pop; assign`
 # sequence has check-then-act races without an explicit lock.
 
-_DEFINITIVE_DISJOINT_CACHE: OrderedDict[tuple[str, str, str, str], Trilean] = OrderedDict()
-_DEFINITIVE_SUBSET_CACHE: OrderedDict[tuple[str, str, str, str], Trilean] = OrderedDict()
+# Cache keys vary in arity per primitive (4-tuple for binary regex
+# relations, 3-tuple for the unary literal-membership check) so the
+# type alias is just ``tuple[str, ...]`` — keeps all three caches
+# under the same get/put helpers without inventing per-arity machinery.
+_DEFINITIVE_DISJOINT_CACHE: OrderedDict[tuple[str, ...], Trilean] = OrderedDict()
+_DEFINITIVE_SUBSET_CACHE: OrderedDict[tuple[str, ...], Trilean] = OrderedDict()
+# Membership cache for ``literal_in_regex_language``. Keyed
+# ``(literal, body, flags)``. Same skip-on-UNKNOWN policy as the other
+# definitive caches: a transient cap hit must not be memoized.
+_DEFINITIVE_LITERAL_MEMBERSHIP_CACHE: OrderedDict[tuple[str, ...], Trilean] = OrderedDict()
 _DEFINITIVE_CACHE_LOCK = threading.Lock()
 _DEFINITIVE_CACHE_MAX = 4096
 
 
+_DefinitiveKey = tuple[str, ...]
+
+
 def _definitive_get(
-    cache: OrderedDict[tuple[str, str, str, str], Trilean],
-    key: tuple[str, str, str, str],
+    cache: OrderedDict[_DefinitiveKey, Trilean],
+    key: _DefinitiveKey,
 ) -> Trilean | None:
     with _DEFINITIVE_CACHE_LOCK:
         cached = cache.get(key)
@@ -1416,8 +1441,8 @@ def _definitive_get(
 
 
 def _definitive_put(
-    cache: OrderedDict[tuple[str, str, str, str], Trilean],
-    key: tuple[str, str, str, str],
+    cache: OrderedDict[_DefinitiveKey, Trilean],
+    key: _DefinitiveKey,
     value: Trilean,
 ) -> None:
     if value == Trilean.UNKNOWN:
@@ -1534,6 +1559,16 @@ def literal_in_regex_language(literal: str, body: str, flags: str) -> Trilean:
     """
     if len(literal.encode("utf-8")) > MAX_REGEX_BODY_BYTES:
         return Trilean.UNKNOWN
+    key: tuple[str, ...] = (literal, body, flags)
+    cached = _definitive_get(_DEFINITIVE_LITERAL_MEMBERSHIP_CACHE, key)
+    if cached is not None:
+        return cached
+    result = _literal_in_regex_language_compute(literal, body, flags)
+    _definitive_put(_DEFINITIVE_LITERAL_MEMBERSHIP_CACHE, key, result)
+    return result
+
+
+def _literal_in_regex_language_compute(literal: str, body: str, flags: str) -> Trilean:
     # Build the singleton IR ``literal`` (anchored at both ends; no
     # implicit Σ* wrapping) and intersect against the regex body's IR.
     singleton_ir = _ir_for_literal_singleton(literal)

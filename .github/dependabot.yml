@@ -7,9 +7,16 @@ updates:
     open-pull-requests-limit: 5
     versioning-strategy: increase
     groups:
+      # `applies-to: version-updates` scopes these groups to routine weekly
+      # bumps only. Security advisories are NOT grouped, so each Dependabot
+      # security PR ships standalone and can land independently of the
+      # weekly batch — important when one CVE fix would otherwise be held
+      # back behind unrelated dev/prod updates.
       python-dev:
+        applies-to: version-updates
         dependency-type: development
       python-prod:
+        applies-to: version-updates
         dependency-type: production
 
   - package-ecosystem: github-actions
@@ -19,5 +26,6 @@ updates:
     open-pull-requests-limit: 5
     groups:
       actions:
+        applies-to: version-updates
         patterns:
           - "*"

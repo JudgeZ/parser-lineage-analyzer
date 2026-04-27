@@ -12,10 +12,19 @@ partial expansion when *anything* about the pattern is uncertain
 (missing name, reference cycle, depth bound hit, byte bound hit). The
 analyzer treats ``None`` as "no implicit constraint" — i.e. UNKNOWN —
 which propagates through the algebra as compatible-by-default.
+
+Loader robustness: per-file size cap (``MAX_PATTERN_FILE_BYTES``)
+defends against accidentally pointing the loader at a multi-megabyte
+log/dump. Symlinks whose resolved target sits outside the loaded
+directory are skipped to avoid auto-walking pulling pattern data from
+elsewhere on the filesystem when a directory is enumerated. This
+mirrors the loader policy in ``_plugin_signatures.py`` and is the same
+soundness/safety bar.
 """
 
 from __future__ import annotations
 
+import os
 import re
 import threading
 from collections.abc import Iterable, Mapping
@@ -36,6 +45,17 @@ MAX_GROK_RECURSION_DEPTH = 32
 # ``MAX_REGEX_BODY_BYTES`` threshold downstream.
 MAX_EXPANDED_BODY_BYTES = 8192
 
+# Per-file size cap for the pattern data loader. A real pattern file
+# tops out in the low tens of KB (the bundled Logstash legacy bundle's
+# largest file is well under 32 KB); 1 MiB is a sanity guard against
+# accidentally enumerating a multi-megabyte log or dump that happens to
+# live in a configured ``--grok-patterns-dir``. Enforced before
+# ``read_text`` so we never pin memory on a hostile or accidental huge
+# file. The bundled-loader and explicit-file paths raise ``ValueError``;
+# the directory-walk path silently skips oversize files (matching the
+# loader's existing silent-drop policy for malformed entries).
+MAX_PATTERN_FILE_BYTES = 1024 * 1024
+
 # Matches a Logstash grok reference exactly as the upstream preprocessor
 # does: ``%{NAME}``, ``%{NAME:capture}``, or ``%{NAME:capture:type}``.
 # CAPTURE and TYPE are intentionally stripped during expansion — the
@@ -43,6 +63,24 @@ MAX_EXPANDED_BODY_BYTES = 8192
 # metadata is the analyzer's concern, handled separately by
 # ``_extract_grok_captures``.
 _GROK_REF_RE = re.compile(r"%\{(?P<name>[A-Za-z0-9_]+)(?::[^}]*)?\}")
+
+
+def _path_is_within(target: Path, base: Path) -> bool:
+    """Return True if ``target`` lies within ``base``, normalising case where
+    ``os.path.normcase`` does (Windows NTFS).
+
+    Mirrors the helper in ``_plugin_signatures.py`` — the two loaders
+    share the same symlink-containment policy and must not drift. See
+    that copy for the full rationale and the POSIX-vs-Windows behaviour
+    of ``os.path.normcase``.
+    """
+    try:
+        target_norm = os.path.normcase(os.fspath(target))
+        base_norm = os.path.normcase(os.fspath(base))
+    except (OSError, ValueError):
+        return False
+    base_norm_with_sep = base_norm if base_norm.endswith(os.sep) else base_norm + os.sep
+    return target_norm == base_norm_with_sep.rstrip(os.sep) or target_norm.startswith(base_norm_with_sep)
 
 
 class GrokLibrary:
@@ -148,6 +186,24 @@ def _is_pattern_data_file(name: str) -> bool:
     return not (suffix and suffix in _NON_PATTERN_EXTENSIONS)
 
 
+def _read_pattern_file_text(path: Path) -> str:
+    """Read a pattern file enforcing :data:`MAX_PATTERN_FILE_BYTES`.
+
+    Sizes the file via ``os.path.getsize`` before invoking ``read_text``
+    so we never load a multi-megabyte file into memory. Raises
+    ``ValueError`` when the cap is exceeded; callers that want
+    silent-drop semantics (e.g. directory walks) handle the
+    ``ValueError`` and continue.
+    """
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        size = -1
+    if size >= 0 and size > MAX_PATTERN_FILE_BYTES:
+        raise ValueError(f"{path}: grok pattern file exceeds {MAX_PATTERN_FILE_BYTES} bytes")
+    return path.read_text(encoding="utf-8")
+
+
 def _load_bundled_patterns() -> dict[str, str]:
     """Parse every data file under ``grok_patterns/`` (skipping NOTICE,
     LICENSE, ``__init__.py``, hidden files, and any file with an
@@ -163,6 +219,10 @@ def _load_bundled_patterns() -> dict[str, str]:
             continue
         if not entry.is_file():
             continue
+        # ``importlib.resources.abc.Traversable.read_text`` doesn't expose
+        # a ``stat``; the bundled directory is a known-finite checked-in
+        # asset, so we trust the existing read here and rely on the byte
+        # cap on user-supplied paths (``load_library_from_paths``).
         out.update(_parse_pattern_file_text(entry.read_text(encoding="utf-8")))
     return out
 
@@ -199,15 +259,54 @@ def _parse_pattern_file_text(text: str) -> dict[str, str]:
 def load_library_from_paths(paths: Iterable[Path]) -> GrokLibrary:
     """Build a library from one or more user-supplied pattern files or
     directories. Files are merged in argument order with last-write-wins;
-    inside a directory, files are merged in sorted-name order."""
+    inside a directory, files are merged in sorted-name order.
+
+    Per-file safety: the byte cap (:data:`MAX_PATTERN_FILE_BYTES`) is
+    enforced on every read. Inside a directory walk, oversize files and
+    symlinks pointing outside the directory are silently skipped (the
+    same drop-on-uncertainty policy this module's malformed-line parser
+    uses). When ``path`` is itself an explicit file argument, an oversize
+    file raises ``ValueError`` so the caller's typo or wrong path
+    surfaces as a loud failure rather than an empty library.
+    """
     merged: dict[str, str] = {}
     for path in paths:
         if path.is_dir():
+            try:
+                resolved_directory = path.resolve()
+            except OSError:  # pragma: no cover - defensive
+                resolved_directory = path
             for entry in sorted(path.iterdir(), key=lambda p: p.name):
-                if entry.is_file() and not entry.name.startswith("."):
-                    merged.update(_parse_pattern_file_text(entry.read_text(encoding="utf-8")))
+                if entry.name.startswith("."):
+                    continue
+                if entry.is_symlink():
+                    # Skip symlinks that escape the configured directory.
+                    # ``resolve()`` walks the chain; ``_path_is_within``
+                    # checks containment via ``os.path.normcase`` so
+                    # case-insensitive filesystems (macOS APFS, Windows
+                    # NTFS) don't false-positive on a case-mismatched
+                    # directory argument. In-dir symlinks (sibling
+                    # links) are still followed.
+                    try:
+                        resolved_target = entry.resolve()
+                    except OSError:
+                        continue
+                    if not _path_is_within(resolved_target, resolved_directory):
+                        continue
+                if not entry.is_file():
+                    continue
+                # Directory walk: silently drop oversize files (matches
+                # the silent-drop convention for malformed pattern lines
+                # in ``_parse_pattern_file_text``).
+                try:
+                    text = _read_pattern_file_text(entry)
+                except ValueError:
+                    continue
+                merged.update(_parse_pattern_file_text(text))
         elif path.is_file():
-            merged.update(_parse_pattern_file_text(path.read_text(encoding="utf-8")))
+            # Explicit file argument: oversize is a loud ValueError
+            # (caller pointed at this file deliberately).
+            merged.update(_parse_pattern_file_text(_read_pattern_file_text(path)))
         # Silently skip non-existent paths — caller validates if it cares.
     return GrokLibrary(merged)
 

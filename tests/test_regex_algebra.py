@@ -56,6 +56,28 @@ from parser_lineage_analyzer._regex_algebra import (
 )
 
 
+@pytest.fixture
+def _clear_definitive_caches() -> Iterator[None]:
+    """Clear the three module-level LRU caches before *and* after the
+    test, so a stray entry from an earlier run can't perturb a
+    timing-sensitive cache assertion (sizes, eviction order, miss
+    behavior). Tests that exercise the definitive caches opt in via
+    ``@pytest.mark.usefixtures("_clear_definitive_caches")``.
+
+    The canonical clear API is ``cache.clear()`` on each
+    ``OrderedDict`` — there is no module-level ``clear_caches`` helper.
+    """
+    from parser_lineage_analyzer import _regex_algebra as algebra
+
+    algebra._DEFINITIVE_DISJOINT_CACHE.clear()
+    algebra._DEFINITIVE_SUBSET_CACHE.clear()
+    algebra._DEFINITIVE_LITERAL_MEMBERSHIP_CACHE.clear()
+    yield
+    algebra._DEFINITIVE_DISJOINT_CACHE.clear()
+    algebra._DEFINITIVE_SUBSET_CACHE.clear()
+    algebra._DEFINITIVE_LITERAL_MEMBERSHIP_CACHE.clear()
+
+
 class TestExtractRegexLiteral:
     @pytest.mark.parametrize(
         "condition,field,body,flags",
@@ -90,6 +112,19 @@ class TestExtractRegexLiteral:
         body = "a" * (MAX_REGEX_BODY_BYTES + 1)
         condition = f"[t] =~ /{body}/"
         assert extract_regex_literal(condition) is None
+
+    def test_rejects_empty_body(self) -> None:
+        # Regression for v0.1.0 release hardening: an empty body
+        # (``[t] =~ //``) matches the empty string under Python ``re`` so
+        # carries no shape constraint. Returning a ``RegexLiteral`` for
+        # it would only bloat algebra cache keys with degenerate entries.
+        assert extract_regex_literal("[t] =~ //") is None
+        assert extract_regex_literal("[t] !~ //") is None
+        # A body containing just a flag character (so ``body`` matches
+        # but is empty) sanity-check; the regex requires at least the
+        # body group to capture, but the trailing flag-letters group is
+        # separate. Just confirm a plausible empty form rejects.
+        assert extract_regex_literal("[t] =~ //i") is None
 
 
 class TestExactLiteralRecognition:
@@ -383,6 +418,34 @@ class TestLanguageSubset:
         # Σ* contains any anchored literal.
         assert language_subset("^foo$", "", ".*", "") == Trilean.YES
 
+    def test_intersect_empty_dfa_partition_mismatch_returns_unknown(self) -> None:
+        # Regression for v0.1.0 release hardening: ``_intersect_empty_dfa``
+        # used to ``raise ValueError`` on a partition mismatch. The file's
+        # stated soundness contract is "never raise; degrade to UNKNOWN" —
+        # the raise propagated up and crashed the analyzer instead of
+        # falling back to compatible-as-default.
+        #
+        # The public callers (``language_subset``) construct both DFAs
+        # over the same partition by design, so this code path is not
+        # reachable from public APIs in the current implementation. The
+        # white-box test invokes ``_intersect_empty_dfa`` directly with
+        # mismatched partitions to pin the never-raise contract.
+        from parser_lineage_analyzer._regex_algebra import (
+            _DFA,
+            _Budget,
+            _CharSet,
+            _intersect_empty_dfa,
+        )
+
+        # Two minimal DFAs over different alphabets. Concrete shape doesn't
+        # matter for this test; only the partition-equality check fires.
+        cs_a = _CharSet(frozenset({ord("a")}), False)
+        cs_b = _CharSet(frozenset({ord("b")}), False)
+        dfa_a = _DFA(num_states=1, start=0, accepts=frozenset({0}), transitions={}, partition=(cs_a,))
+        dfa_b = _DFA(num_states=1, start=0, accepts=frozenset({0}), transitions={}, partition=(cs_b,))
+        result = _intersect_empty_dfa(dfa_a, dfa_b, _Budget.fresh())
+        assert result == Trilean.UNKNOWN
+
 
 class TestLiteralInRegexLanguage:
     """``literal_in_regex_language(literal, body, flags)`` returns YES
@@ -413,6 +476,71 @@ class TestLiteralInRegexLanguage:
     def test_oversized_literal_is_unknown(self) -> None:
         big = "x" * (MAX_REGEX_BODY_BYTES + 1)
         assert literal_in_regex_language(big, "^x+$", "") == Trilean.UNKNOWN
+
+    @pytest.mark.usefixtures("_clear_definitive_caches")
+    def test_definitive_cache_caches_yes_no(self) -> None:
+        # Regression for v0.1.0 release hardening: ``literal_in_regex_language``
+        # now has its own definitive-only cache mirroring the disjoint /
+        # subset caches. YES and NO answers stick; UNKNOWN does not.
+        from parser_lineage_analyzer import _regex_algebra as algebra
+
+        # Unique key not used elsewhere in the suite.
+        literal = "uncached_membership_lit"
+        body = "^uncached_membership_lit$"
+        key: tuple[str, ...] = (literal, body, "")
+
+        # Cold call — populates the cache.
+        result = literal_in_regex_language(literal, body, "")
+        assert result == Trilean.YES
+        assert algebra._DEFINITIVE_LITERAL_MEMBERSHIP_CACHE.get(key) == Trilean.YES
+
+        # NO answer also caches.
+        body_no = "^totally_different$"
+        key_no: tuple[str, ...] = (literal, body_no, "")
+        result_no = literal_in_regex_language(literal, body_no, "")
+        assert result_no == Trilean.NO
+        assert algebra._DEFINITIVE_LITERAL_MEMBERSHIP_CACHE.get(key_no) == Trilean.NO
+
+    @pytest.mark.usefixtures("_clear_definitive_caches")
+    def test_definitive_cache_skips_unknown(self) -> None:
+        # UNKNOWN must NOT be memoized: a transient cap hit shouldn't
+        # mask a definitive YES/NO that a fresh budget could prove.
+        from parser_lineage_analyzer import _regex_algebra as algebra
+
+        literal = "uncached_membership_unknown_lit"
+        body = "^uncached_membership_unknown$"
+        key: tuple[str, ...] = (literal, body, "")
+
+        # Force an UNKNOWN by patching the inner BFS to bail.
+        original = algebra._intersect_empty_nfa
+        algebra._intersect_empty_nfa = lambda *_args, **_kwargs: Trilean.UNKNOWN
+        try:
+            literal_in_regex_language(literal, body, "")
+        finally:
+            algebra._intersect_empty_nfa = original
+        # The load-bearing assertion is the cache-miss: an UNKNOWN result
+        # MUST NOT have been memoized (asserting that
+        # ``literal_in_regex_language`` returned UNKNOWN under the patched
+        # lambda would only be testing the patch itself).
+        assert key not in algebra._DEFINITIVE_LITERAL_MEMBERSHIP_CACHE
+
+        # A subsequent call with the real algebra computes a definitive
+        # answer (NO — the literal doesn't match the body) and caches it.
+        result_real = literal_in_regex_language(literal, body, "")
+        assert result_real == Trilean.NO
+        assert algebra._DEFINITIVE_LITERAL_MEMBERSHIP_CACHE.get(key) == Trilean.NO
+
+    @pytest.mark.usefixtures("_clear_definitive_caches")
+    def test_definitive_cache_respects_max_size(self) -> None:
+        # LRU eviction kicks in once the cap is reached. Stuff more than
+        # ``_DEFINITIVE_CACHE_MAX`` distinct keys through and verify the
+        # cache size never exceeds it.
+        from parser_lineage_analyzer import _regex_algebra as algebra
+
+        # Use small fast pairs to keep the test cheap. cap + 64 distinct keys.
+        for i in range(algebra._DEFINITIVE_CACHE_MAX + 64):
+            literal_in_regex_language(f"lit{i}", f"^lit{i}$", "")
+        assert len(algebra._DEFINITIVE_LITERAL_MEMBERSHIP_CACHE) <= algebra._DEFINITIVE_CACHE_MAX
 
 
 class TestSoundnessCrossCheck:
@@ -706,7 +834,7 @@ class TestNegMatchExtraction:
         # matches before a final ``\n``, so ``!~ /^foo$/`` excludes both
         # ``"foo"`` and ``"foo\n"`` while ``[t] != "foo"`` only excludes
         # ``"foo"``. Letting the negative-match literal collapse would
-        # invert under ``negated_literal_fact_from_condition`` into the
+        # invert under the ``NOT`` reduction into the
         # narrower ``[t] == "foo"`` claim and unsoundly contradict peers
         # whose witnesses lie in ``L(=~ /^foo$/) \ {"foo"}`` (e.g.
         # ``"foo\n"``). Keep it as a RegexFact so the symbolic algebra
@@ -808,7 +936,7 @@ class TestNegMatchExtraction:
         # Regression for chatgpt-codex-connector finding on PR #8.
         #
         # If ``!~ /^foo$/`` were collapsed to ``LiteralFact("foo", neq)``
-        # and then negated via ``negated_literal_fact_from_condition``,
+        # and then negated via the ``NOT`` literal-fact reduction,
         # the result would be ``LiteralFact("foo", eq)``. Paired with
         # ``[t] != "foo"`` that produces a same-field, same-value, opposite-
         # ``is_equal`` pair which the LiteralFact dispatch contradicts.
@@ -1063,6 +1191,7 @@ class TestReviewFindings:
         assert literal_in_regex_language("alert_FOO_msg", "(?i:foo)", "") == Trilean.YES
         assert literal_in_regex_language("alert_BAR_msg", "(?i:foo)", "") == Trilean.NO
 
+    @pytest.mark.usefixtures("_clear_definitive_caches")
     def test_unknown_results_are_not_cached(self) -> None:
         """A transient cap hit (cold caches under load, slow CI, etc.)
         can make ``regex_languages_disjoint`` return ``UNKNOWN`` for
@@ -1082,9 +1211,6 @@ class TestReviewFindings:
         # definitive cache for these bodies.
         body_a = "^uncached_test_disjoint_a$"
         body_b = "^uncached_test_disjoint_b$"
-
-        # Clear caches up front so the test is independent.
-        algebra._DEFINITIVE_DISJOINT_CACHE.clear()
 
         # Force an UNKNOWN by patching the BFS to bail. We do this by
         # temporarily replacing ``_intersect_empty_nfa`` with a stub.
@@ -1160,6 +1286,7 @@ class TestReviewFindings:
         # move when the cap fires before the proof lands).
         assert result in (Trilean.YES, Trilean.UNKNOWN), result
 
+    @pytest.mark.usefixtures("_clear_definitive_caches")
     def test_definitive_caches_are_concurrent_safe(self) -> None:
         """Hammer the definitive caches from multiple threads while
         evicting under the cap. The lock around get/put plus the
@@ -1170,8 +1297,6 @@ class TestReviewFindings:
         import threading
 
         from parser_lineage_analyzer import _regex_algebra as algebra
-
-        algebra._DEFINITIVE_DISJOINT_CACHE.clear()
 
         # Generate enough distinct (small, fast) regex pairs to force
         # repeated evictions: cap + 64 distinct keys, hit by 8 threads.

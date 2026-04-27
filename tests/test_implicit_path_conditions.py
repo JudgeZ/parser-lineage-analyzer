@@ -82,9 +82,11 @@ class TestSynthesizerRoundTrip:
         extracted = extract_regex_literal(synthesized)
         assert extracted is not None, f"failed to parse synthesized condition: {synthesized!r}"
         assert getattr(extracted, "is_match", True) is True
-        # The token reference round-trips. ``extract_regex_literal``
-        # preserves the bracket form as it appears in the source.
-        assert extracted.field in {"token", "[token]"}
+        # The token reference round-trips. The synthesizer always emits
+        # the bracketed form (``[token]``); ``extract_regex_literal``
+        # preserves the bracket form as it appears in the source, so the
+        # round-trip is bracket-exact.
+        assert extracted.field == "[token]"
 
     def test_synthesizer_rejects_oversize_body(self) -> None:
         oversize = "a" * (_MAX_IMPLICIT_GROK_BODY_BYTES + 1)
@@ -393,6 +395,88 @@ class TestCrossFeatureWithF1NegMatch:
         expressions = sorted(m.expression for m in result.mappings)
         assert expressions == ["HTTPS", "OTHER"]
         assert "unreachable_branch" not in _summary_codes(parser)
+
+    def test_regrok_with_oversize_body_invalidates_prior_constraint(self) -> None:
+        # Regression for v0.1.0 release-hardening fix: a re-grok whose
+        # resolved body exceeds ``MAX_REGEX_BODY_BYTES`` (synthesis
+        # returns ``None``) must still invalidate the prior implicit
+        # constraint. Otherwise a literal that contradicts the *first*
+        # grok's shape gets falsely flagged unreachable, even though the
+        # *second* grok overwrote the runtime value with something
+        # whose shape we can no longer prove.
+        #
+        # Repro: grok #1 captures ``%{INT:tok}`` (~19 bytes — synthesis
+        # succeeds, prior implicit constraint is ``[tok] =~ /(?:[+-]?(?:[0-9]+))/``).
+        # Grok #2 captures ``%{IPV6:tok}`` (1071 bytes — exceeds the
+        # 512-byte algebra cap, synthesis returns ``None``). The if-branch
+        # tests ``[tok] == "::1"`` — a valid IPv6 literal that does NOT
+        # match INT. Pre-fix: stale INT constraint persists, "::1"
+        # contradicts ``[tok] =~ /(?:[+-]?(?:[0-9]+))/``, branch wrongly
+        # marked unreachable. Post-fix: invalidation runs unconditionally,
+        # branch stays reachable.
+        from parser_lineage_analyzer._grok_patterns import bundled_library, expand_pattern
+
+        ipv6_body = expand_pattern("IPV6", bundled_library())
+        assert ipv6_body is not None
+        # Sanity: the test only exercises the bug-window if IPV6 is in
+        # the 513..8192 byte range. If a future bundle change resizes
+        # it under the cap, switch to a different pattern.
+        from parser_lineage_analyzer._regex_algebra import MAX_REGEX_BODY_BYTES
+
+        assert len(ipv6_body.encode("utf-8")) > MAX_REGEX_BODY_BYTES, (
+            "test fixture invariant: IPV6 must exceed the algebra body cap"
+        )
+
+        code = """
+        filter {
+          grok { match => { "a" => "%{INT:tok}" } }
+          grok { match => { "b" => "%{IPV6:tok}" } }
+          if [tok] == "::1" {
+            mutate { replace => { "event.idm.read_only_udm.principal.user.userid" => "IPV6_LIT" } }
+          } else {
+            mutate { replace => { "event.idm.read_only_udm.principal.user.userid" => "OTHER" } }
+          }
+        }
+        """
+        parser = ReverseParser(code)
+        parser.analyze()
+        result = parser.query("principal.user.userid")
+        expressions = sorted(m.expression for m in result.mappings)
+        # The if-branch is reachable: IPV6 grok overwrote ``tok``, the
+        # stale INT constraint must have been dropped, and ``[tok] == "::1"``
+        # is no longer flagged as a contradiction.
+        assert "IPV6_LIT" in expressions, (
+            f"oversize re-grok invalidation regression: expected IPV6_LIT to remain reachable, got {expressions!r}"
+        )
+        assert "OTHER" in expressions
+
+    def test_regrok_with_oversize_body_drops_prior_implicit_for_token(self) -> None:
+        # Companion white-box test: assert the implicit-conditions list
+        # state directly. The end-to-end test above proves the user-visible
+        # behavior; this test pins the contract to ``state.implicit_path_conditions``
+        # so a regression in invalidation surfaces here even if the
+        # downstream contradiction routing changes shape.
+        from parser_lineage_analyzer._grok_patterns import bundled_library, expand_pattern
+        from parser_lineage_analyzer._regex_algebra import MAX_REGEX_BODY_BYTES
+
+        ipv6_body = expand_pattern("IPV6", bundled_library())
+        assert ipv6_body is not None
+        assert len(ipv6_body.encode("utf-8")) > MAX_REGEX_BODY_BYTES
+
+        code = """
+        filter {
+          grok { match => { "a" => "%{INT:tok}" } }
+          grok { match => { "b" => "%{IPV6:tok}" } }
+        }
+        """
+        parser = ReverseParser(code)
+        parser.analyze()
+        # No implicit constraint should remain on ``tok``: the second
+        # grok's body is oversize so synthesis was skipped, but
+        # invalidation still ran and dropped the INT shape constraint.
+        assert not any("[tok]" in cond for cond in parser.state.implicit_path_conditions), (
+            f"oversize re-grok left a stale [tok] constraint: {parser.state.implicit_path_conditions!r}"
+        )
 
 
 # ---------------------------------------------------------------------------

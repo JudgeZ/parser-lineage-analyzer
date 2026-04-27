@@ -796,21 +796,25 @@ class ExtractorPluginMixin:
             # Keeping only the latest is *also* unsound (the earlier
             # grok could have been the one that matched). Drop both and
             # let the algebra fall back to UNKNOWN-as-compatible.
+            #
+            # Invalidation MUST fire whenever a re-grok happens to
+            # ``tok`` — even when synthesis is skipped (oversize body,
+            # trivial body, invalid token chars, library miss). The new
+            # grok call overwrites ``tok``'s value, so any prior
+            # constraint describing the *previous* shape is now stale.
+            # If we invalidated only on synthesis success, an
+            # oversize-body re-grok would silently retain the stale
+            # constraint and the algebra could falsely flag valid
+            # literals as contradictory. ``had_prior`` is captured
+            # *before* invalidation so the disjunctive-runtime rule
+            # below ("don't replace; let UNKNOWN reign") still fires
+            # correctly when the second grok's body is also synthesizable.
+            had_prior = state.has_implicit_path_condition_for_token(token)
+            state.invalidate_implicit_path_conditions_for_token(token)
             if resolved_body and not _is_trivial_grok_body(resolved_body):
                 implicit = _synthesize_implicit_grok_condition(token, resolved_body)
-                if implicit is not None:
-                    had_prior = state.has_implicit_path_condition_for_token(token)
-                    # Always invalidate (drops descendants too — re-capturing
-                    # into a parent invalidates child structural constraints).
-                    state.invalidate_implicit_path_conditions_for_token(token)
-                    if not had_prior:
-                        state.add_implicit_path_condition(implicit)
-            elif resolved_body:
-                # Trivial / oversize body: still drop any prior constraint
-                # on this token. Re-capturing into ``tok`` overwrites the
-                # value, so the prior shape constraint is now stale even
-                # if we can't synthesize a replacement.
-                state.invalidate_implicit_path_conditions_for_token(token)
+                if implicit is not None and not had_prior:
+                    state.add_implicit_path_condition(implicit)
             captured_tokens.setdefault(token, []).extend(
                 self._capture_lineages(
                     "grok_capture",

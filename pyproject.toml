@@ -89,6 +89,12 @@ parser_lineage_analyzer = [
 
 [tool.setuptools.exclude-package-data]
 "parser_lineage_analyzer._native" = ["*.c", "*.pyx"]
+# The `grok_patterns/*` glob in [tool.setuptools.package-data] above pulls in
+# every file under that directory — including any `__pycache__/*.pyc` left
+# behind by a prior editable install. Setuptools applies these excludes after
+# the package-data globs, so this strips bytecode out of the wheel without
+# having to enumerate each grok pattern by hand.
+parser_lineage_analyzer = ["**/__pycache__/*", "**/*.pyc", "**/*.pyo"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

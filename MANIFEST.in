@@ -4,3 +4,13 @@ include CHANGELOG.md SECURITY.md CONTRIBUTING.md
 recursive-include parser_lineage_analyzer/grok_patterns *
 recursive-include tests *.py *.cbn *.expected.json *.md *.txt
 recursive-include tests/fixtures *
+
+# setuptools regenerates `PKG-INFO` and `SOURCES.txt` after MANIFEST
+# processing — these two are spec-required in every sdist. The `prune`
+# line strips any other stale egg-info entries (dependency_links.txt,
+# requires.txt, etc.) left from prior in-tree builds, plus any
+# `__pycache__` trees `recursive-include grok_patterns *` would
+# otherwise sweep in.
+prune parser_lineage_analyzer.egg-info
+global-exclude __pycache__
+global-exclude *.py[cod]

@@ -443,3 +443,53 @@ def test_executor_components_have_no_method_collisions():
             assert name not in seen, f"{name} collides between {seen[name]} and {component.__name__}"
             seen[name] = component.__name__
     assert issubclass(AnalysisExecutor, _EXECUTOR_COMPONENTS)
+
+
+def test_executor_collision_message_includes_both_modules():
+    """Whitebox: the collision-detection loop in ``_analysis_executor`` formats
+    each finding as
+    ``"<method> (<owner_name> from <owner_module>, <new_name> from <new_module>)"``
+    so a real collision diagnostic identifies both offending mixins
+    unambiguously. Construct two ad-hoc classes with a colliding method
+    name but distinct ``__module__``s, run the same loop, and verify the
+    rendered string includes both module paths in the documented format.
+    """
+    from parser_lineage_analyzer._analysis_executor import _component_methods
+
+    class AdHocOwner:
+        def colliding_method(self) -> None:
+            pass
+
+    class AdHocNewcomer:
+        def colliding_method(self) -> None:
+            pass
+
+    # Pin distinct synthetic modules so the format string carries two
+    # different ``from <module>`` substrings — a single-module collision
+    # would render the same module twice and the test would still pass.
+    AdHocOwner.__module__ = "tests.synthetic.module_owner"
+    AdHocNewcomer.__module__ = "tests.synthetic.module_newcomer"
+
+    components = (AdHocOwner, AdHocNewcomer)
+    seen_methods: dict[str, tuple[str, str]] = {}
+    collisions: list[str] = []
+    for component in components:
+        for method in _component_methods(component):
+            owner_name, owner_module = seen_methods.setdefault(method, (component.__name__, component.__module__))
+            if owner_name != component.__name__:
+                collisions.append(
+                    f"{method} ({owner_name} from {owner_module}, {component.__name__} from {component.__module__})"
+                )
+
+    assert collisions == [
+        "colliding_method (AdHocOwner from tests.synthetic.module_owner,"
+        " AdHocNewcomer from tests.synthetic.module_newcomer)"
+    ]
+    rendered = collisions[0]
+    # The diagnostic must name BOTH modules — without that detail an
+    # operator can't tell which mixin to renumber.
+    assert "tests.synthetic.module_owner" in rendered
+    assert "tests.synthetic.module_newcomer" in rendered
+    assert "AdHocOwner" in rendered
+    assert "AdHocNewcomer" in rendered
+    assert rendered.startswith("colliding_method (")
