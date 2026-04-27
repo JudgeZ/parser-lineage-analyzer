@@ -10,7 +10,7 @@ def test_compat_audit_writes_json_and_markdown(tmp_path):
     root = tmp_path / "corpus"
     root.mkdir()
     (root / "a.cbn").write_text(
-        'filter { grok { match => { "message" => "%{IP:src_ip}" } } }\n',
+        '\ufefffilter { grok { match => { "message" => "%{IP:src_ip}" } } }\n',
         encoding="utf-8",
     )
     (root / "b.cbn").write_text(
@@ -32,6 +32,13 @@ def test_compat_audit_writes_json_and_markdown(tmp_path):
     assert payload["totals_by_dialect"]["secops"]["unsupported_plugin_counts"] == {"custom_lookup": 1}
     assert "# Parser Compatibility Audit" in markdown
     assert "Unsupported Plugins" in markdown
+
+
+def test_regression_messages_reports_current_only_dialects():
+    current = {"totals_by_dialect": {"secops": {"totals": {}}, "logstash": {"totals": {}}}}
+    baseline = {"totals_by_dialect": {"secops": {"totals": {}}}}
+
+    assert compat_audit_corpus.regression_messages(current, baseline) == ["logstash: missing baseline dialect"]
 
 
 def test_compat_audit_main_honors_dialects_and_regression_baseline(tmp_path, capsys):

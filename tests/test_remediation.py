@@ -118,7 +118,7 @@ def test_rename_normalizes_and_removes_source_descendants():
       mutate { merge => { "@output" => "event" } }
     }
     """
-    parent_state = ReverseParser(parent_code).analyze()
+    parent_state = ReverseParser(parent_code, dialect="logstash").analyze()
     assert not any(token == "old" or token.startswith("old.") for token in parent_state.tokens)
 
 

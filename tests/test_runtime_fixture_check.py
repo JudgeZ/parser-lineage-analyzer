@@ -28,3 +28,19 @@ def test_runtime_fixture_check_reports_missing_static_coverage(tmp_path, capsys)
     assert report["results"][0]["failures"]["missing_fields"] == ["missing"]
     assert runtime_fixture_check.main(["--root", str(tmp_path / "runtime")]) == 1
     assert "runtime fixture mismatch" in capsys.readouterr().err
+
+
+def test_runtime_fixture_check_honors_fixture_dialect(tmp_path):
+    fixture = tmp_path / "runtime" / "logstash"
+    fixture.mkdir(parents=True)
+    (fixture / "parser.cbn").write_text('filter { json { source => "message" } }\n', encoding="utf-8")
+    (fixture / "input.json").write_text('{"message":"not-json"}\n', encoding="utf-8")
+    (fixture / "expected.json").write_text(
+        json.dumps({"dialect": "logstash", "tags": ["_jsonparsefailure"]}),
+        encoding="utf-8",
+    )
+
+    report = runtime_fixture_check.check_runtime_fixtures(tmp_path / "runtime")
+
+    assert report["failed"] == 0
+    assert report["results"][0]["dialect"] == "logstash"

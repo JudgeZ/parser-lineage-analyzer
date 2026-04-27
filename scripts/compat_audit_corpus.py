@@ -47,7 +47,7 @@ def audit_corpus(
         for path in parser_files:
             rel_path = path.relative_to(root).as_posix()
             try:
-                code = path.read_text(encoding="utf-8")
+                code = path.read_text(encoding="utf-8-sig")
                 report = ReverseParser(code, dialect=dialect, plugin_signatures=plugin_signatures).compat_report(
                     compact=True
                 )
@@ -173,6 +173,9 @@ def regression_messages(current: dict[str, Any], baseline: dict[str, Any]) -> li
     baseline_totals = baseline.get("totals_by_dialect", {})
     if not isinstance(current_totals, dict) or not isinstance(baseline_totals, dict):
         return ["baseline/current audit shape is invalid"]
+    for dialect in sorted(current_totals):
+        if isinstance(dialect, str) and dialect not in baseline_totals:
+            messages.append(f"{dialect}: missing baseline dialect")
     for dialect, baseline_payload in baseline_totals.items():
         if not isinstance(dialect, str) or not isinstance(baseline_payload, dict):
             continue

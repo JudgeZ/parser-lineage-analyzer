@@ -496,6 +496,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.compact_json and args.compat_report:
         print("error: --compact-json and --compat-report are mutually exclusive", file=sys.stderr)
         return 2
+    if args.compat_report and args.strict:
+        print("error: --strict cannot be used with --compat-report", file=sys.stderr)
+        return 2
     # JSON output already includes the same fields ``--verbose`` would surface
     # in text mode (parser_locations, notes, structured_warnings,
     # diagnostics), so combining ``--verbose`` with ``--json``/``--compact-json``

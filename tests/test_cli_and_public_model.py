@@ -91,6 +91,13 @@ def test_cli_compat_report_json(tmp_path, capsys):
     assert payload["totals"]["failure_tag_routes"] >= 1
 
 
+def test_cli_rejects_strict_with_compat_report(tmp_path, capsys):
+    parser_file = _write_parser(tmp_path)
+
+    assert main([str(parser_file), "--compat-report", "--strict"]) == 2
+    assert "--strict cannot be used with --compat-report" in capsys.readouterr().err
+
+
 def test_cli_stdin_query_json_success(monkeypatch, capsys):
     monkeypatch.setattr(sys, "stdin", io.StringIO(SIMPLE_CODE))
     assert main(["-", "target.ip", "--json"]) == 0

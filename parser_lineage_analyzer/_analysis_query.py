@@ -396,6 +396,11 @@ class AnalysisQueryMixin:
             for item in unknown_config_keys
             if item.get("plugin") and item.get("key")
         )
+        dialect_disabled_plugin_counts = Counter(
+            warning.source_token
+            for warning in structured_warnings
+            if warning.code == "plugin_dialect_disabled" and warning.source_token
+        )
         dynamic_or_symbolic_codes = {
             code: count
             for code, count in sorted(warning_counts.items())
@@ -437,6 +442,7 @@ class AnalysisQueryMixin:
             "unsupported_plugin_counts": dict(sorted(unsupported_plugin_counts.items())),
             "unsupported_mutate_operation_counts": dict(sorted(unsupported_mutate_op_counts.items())),
             "unknown_config_key_counts": dict(sorted(unknown_config_key_counts.items())),
+            "dialect_disabled_plugin_counts": dict(sorted(dialect_disabled_plugin_counts.items())),
             "dynamic_or_symbolic_warning_counts": dynamic_or_symbolic_codes,
             "failure_tag_routes": failure_tag_routes[:limit],
             "affected_fields": affected_fields[:limit],

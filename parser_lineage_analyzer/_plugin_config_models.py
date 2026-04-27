@@ -57,6 +57,7 @@ class DatePluginConfig(_PluginConfig):  # type: ignore[explicit-any]
     match: list[object] | None = None
     target: str = "event.idm.read_only_udm.metadata.event_timestamp"
     timezone: str | None = None
+    locale: str | None = None
 
 
 class Base64PluginConfig(_PluginConfig):  # type: ignore[explicit-any]

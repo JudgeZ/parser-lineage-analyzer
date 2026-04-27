@@ -107,7 +107,10 @@ class TransformPluginMixin:
         timezone_raw = self._first_transform_config_value(stmt, state, "timezone")
         locale_raw = self._first_transform_config_value(stmt, state, "locale")
         config = self._validate_transform_config_model(
-            stmt, state, DatePluginConfig, {"match": match_raw, "target": target_raw, "timezone": timezone_raw}
+            stmt,
+            state,
+            DatePluginConfig,
+            {"match": match_raw, "target": target_raw, "timezone": timezone_raw, "locale": locale_raw},
         )
         match_is_map = isinstance(match_raw, list) and bool(as_pairs(match_raw))
         match = (
@@ -121,6 +124,7 @@ class TransformPluginMixin:
             else (target_raw if isinstance(target_raw, str) else "event.idm.read_only_udm.metadata.event_timestamp")
         )
         timezone = config.timezone if config is not None else (timezone_raw if isinstance(timezone_raw, str) else None)
+        locale = config.locale if config is not None else (locale_raw if isinstance(locale_raw, str) else None)
         loc = _location(stmt.line, "date", f"target={target}")
         if "%{" in str(target):
             warning = static_limit_warning(loc, f"dynamic date target {target}")
@@ -136,8 +140,8 @@ class TransformPluginMixin:
             transforms = [f"date({', '.join(formats)})"]
             if timezone is not None:
                 transforms.append(f"timezone({timezone})")
-            if locale_raw is not None:
-                transforms.append(f"locale({locale_raw})")
+            if locale is not None:
+                transforms.append(f"locale({locale})")
             lins = [
                 lin.with_transform(" ".join(transforms), loc)
                 for lin in context._resolve_token(source_token, state, loc)

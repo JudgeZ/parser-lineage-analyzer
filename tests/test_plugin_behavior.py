@@ -545,7 +545,10 @@ def test_dialect_profile_controls_on_error_block_support():
     logstash = ReverseParser(code, dialect="logstash")
 
     assert "fallback" in secops.analyze().tokens
-    assert any("on_error" in item for item in logstash.analyze().unsupported)
+    assert any(
+        warning["code"] == "plugin_dialect_disabled" and warning.get("source_token") == "on_error"
+        for warning in logstash.analysis_summary()["structured_warnings"]
+    )
     assert logstash.compat_report()["dialect_profile"]["supports_on_error_blocks"] is False
 
 
@@ -703,6 +706,54 @@ def test_translate_projects_json_object_dictionary_values():
     assert "error_details.action" in state.tokens
 
 
+def test_translate_preserves_nested_json_list_values():
+    parser = ReverseParser(
+        r"""
+        filter {
+          translate {
+            field => "error_code"
+            destination => "error_details"
+            dictionary => {
+              "E1" => "{\"items\":[{\"code\":\"a\"},true]}"
+            }
+          }
+        }
+        """
+    )
+    state = parser.analyze()
+
+    assert any(
+        source.kind == "object_literal" and source.expression == '[["code", "a"]]'
+        for lineage in state.tokens["error_details.items"]
+        for source in lineage.sources
+    )
+
+
+def test_spec_ignored_keys_are_used_for_generic_config_warnings():
+    parser = ReverseParser(
+        r"""
+        filter {
+          translate {
+            field => "event_code"
+            destination => "event_action"
+            dictionary => { "100" => "login" }
+            mysterious => true
+          }
+        }
+        """
+    )
+    warnings = parser.analysis_summary()["structured_warnings"]
+
+    assert any(
+        warning["code"] == "unknown_config_key" and warning.get("source_token") == "mysterious" for warning in warnings
+    )
+    assert not any(
+        warning["code"] == "unknown_config_key"
+        and warning.get("source_token") in {"field", "destination", "dictionary"}
+        for warning in warnings
+    )
+
+
 def test_date_records_timezone_locale_and_dynamic_target_warning():
     parser = ReverseParser(
         r"""
@@ -724,6 +775,22 @@ def test_date_records_timezone_locale_and_dynamic_target_warning():
     assert "dynamic_date_timezone" in warnings
     assert "timezone(%{tz})" in lineage.transformations[0]
     assert "locale(en-US)" in lineage.transformations[0]
+
+
+def test_date_ignores_non_string_locale_in_transform():
+    parser = ReverseParser(
+        r"""
+        filter {
+          date {
+            match => ["event_time", "ISO8601"]
+            locale => ["en-US"]
+          }
+        }
+        """
+    )
+    lineage = parser.analyze().tokens["event.idm.read_only_udm.metadata.event_timestamp"][0]
+
+    assert "locale(" not in lineage.transformations[0]
 
 
 def test_ruby_models_set_remove_cancel_yield_and_globals_conservatively():
@@ -752,6 +819,27 @@ def test_ruby_models_set_remove_cancel_yield_and_globals_conservatively():
     assert "ruby_event_cancel" in codes
     assert "ruby_event_split" in codes
     assert "ruby_concurrency_risk" in codes
+
+
+def test_ruby_bracket_reads_ignore_write_lhs_and_allow_spacing():
+    parser = ReverseParser(
+        r"""
+        filter {
+          ruby {
+            code => "
+              event [ 'dst' ] = event.get 'src'
+              event.set 'other', event [ 'src2' ]
+              event.remove 'old'
+            "
+          }
+        }
+        """
+    )
+    state = parser.analyze()
+
+    assert {source.path for source in state.tokens["dst"][0].sources} == {"src", "src2"}
+    assert {source.path for source in state.tokens["other"][0].sources} == {"src", "src2"}
+    assert "old" not in state.tokens
 
 
 def test_aggregate_models_map_state_and_timeout_tags():
@@ -824,6 +912,43 @@ def test_lookup_and_enrichment_plugins_project_known_targets():
     assert "event.idm.read_only_udm.target.ip" in state.tokens
     assert "ua_details.name" in state.tokens
     assert "geo.country_name" in state.tokens
+
+
+def test_enrichment_prefix_projects_without_dot_container():
+    parser = ReverseParser(
+        r"""
+        filter {
+          useragent {
+            source => "ua"
+            prefix => "ua_"
+            fields => ["name"]
+          }
+        }
+        """
+    )
+    state = parser.analyze()
+
+    assert "ua_name" in state.tokens
+    assert "ua_.name" not in state.tokens
+
+
+def test_secops_external_lookup_reports_dialect_disabled_not_unsupported():
+    parser = ReverseParser(
+        r"""
+        filter {
+          elasticsearch {
+            query => "id:%{lookup_id}"
+            target => "lookup_result"
+          }
+        }
+        """
+    )
+    report = parser.compat_report()
+    codes = {warning["code"] for warning in parser.analysis_summary()["structured_warnings"]}
+
+    assert "plugin_dialect_disabled" in codes
+    assert report["dialect_disabled_plugin_counts"] == {"elasticsearch": 1}
+    assert report["totals"]["unsupported_plugins"] == 0
 
 
 def test_config_regex_with_quantifier_parses_as_single_value():

@@ -21,7 +21,8 @@ Sidecar schema (all keys optional; missing keys mean "don't check"):
   "must_have_warning_codes": ["dynamic_destination", "drop"],
   "must_resolve_fields":     ["target.ip", "principal.hostname"],
   "must_have_unsupported":   ["ruby"],
-  "must_not_have_warning_codes": ["malformed_config"]
+  "must_not_have_warning_codes": ["malformed_config"],
+  "dialect": "logstash"
 }
 ```
 
@@ -82,10 +83,11 @@ SIDECAR_KEYS = (
     "must_not_have_warning_codes",
     "must_resolve_fields",
     "must_have_unsupported",
+    "dialect",
 )
 
 
-def _sidecar_for(fixture_path: Path) -> dict[str, list[str]] | None:
+def _sidecar_for(fixture_path: Path) -> dict[str, object] | None:
     sidecar = fixture_path.with_suffix(".expected.json")
     if not sidecar.exists():
         return None
@@ -98,21 +100,21 @@ def _sidecar_for(fixture_path: Path) -> dict[str, list[str]] | None:
     return data
 
 
-def _check_sidecar(parser: ReverseParser, fixture_id: str, sidecar: dict[str, list[str]]) -> None:
+def _check_sidecar(parser: ReverseParser, fixture_id: str, sidecar: dict[str, object]) -> None:
     summary = parser.analysis_summary()
     warning_codes = {expect_str(expect_mapping(w)["code"]) for w in expect_mapping_list(summary["structured_warnings"])}
     unsupported_blobs = " | ".join(expect_str_list(summary["unsupported"]))
 
-    for code in sidecar.get("must_have_warning_codes", []):
+    for code in expect_str_list(sidecar.get("must_have_warning_codes", [])):
         assert code in warning_codes, (
             f"{fixture_id}: expected warning code {code!r} not emitted; got {sorted(warning_codes)}"
         )
-    for code in sidecar.get("must_not_have_warning_codes", []):
+    for code in expect_str_list(sidecar.get("must_not_have_warning_codes", [])):
         assert code not in warning_codes, f"{fixture_id}: warning code {code!r} should NOT be emitted but was"
-    for field in sidecar.get("must_resolve_fields", []):
+    for field in expect_str_list(sidecar.get("must_resolve_fields", [])):
         result = parser.query(field)
         assert result.mappings, f"{fixture_id}: query({field!r}) returned no mappings"
-    for plugin in sidecar.get("must_have_unsupported", []):
+    for plugin in expect_str_list(sidecar.get("must_have_unsupported", [])):
         assert plugin in unsupported_blobs, (
             f"{fixture_id}: expected {plugin!r} in unsupported list; got {summary['unsupported']!r}"
         )
@@ -121,8 +123,10 @@ def _check_sidecar(parser: ReverseParser, fixture_id: str, sidecar: dict[str, li
 @pytest.mark.parametrize("fixture_path", _FIXTURES, ids=[_fixture_id(p) for p in _FIXTURES])
 def test_corpus_fixture_analyzes_cleanly(fixture_path: Path) -> None:
     src = fixture_path.read_text(encoding="utf-8")
+    sidecar = _sidecar_for(fixture_path)
+    dialect = expect_str(sidecar.get("dialect", "secops")) if sidecar is not None else "secops"
     start = time.perf_counter()
-    parser = ReverseParser(src)
+    parser = ReverseParser(src, dialect=dialect)
     parser.analyze()
     elapsed = time.perf_counter() - start
     assert elapsed < PER_FIXTURE_BUDGET_SECONDS, (
@@ -142,7 +146,6 @@ def test_corpus_fixture_analyzes_cleanly(fixture_path: Path) -> None:
             + "\nIf this is intentional, add a malformed-input phrase to the fixture header."
         )
 
-    sidecar = _sidecar_for(fixture_path)
     if sidecar is not None:
         _check_sidecar(parser, _fixture_id(fixture_path), sidecar)
 

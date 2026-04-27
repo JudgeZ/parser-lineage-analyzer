@@ -23,6 +23,7 @@ from ._analysis_diagnostics import (
     ruby_event_split_warning,
     runtime_condition_warning,
     static_limit_warning,
+    unknown_config_key_warning,
     unparsed_statement,
     unreachable_branch_warning,
     unsupported_plugin,
@@ -695,7 +696,24 @@ class FlowExecutorMixin:
             )
 
     def _warn_config_advisories(self, stmt: Plugin, state: AnalyzerState) -> None:
+        spec = plugin_spec_for(stmt.name)
         for key, value, _depth in _iter_config_values(stmt.config):
+            if (
+                _depth == 0
+                and spec is not None
+                and spec.config_model is None
+                and (spec.ignored_config_keys or spec.source_keys or spec.dest_keys)
+            ):
+                known_keys = {*spec.source_keys, *spec.dest_keys}
+                if key not in known_keys and not spec.ignores_config_key(key):
+                    warning = unknown_config_key_warning(stmt.line, stmt.name, key)
+                    state.add_warning(
+                        warning,
+                        code="unknown_config_key",
+                        message=warning,
+                        parser_location=_location(stmt.line, stmt.name),
+                        source_token=key,
+                    )
             if isinstance(value, list) and not as_pairs(value):
                 count = len(value)
                 if count > MAX_ARRAY_LITERAL_BEFORE_WARNING:
@@ -1337,7 +1355,21 @@ class FlowExecutorMixin:
     ) -> None:
         name = stmt.name
         spec = plugin_spec_for(name)
-        handler_name = spec.handler_name if spec is not None and state.dialect in spec.dialects else None
+        if spec is not None and state.dialect not in spec.dialects:
+            loc = _location(stmt.line, stmt.name)
+            dialects = ", ".join(spec.dialects)
+            warning = (
+                f"{loc}: plugin {stmt.name} is disabled for dialect {state.dialect}; supported dialects: {dialects}"
+            )
+            state.add_warning(
+                warning,
+                code="plugin_dialect_disabled",
+                message=warning,
+                parser_location=loc,
+                source_token=stmt.name,
+            )
+            return
+        handler_name = spec.handler_name if spec is not None else None
         if name != "on_error":
             self._warn_config_advisories(stmt, state)
         if stmt.config_diagnostics and name != "on_error":
@@ -1622,11 +1654,15 @@ class FlowExecutorMixin:
             state.add_taint("ruby_concurrency_risk", warning, loc, gv)
 
         # 3. Read Dependencies (`event.get(...)`)
-        gets = re.findall(r"event\.get\(\s*['\"]([^'\"]+)['\"]\s*\)", full_code)
-        gets.extend(re.findall(r"event\[['\"]([^'\"]+)['\"]\]", full_code))
-        map_reads = re.findall(r"map\[['\"]([^'\"]+)['\"]\]", full_code) if aggregate else []
-        sources = [SourceRef(kind=f"{kind}_get", source_token=kind, path=g) for g in gets]  # nosec B106
-        sources.extend(SourceRef(kind="aggregate_map", source_token=kind, path=m) for m in map_reads)
+        gets = re.findall(r"event\.get\s*\(?\s*['\"]([^'\"]+)['\"]\s*\)?", full_code)
+        gets.extend(re.findall(r"event\s*\[\s*['\"]([^'\"]+)['\"]\s*\](?!\s*=)", full_code))
+        map_reads = re.findall(r"map\s*\[\s*['\"]([^'\"]+)['\"]\s*\](?!\s*=)", full_code) if aggregate else []
+        sources = [  # nosec B106
+            SourceRef(kind=f"{kind}_get", source_token=kind, path=_normalize_field_ref(g)) for g in gets
+        ]
+        sources.extend(
+            SourceRef(kind="aggregate_map", source_token=kind, path=_normalize_field_ref(m)) for m in map_reads
+        )
         if "event.to_hash" in full_code:
             sources.append(SourceRef(kind=f"{kind}_event_hash", source_token=kind, path="event.to_hash"))
         if not sources:
@@ -1652,8 +1688,8 @@ class FlowExecutorMixin:
         # ``_store_destination`` (append=True) so canonical normalization,
         # template-fanout caps, and dedup apply consistently with the rest
         # of the analyzer instead of the inline ``[]``→``.`` shortcut.
-        sets = re.findall(r"event\.set\(\s*['\"]([^'\"]+)['\"]\s*,", full_code)
-        sets.extend(re.findall(r"event\[['\"]([^'\"]+)['\"]\]\s*=", full_code))
+        sets = re.findall(r"event\.set\s*\(?\s*['\"]([^'\"]+)['\"]\s*,", full_code)
+        sets.extend(re.findall(r"event\s*\[\s*['\"]([^'\"]+)['\"]\s*\]\s*=", full_code))
         for dest in sets:
             normalized = _normalize_field_ref(dest)
             if not normalized:
@@ -1668,7 +1704,7 @@ class FlowExecutorMixin:
             )
             cast(_FlowContext, self)._store_destination(normalized, [ruby_lin], loc, state, append=True)
 
-        removes = re.findall(r"event\.remove\(\s*['\"]([^'\"]+)['\"]\s*\)", full_code)
+        removes = re.findall(r"event\.remove\s*\(?\s*['\"]([^'\"]+)['\"]\s*\)?", full_code)
         if removes:
             mutate_stmt = Plugin(stmt.line, "mutate", body="", config=[("remove_field", removes)])
             cast(_PluginHandler, getattr(self, "_exec_mutate"))(mutate_stmt, state, conditions)  # noqa: B009
@@ -1838,7 +1874,7 @@ class FlowExecutorMixin:
             if isinstance(item, dict):
                 pairs.append((str(key), [(str(k), self._json_scalar_to_config(v)) for k, v in sorted(item.items())]))
             elif isinstance(item, list):
-                list_value: list[ConfigValue] = [str(v) if not isinstance(v, bool) else v for v in item]
+                list_value: list[ConfigValue] = [self._json_scalar_to_config(v) for v in item]
                 pairs.append((str(key), list_value))
             elif item is None:
                 pairs.append((str(key), "null"))
@@ -1929,14 +1965,23 @@ class FlowExecutorMixin:
     def _exec_enrichment_plugin(self, stmt: Plugin, state: AnalyzerState, conditions: list[str], kind: str) -> None:
         """Executes an enrichment plugin (like geoip or useragent) mapping source to target."""
         source = first_value(stmt.config, "source")
-        target = first_value(stmt.config, "target") or first_value(stmt.config, "prefix") or kind
         fields = first_value(stmt.config, "fields")
         loc = _location(stmt.line, kind)
 
         success_state = state.clone()
         if source:
             sources = [SourceRef(kind=kind, source_token=kind, path=str(source))]
-            dest_str = _normalize_field_ref(str(target))
+            target_val = first_value(stmt.config, "target")
+            prefix_val = first_value(stmt.config, "prefix")
+            projection_mode = "target"
+            if target_val is not None:
+                dest_value = target_val
+            elif prefix_val is not None:
+                dest_value = prefix_val
+                projection_mode = "prefix"
+            else:
+                dest_value = kind
+            dest_str = _normalize_field_ref(str(dest_value))
             if dest_str:
                 lin = Lineage(
                     status="dynamic",
@@ -1949,7 +1994,10 @@ class FlowExecutorMixin:
                 cast(_FlowContext, self)._store_destination(dest_str, [lin], loc, success_state, append=True)
                 if isinstance(fields, list) and not as_pairs(fields):
                     for field in fields:
-                        child = _normalize_field_ref(f"{dest_str}.{field}")
+                        if projection_mode == "prefix":
+                            child = _normalize_field_ref(f"{dest_str}{field}")
+                        else:
+                            child = _normalize_field_ref(f"{dest_str}.{field}")
                         if not child:
                             continue
                         child_lin = Lineage(

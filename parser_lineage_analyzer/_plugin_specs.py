@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Literal, cast
 
 from ._plugin_config_models import (
     Base64PluginConfig,
@@ -393,6 +393,7 @@ PLUGIN_SPECS: dict[str, PluginSpec] = {
     ),
     "elasticsearch": PluginSpec(
         "_exec_external_lookup",
+        dialects=("logstash",),
         semantic_class="enricher",
         source_keys=("query", "statement", "url"),
         dest_keys=("target", "get", "fields"),
@@ -417,6 +418,7 @@ PLUGIN_SPECS: dict[str, PluginSpec] = {
     ),
     "memcached": PluginSpec(
         "_exec_external_lookup",
+        dialects=("logstash",),
         semantic_class="enricher",
         dest_keys=("target", "get"),
         dest_value_kind="map",
@@ -425,6 +427,7 @@ PLUGIN_SPECS: dict[str, PluginSpec] = {
     ),
     "jdbc_streaming": PluginSpec(
         "_exec_external_lookup",
+        dialects=("logstash",),
         semantic_class="enricher",
         source_keys=("statement",),
         dest_keys=("target",),
@@ -444,6 +447,7 @@ PLUGIN_SPECS: dict[str, PluginSpec] = {
     ),
     "http": PluginSpec(
         "_exec_external_lookup",
+        dialects=("logstash",),
         semantic_class="enricher",
         source_keys=("url",),
         dest_keys=("target",),
@@ -452,6 +456,7 @@ PLUGIN_SPECS: dict[str, PluginSpec] = {
     ),
     "rest": PluginSpec(
         "_exec_external_lookup",
+        dialects=("logstash",),
         semantic_class="enricher",
         source_keys=("url",),
         dest_keys=("target",),
@@ -460,6 +465,7 @@ PLUGIN_SPECS: dict[str, PluginSpec] = {
     ),
     "acme_threat_lookup": PluginSpec(
         "_exec_external_lookup",
+        dialects=("logstash",),
         semantic_class="enricher",
         dest_keys=("target",),
         taint_hint="dynamic",
@@ -470,7 +476,7 @@ PLUGIN_SPECS: dict[str, PluginSpec] = {
 def normalize_dialect(dialect: str) -> ParserDialect:
     if dialect not in {"secops", "logstash"}:
         raise ValueError(f"dialect must be 'secops' or 'logstash', got {dialect!r}")
-    return dialect  # type: ignore[return-value]
+    return cast(ParserDialect, dialect)
 
 
 def dialect_profile_for(dialect: str) -> DialectProfile:

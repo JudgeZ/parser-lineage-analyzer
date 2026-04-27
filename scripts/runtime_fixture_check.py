@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from parser_lineage_analyzer import ReverseParser
+from parser_lineage_analyzer._plugin_specs import normalize_dialect
 
 DEFAULT_ROOT = Path("tests/fixtures/runtime")
 
@@ -35,7 +36,8 @@ def check_fixture(fixture_dir: Path) -> dict[str, Any]:
     expected_path = fixture_dir / "expected.json"
     expected = json.loads(expected_path.read_text(encoding="utf-8"))
     code = parser_path.read_text(encoding="utf-8")
-    parser = ReverseParser(code)
+    dialect = normalize_dialect(str(expected.get("dialect", "secops")))
+    parser = ReverseParser(code, dialect=dialect)
     state = parser.analyze()
 
     expected_fields = _string_list(expected, "touched_fields")
@@ -58,6 +60,7 @@ def check_fixture(fixture_dir: Path) -> dict[str, Any]:
         "fixture": fixture_dir.name,
         "parser": parser_path.as_posix(),
         "input": input_path.as_posix() if input_path.exists() else None,
+        "dialect": dialect,
         "passed": not failed,
         "expected": {
             "touched_fields": expected_fields,

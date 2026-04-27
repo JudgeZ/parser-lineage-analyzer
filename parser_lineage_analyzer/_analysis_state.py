@@ -1219,8 +1219,6 @@ class AnalyzerState:
         if key in self._failure_tag_route_seen:
             return
         self._ensure_metadata_owned()
-        if key in self._failure_tag_route_seen:
-            return
         self._failure_tag_route_seen.add(key)
         self.failure_tag_routes.append(route)
 
