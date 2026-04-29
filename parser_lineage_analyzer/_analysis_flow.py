@@ -66,6 +66,10 @@ MAX_CLONE_FANOUT = 128
 # that check for a tag no prior add_tag could have written.
 _TAGS_MEMBERSHIP_RE = re.compile(r'^(?:"(?P<dlit>(?:\\.|[^"\\])*)"|\'(?P<slit>(?:\\.|[^\'\\])*)\')\s+in\s+\[tags\]$')
 
+# Result of classifying a `"<lit>" in [tags]` condition against the current
+# tag-state; see ``_tag_membership_check_status``.
+TagMembershipStatus = Literal["definitely_true", "definitely_false", "unknown"]
+
 # R1.3: detect `"<lit>" in [<field>]` for any field (not just `tags`).
 # When `<field>`'s lineage carries `value_type="string"`, this is substring
 # matching, not array membership — emit an advisory so users notice.
@@ -906,7 +910,7 @@ class FlowExecutorMixin:
 
     def _tag_membership_check_status(
         self, cond: str, state: AnalyzerState
-    ) -> Literal["definitely_true", "definitely_false", "unknown"]:
+    ) -> TagMembershipStatus:
         """Tri-state classifier for ``"<lit>" in [tags]`` conditions.
 
         Returns ``"definitely_true"`` when prior add_tag definitely added the
