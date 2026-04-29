@@ -375,7 +375,12 @@ class FlowExecutorMixin:
                 # approach in `_exec_if` (see `_prior_negation_conditions`).
                 cond = _clean_condition(child.condition)
                 prior_negations: list[str] = []
-                then_base_conditions = conditions + _prior_negation_conditions(prior_negations)
+                # Dedupe priors before passing them into reachability checks:
+                # `_condition_is_contradicted_cached` builds a disjunctive
+                # cross-product over priors and bails out conservatively past
+                # `_MAX_DISJUNCTIVE_COMBINATIONS`. Duplicate priors inflate the
+                # cross-product and hide real contradictions.
+                then_base_conditions = _dedupe_strings(conditions + _prior_negation_conditions(prior_negations))
                 then_conditions = _dedupe_strings(then_base_conditions + [cond])
                 if self._branch_is_reachable(cond, then_base_conditions, child.line, state):
                     self._exec_io_block(
@@ -389,7 +394,7 @@ class FlowExecutorMixin:
                 for elif_block in child.elifs:
                     ec = _clean_condition(elif_block.condition)
                     elif_negations = _prior_negation_conditions(prior_negations)
-                    elif_base_conditions = conditions + elif_negations
+                    elif_base_conditions = _dedupe_strings(conditions + elif_negations)
                     elif_conditions = _dedupe_strings(elif_base_conditions + [ec])
                     if not self._tag_negation_conditions_are_unreachable(
                         elif_negations, state
@@ -506,7 +511,9 @@ class FlowExecutorMixin:
         branch_records: list[BranchRecord] = []
 
         prior_negations: list[str] = []
-        then_base_conditions = conditions + _prior_negation_conditions(prior_negations)
+        # See `_exec_io_block` — dedupe priors so duplicates don't blow up the
+        # disjunctive cross-product in `_condition_is_contradicted_cached`.
+        then_base_conditions = _dedupe_strings(conditions + _prior_negation_conditions(prior_negations))
         then_conditions = _dedupe_strings(then_base_conditions + [cond])
         if self._branch_is_reachable(cond, then_base_conditions, stmt.line, state):
             then_state = original.clone()
@@ -522,7 +529,7 @@ class FlowExecutorMixin:
             self._warn_condition_limits(ec, _line, state)
             self._sync_branch_seed_diagnostics(original, state)
             elif_negations = _prior_negation_conditions(prior_negations)
-            elif_base_conditions = conditions + elif_negations
+            elif_base_conditions = _dedupe_strings(conditions + elif_negations)
             elif_conditions = _dedupe_strings(elif_base_conditions + [ec])
             if not self._tag_negation_conditions_are_unreachable(elif_negations, state) and self._branch_is_reachable(
                 ec, elif_base_conditions, _line, state
@@ -941,8 +948,16 @@ class FlowExecutorMixin:
         has_unconditional_constant_match = False
         has_any_match = False
         for lineage in tag_lineages:
-            if "remove_tag" in lineage.transformations:
+            # Treat opaque lineage statuses conservatively: an `unresolved`
+            # source could have added the literal, and `unresolved`/`removed`
+            # statuses leave open the possibility of a remove we cannot model
+            # (unsupported plugin, ruby block, etc.). Without this, the
+            # classifier returns `definitely_false` for opaque parser logic
+            # and the caller prunes a feasible branch.
+            if lineage.status in ("removed", "unresolved") or "remove_tag" in lineage.transformations:
                 has_remove_anywhere = True
+            if lineage.status == "unresolved":
+                has_any_match = True
             for source in lineage.sources:
                 if source.kind == "template":
                     has_any_match = True
