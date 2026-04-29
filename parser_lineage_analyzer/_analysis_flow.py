@@ -793,9 +793,7 @@ class FlowExecutorMixin:
         """
         if not conditions_are_compatible(else_conditions, tuple(state.implicit_path_conditions)):
             return False
-        if self._tag_negation_conditions_are_unreachable(else_negations, state):
-            return False
-        return True
+        return not self._tag_negation_conditions_are_unreachable(else_negations, state)
 
     def _branch_is_reachable(self, cond: str, prior_conditions: list[str], line: int, state: AnalyzerState) -> bool:
         # PR-C: pass ``implicit_path_conditions`` so synthetic grok-derived
@@ -908,9 +906,7 @@ class FlowExecutorMixin:
                 return True
         return False
 
-    def _tag_membership_check_status(
-        self, cond: str, state: AnalyzerState
-    ) -> TagMembershipStatus:
+    def _tag_membership_check_status(self, cond: str, state: AnalyzerState) -> TagMembershipStatus:
         """Tri-state classifier for ``"<lit>" in [tags]`` conditions.
 
         Returns ``"definitely_true"`` when prior add_tag definitely added the

@@ -30,11 +30,11 @@ if not TYPE_CHECKING:
 if TYPE_CHECKING:
     from .analyzer import ReverseParser as ReverseParser
     from .model import (
+        LIVE_LINEAGE_STATUSES as LIVE_LINEAGE_STATUSES,
         AnalysisSummaryDict as AnalysisSummaryDict,
         CompactAnalysisSummaryDict as CompactAnalysisSummaryDict,
         DiagnosticRecord as DiagnosticRecord,
         IOAnchor as IOAnchor,
-        LIVE_LINEAGE_STATUSES as LIVE_LINEAGE_STATUSES,
         Lineage as Lineage,
         LineageStatus as LineageStatus,
         OutputAnchor as OutputAnchor,
