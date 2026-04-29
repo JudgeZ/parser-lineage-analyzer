@@ -21,11 +21,10 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TypedDict
 
-from parser_lineage_analyzer import ReverseParser
+from parser_lineage_analyzer import LIVE_LINEAGE_STATUSES, ReverseParser
 from parser_lineage_analyzer._analysis_state import AnalyzerState
 from parser_lineage_analyzer._plugin_specs import normalize_dialect
 from parser_lineage_analyzer._types import JSONValue
-from parser_lineage_analyzer.model import LIVE_LINEAGE_STATUSES
 
 DEFAULT_ROOT = Path("tests/fixtures/runtime")
 

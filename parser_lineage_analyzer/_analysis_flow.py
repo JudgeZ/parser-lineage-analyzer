@@ -924,10 +924,15 @@ class FlowExecutorMixin:
         literal = _membership_literal(match)
         tag_state = state.tag_state
         if tag_state.definitely or tag_state.possibly or tag_state.has_dynamic:
-            if tag_state.has_dynamic:
-                return "unknown"
+            # ``definitely`` records literal adds that survived branch-merge
+            # intersection. A purely templated remove_tag sets has_dynamic
+            # but cannot subtract from ``definitely`` (only literal removes
+            # do — see TagState.with_removed), so membership in ``definitely``
+            # outranks has_dynamic.
             if literal in tag_state.definitely:
                 return "definitely_true"
+            if tag_state.has_dynamic:
+                return "unknown"
             if literal not in tag_state.possibly:
                 return "definitely_false"
             return "unknown"
