@@ -48,6 +48,16 @@ LineageStatus = Literal[
     "unresolved",
 ]
 
+# Statuses representing live coverage — i.e., the parser is actually writing
+# to this field at runtime. ``removed`` and ``unresolved`` are excluded:
+# ``removed`` means the parser deletes the field; ``unresolved`` means the
+# analyzer couldn't determine where the value comes from. Use this constant
+# when validating that a query/lineage result represents a real assignment,
+# not a placeholder or deletion record.
+LIVE_LINEAGE_STATUSES: frozenset[LineageStatus] = frozenset(
+    {"exact", "exact_capture", "conditional", "derived", "constant", "repeated", "dynamic"}
+)
+
 # Aggregate status reported by ``QueryResult.status`` for a whole query.
 #
 # Includes every ``LineageStatus`` value, plus:
