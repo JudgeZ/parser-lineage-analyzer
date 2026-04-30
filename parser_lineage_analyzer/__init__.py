@@ -10,6 +10,7 @@ _PUBLIC_EXPORTS = (
     "QueryResultAggregate",
     "Lineage",
     "LineageStatus",
+    "LIVE_LINEAGE_STATUSES",
     "QueryStatus",
     "SourceRef",
     "OutputAnchor",
@@ -29,6 +30,7 @@ if not TYPE_CHECKING:
 if TYPE_CHECKING:
     from .analyzer import ReverseParser as ReverseParser
     from .model import (
+        LIVE_LINEAGE_STATUSES as LIVE_LINEAGE_STATUSES,
         AnalysisSummaryDict as AnalysisSummaryDict,
         CompactAnalysisSummaryDict as CompactAnalysisSummaryDict,
         DiagnosticRecord as DiagnosticRecord,
@@ -53,6 +55,7 @@ _MODEL_EXPORTS = {
     "QueryResultAggregate",
     "Lineage",
     "LineageStatus",
+    "LIVE_LINEAGE_STATUSES",
     "QueryStatus",
     "SourceRef",
     "OutputAnchor",

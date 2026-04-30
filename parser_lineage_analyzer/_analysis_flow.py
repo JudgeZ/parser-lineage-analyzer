@@ -6,7 +6,7 @@ import json
 import re
 from collections.abc import Callable, Iterable
 from functools import lru_cache
-from typing import Protocol, cast
+from typing import Literal, Protocol, cast
 
 from ._analysis_condition_facts import (
     condition_is_contradicted,
@@ -48,7 +48,7 @@ from ._analysis_state import AnalyzerState, BranchRecord, FailureTagRoute
 from ._plugin_specs import PLUGIN_SPECS, PluginSpec, dialect_profile_for, plugin_spec_for
 from ._types import ConfigPair, ConfigValue
 from .ast_nodes import ElifBlock, ForBlock, IfBlock, IOBlock, Plugin, Statement, Unknown
-from .config_parser import all_values, as_pairs, first_value
+from .config_parser import all_values, as_pairs, decode_string_body, first_value
 from .model import IOAnchor, Lineage, LineageStatus, SourceRef, SyntaxDiagnostic, TaintReason
 from .parser import parse_code_with_diagnostics
 
@@ -65,6 +65,10 @@ MAX_CLONE_FANOUT = 128
 # Phase 3B: detect `"<lit>" in [tags]` so the analyzer can flag branches
 # that check for a tag no prior add_tag could have written.
 _TAGS_MEMBERSHIP_RE = re.compile(r'^(?:"(?P<dlit>(?:\\.|[^"\\])*)"|\'(?P<slit>(?:\\.|[^\'\\])*)\')\s+in\s+\[tags\]$')
+
+# Result of classifying a `"<lit>" in [tags]` condition against the current
+# tag-state; see ``_tag_membership_check_status``.
+TagMembershipStatus = Literal["definitely_true", "definitely_false", "unknown"]
 
 # R1.3: detect `"<lit>" in [<field>]` for any field (not just `tags`).
 # When `<field>`'s lineage carries `value_type="string"`, this is substring
@@ -92,36 +96,11 @@ _REGEX_LITERAL_IN_CONDITION_RE = re.compile(r"=~\s*/((?:\\.|[^/\\])*)/[A-Za-z]*"
 _ON_ERROR_BLOCK_IN_CONFIG_RE = re.compile(r"\bon_error\s*\{")
 
 
-def _decode_condition_literal(value: str, delimiter: str) -> str:
-    out: list[str] = []
-    i = 0
-    while i < len(value):
-        if value[i] == "\\" and i + 1 < len(value):
-            escaped = value[i + 1]
-            decoded = {
-                "n": "\n",
-                "t": "\t",
-                "r": "\r",
-                "f": "\f",
-                "b": "\b",
-                "v": "\v",
-                "\\": "\\",
-            }.get(escaped)
-            if decoded is None and escaped == delimiter:
-                decoded = delimiter
-            out.append(decoded if decoded is not None else "\\" + escaped)
-            i += 2
-            continue
-        out.append(value[i])
-        i += 1
-    return "".join(out)
-
-
 def _membership_literal(match: re.Match[str]) -> str:
     double_value = match.group("dlit")
     if double_value is not None:
-        return _decode_condition_literal(double_value, '"')
-    return _decode_condition_literal(match.group("slit") or "", "'")
+        return decode_string_body(double_value, '"')
+    return decode_string_body(match.group("slit") or "", "'")
 
 
 def _iter_regex_over_escapes(condition: str) -> Iterable[tuple[str, str]]:
@@ -396,6 +375,11 @@ class FlowExecutorMixin:
                 # approach in `_exec_if` (see `_prior_negation_conditions`).
                 cond = _clean_condition(child.condition)
                 prior_negations: list[str] = []
+                # Dedupe priors before passing them into reachability checks:
+                # `_condition_is_contradicted_cached` builds a disjunctive
+                # cross-product over priors and bails out conservatively past
+                # `_MAX_DISJUNCTIVE_COMBINATIONS`. Duplicate priors inflate the
+                # cross-product and hide real contradictions.
                 then_base_conditions = _dedupe_strings(conditions + _prior_negation_conditions(prior_negations))
                 then_conditions = _dedupe_strings(then_base_conditions + [cond])
                 if self._branch_is_reachable(cond, then_base_conditions, child.line, state):
@@ -426,9 +410,7 @@ class FlowExecutorMixin:
                 if child.else_body is not None:
                     else_negations = _prior_negation_conditions(prior_negations)
                     else_conditions = _dedupe_strings(conditions + else_negations)
-                    if conditions_are_compatible(
-                        else_conditions, tuple(state.implicit_path_conditions)
-                    ) and not self._tag_negation_conditions_are_unreachable(else_negations, state):
+                    if self._else_branch_is_reachable(else_negations, else_conditions, state):
                         self._exec_io_block(
                             IOBlock(line=child.line, kind=stmt.kind, body=child.else_body),
                             state,
@@ -529,6 +511,8 @@ class FlowExecutorMixin:
         branch_records: list[BranchRecord] = []
 
         prior_negations: list[str] = []
+        # See `_exec_io_block` — dedupe priors so duplicates don't blow up the
+        # disjunctive cross-product in `_condition_is_contradicted_cached`.
         then_base_conditions = _dedupe_strings(conditions + _prior_negation_conditions(prior_negations))
         then_conditions = _dedupe_strings(then_base_conditions + [cond])
         if self._branch_is_reachable(cond, then_base_conditions, stmt.line, state):
@@ -561,7 +545,7 @@ class FlowExecutorMixin:
             else_state = original.clone()
             else_negations = _prior_negation_conditions(prior_negations)
             else_conditions = _dedupe_strings(conditions + else_negations)
-            if not self._tag_negation_conditions_are_unreachable(else_negations, state):
+            if self._else_branch_is_reachable(else_negations, else_conditions, state):
                 self._exec_statements(stmt.else_body, else_state, else_conditions, depth, loop_fanout)
                 branch_records.append(BranchRecord(else_state, else_conditions, False))
         else:
@@ -805,6 +789,19 @@ class FlowExecutorMixin:
             source_token=key,
         )
 
+    def _else_branch_is_reachable(
+        self, else_negations: list[str], else_conditions: list[str], state: AnalyzerState
+    ) -> bool:
+        """Reachability gate for the else body of an if/elif chain.
+
+        Combines the implicit-path-conditions compatibility check (PR-C) with
+        the tag-negation pruning so ``_exec_if`` and ``_exec_io_block`` agree
+        on when an else body is feasible.
+        """
+        if not conditions_are_compatible(else_conditions, tuple(state.implicit_path_conditions)):
+            return False
+        return not self._tag_negation_conditions_are_unreachable(else_negations, state)
+
     def _branch_is_reachable(self, cond: str, prior_conditions: list[str], line: int, state: AnalyzerState) -> bool:
         # PR-C: pass ``implicit_path_conditions`` so synthetic grok-derived
         # constraints (e.g. ``[src_ip] =~ /<IP_BODY>/`` from a prior
@@ -818,7 +815,7 @@ class FlowExecutorMixin:
         # literal tag that no prior `mutate { add_tag => [...] }` could have
         # added, the branch is unreachable at runtime even though it doesn't
         # contradict any literal field-fact.
-        if self._tag_membership_check_is_unreachable(cond, state):
+        if self._tag_membership_check_status(cond, state) == "definitely_false":
             self._emit_unreachable_branch(cond, line, state)
             return False
         # Phase R2: when the tag IS reachable but only via a conditionally-
@@ -912,59 +909,67 @@ class FlowExecutorMixin:
             if not condition.startswith("NOT(") or not condition.endswith(")"):
                 continue
             inner = condition[4:-1]
-            if self._tag_membership_check_is_definitely_true(inner, state):
+            if self._tag_membership_check_status(inner, state) == "definitely_true":
                 return True
         return False
 
-    def _tag_membership_check_is_definitely_true(self, cond: str, state: AnalyzerState) -> bool:
-        match = _TAGS_MEMBERSHIP_RE.match(cond.strip())
-        if not match:
-            return False
-        literal = _membership_literal(match)
-        tag_state = state.tag_state
-        if tag_state.definitely or tag_state.possibly or tag_state.has_dynamic:
-            return not tag_state.has_dynamic and literal in tag_state.definitely
-        tag_lineages = state.tokens.get("tags", [])
-        if not tag_lineages:
-            return False
-        has_remove_anywhere = any("remove_tag" in lineage.transformations for lineage in tag_lineages)
-        if has_remove_anywhere:
-            return False
-        return any(
-            not lineage.conditions
-            and any(source.kind == "constant" and (source.expression or "") == literal for source in lineage.sources)
-            for lineage in tag_lineages
-        )
+    def _tag_membership_check_status(self, cond: str, state: AnalyzerState) -> TagMembershipStatus:
+        """Tri-state classifier for ``"<lit>" in [tags]`` conditions.
 
-    def _tag_membership_check_is_unreachable(self, cond: str, state: AnalyzerState) -> bool:
-        """Recognize ``"<lit>" in [tags]`` and check whether any prior
-        add_tag could have added the literal.
-
-        T2: prefers ``state.tag_state.possibly`` (structured representation).
-        When ``tag_state`` is empty, falls back to the lineage-walking
-        heuristic — covers the corner case where add_tag happens in a branch
-        whose merge cleared the structured state.
+        Returns ``"definitely_true"`` when prior add_tag definitely added the
+        literal and no remove_tag could have removed it; ``"definitely_false"``
+        when no path could have added the literal; ``"unknown"`` otherwise
+        (conditional adds, dynamic templates, or no tag info available).
         """
         match = _TAGS_MEMBERSHIP_RE.match(cond.strip())
         if not match:
-            return False
+            return "unknown"
         literal = _membership_literal(match)
         tag_state = state.tag_state
         if tag_state.definitely or tag_state.possibly or tag_state.has_dynamic:
+            # ``has_dynamic`` widens uncertainty: a templated remove_tag
+            # (e.g. ``remove_tag => ["%{bar}"]``) is recorded as has_dynamic
+            # but does NOT subtract from ``definitely`` (TagState.with_removed
+            # only acts on the literal subset). At runtime that template
+            # could resolve to a literal currently in ``definitely``, so we
+            # must downgrade to "unknown" rather than report "definitely_true".
             if tag_state.has_dynamic:
-                return False  # a templated add_tag could resolve to <lit>
-            return literal not in tag_state.possibly
-        # Fallback to lineage walking.
+                return "unknown"
+            if literal in tag_state.definitely:
+                return "definitely_true"
+            if literal not in tag_state.possibly:
+                return "definitely_false"
+            return "unknown"
+        # Fallback to lineage walking when structured tag_state is empty.
         tag_lineages = state.tokens.get("tags", [])
         if not tag_lineages:
-            return False
+            return "unknown"
+        has_remove_anywhere = False
+        has_unconditional_constant_match = False
+        has_any_match = False
         for lineage in tag_lineages:
+            # Treat opaque lineage statuses conservatively: an `unresolved`
+            # source could have added the literal, and `unresolved`/`removed`
+            # statuses leave open the possibility of a remove we cannot model
+            # (unsupported plugin, ruby block, etc.). Without this, the
+            # classifier returns `definitely_false` for opaque parser logic
+            # and the caller prunes a feasible branch.
+            if lineage.status in ("removed", "unresolved") or "remove_tag" in lineage.transformations:
+                has_remove_anywhere = True
+            if lineage.status == "unresolved":
+                has_any_match = True
             for source in lineage.sources:
-                if source.kind == "constant" and (source.expression or "") == literal:
-                    return False
                 if source.kind == "template":
-                    return False
-        return True
+                    has_any_match = True
+                elif source.kind == "constant" and (source.expression or "") == literal:
+                    has_any_match = True
+                    if not lineage.conditions:
+                        has_unconditional_constant_match = True
+        if has_unconditional_constant_match and not has_remove_anywhere:
+            return "definitely_true"
+        if not has_any_match:
+            return "definitely_false"
+        return "unknown"
 
     def _exec_for(
         self, stmt: ForBlock, state: AnalyzerState, conditions: list[str], depth: int = 0, loop_fanout: int = 1

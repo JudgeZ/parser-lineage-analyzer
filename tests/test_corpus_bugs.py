@@ -29,7 +29,7 @@ from pathlib import Path
 
 import pytest
 
-from parser_lineage_analyzer import ReverseParser
+from parser_lineage_analyzer import LIVE_LINEAGE_STATUSES, ReverseParser
 from tests._typing_helpers import expect_mapping, expect_mapping_list, expect_str, expect_str_list
 
 BUG_DIR = Path(__file__).parent / "fixtures" / "test_corpus" / "bugs"
@@ -456,7 +456,7 @@ def test_bug_kv_hallucination():
     # After fix: querying a key NOT in include_keys should be unresolved.
     result = parser.query("not_in_include_list")
     # Either no mappings, or all marked unresolved
-    assert all(m.status in ("unresolved", "removed") for m in result.mappings) or not result.mappings
+    assert all(m.status not in LIVE_LINEAGE_STATUSES for m in result.mappings) or not result.mappings
 
 
 def test_bug_loop_shadow():

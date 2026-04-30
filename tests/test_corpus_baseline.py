@@ -42,7 +42,7 @@ from typing import Literal
 
 import pytest
 
-from parser_lineage_analyzer import ReverseParser
+from parser_lineage_analyzer import LIVE_LINEAGE_STATUSES, ReverseParser
 from tests._typing_helpers import expect_mapping, expect_mapping_list, expect_str, expect_str_list
 
 CORPUS_ROOT = Path(__file__).parent / "fixtures" / "test_corpus"
@@ -114,7 +114,7 @@ def _check_sidecar(parser: ReverseParser, fixture_id: str, sidecar: dict[str, ob
         assert code not in warning_codes, f"{fixture_id}: warning code {code!r} should NOT be emitted but was"
     for field in expect_str_list(sidecar.get("must_resolve_fields", [])):
         result = parser.query(field)
-        assert any(mapping.status not in {"removed", "unresolved"} for mapping in result.mappings), (
+        assert any(mapping.status in LIVE_LINEAGE_STATUSES for mapping in result.mappings), (
             f"{fixture_id}: query({field!r}) returned no live mappings"
         )
     for plugin in expect_str_list(sidecar.get("must_have_unsupported", [])):

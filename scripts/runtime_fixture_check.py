@@ -21,11 +21,10 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TypedDict
 
-from parser_lineage_analyzer import ReverseParser
+from parser_lineage_analyzer import LIVE_LINEAGE_STATUSES, ReverseParser
 from parser_lineage_analyzer._analysis_state import AnalyzerState
 from parser_lineage_analyzer._plugin_specs import normalize_dialect
 from parser_lineage_analyzer._types import JSONValue
-from parser_lineage_analyzer.model import Lineage
 
 DEFAULT_ROOT = Path("tests/fixtures/runtime")
 
@@ -130,14 +129,10 @@ def _string_list(expected: Mapping[str, JSONValue], key: str) -> list[str]:
 
 
 def _field_is_covered(parser: ReverseParser, state: AnalyzerState, field: str) -> bool:
-    if _has_live_lineage(state.tokens.get(field, [])):
+    if any(lineage.status in LIVE_LINEAGE_STATUSES for lineage in state.tokens.get(field, [])):
         return True
     result = parser.query(field, compact=True)
-    return _has_live_lineage(result.mappings)
-
-
-def _has_live_lineage(lineages: list[Lineage]) -> bool:
-    return any(lineage.status not in {"removed", "unresolved"} for lineage in lineages)
+    return any(mapping.status in LIVE_LINEAGE_STATUSES for mapping in result.mappings)
 
 
 def build_arg_parser() -> argparse.ArgumentParser:

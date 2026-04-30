@@ -239,11 +239,11 @@ def _config_nesting_diagnostic(text: str) -> ConfigDiagnostic | None:
     return None
 
 
-def _decode_string_python(token_text: str) -> str:
-    if len(token_text) < 2:
-        return token_text
-    quote = token_text[0]
-    body = token_text[1:-1] if token_text[-1] == quote else token_text[1:]
+def decode_string_body(body: str, quote: str) -> str:
+    """Decode a Logstash-style string body (no surrounding quotes) using
+    the same escape rules as ``_decode_string_python``. ``quote`` selects
+    which inner quote character is recognized as an escapable delimiter.
+    """
     out: list[str] = []
     i = 0
     while i < len(body):
@@ -295,6 +295,14 @@ def _decode_string_python(token_text: str) -> str:
         out.append(ch)
         i += 1
     return "".join(out)
+
+
+def _decode_string_python(token_text: str) -> str:
+    if len(token_text) < 2:
+        return token_text
+    quote = token_text[0]
+    body = token_text[1:-1] if token_text[-1] == quote else token_text[1:]
+    return decode_string_body(body, quote)
 
 
 _decode_string: Callable[[str], str] = _decode_string_python
