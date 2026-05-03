@@ -68,7 +68,7 @@ dev = [
   "Cython>=3.2.4,<4",
   "cibuildwheel>=2.23.4",
   "bandit[toml]>=1.9.4",
-  "hypothesis>=6.152.3",
+  "hypothesis>=6.152.4",
 ]
 
 [project.scripts]
