@@ -61,14 +61,14 @@ Security = "https://github.com/JudgeZ/parser-lineage-analyzer/blob/main/SECURITY
 
 [project.optional-dependencies]
 dev = [
-  "pytest>=9.0.3",
+  "pytest>=9.1.0",
   "pytest-timeout>=2.4.0",
-  "ruff>=0.15.12",
-  "mypy>=1.20.2",
-  "Cython>=3.2.4,<4",
+  "ruff>=0.15.17",
+  "mypy>=2.1.0",
+  "Cython>=3.2.5,<4",
   "cibuildwheel>=2.23.4",
   "bandit[toml]>=1.9.4",
-  "hypothesis>=6.152.3",
+  "hypothesis>=6.155.2",
 ]
 
 [project.scripts]
@@ -157,7 +157,7 @@ disallow_untyped_defs = false
 [tool.cibuildwheel]
 build = "cp310-*"
 skip = "*-musllinux_*"
-test-requires = ["pytest>=9.0.3", "pytest-timeout>=2.4.0"]
+test-requires = ["pytest>=9.1.0", "pytest-timeout>=2.4.0"]
 test-command = "python -c \"import parser_lineage_analyzer._native._scanner_ext; import parser_lineage_analyzer._native._config_fast_ext; import parser_lineage_analyzer._native._dedupe_ext; import parser_lineage_analyzer._native._template_ext; import parser_lineage_analyzer._native._branch_merge_ext\" && python -m pytest {project}/tests/test_parser_frontend.py {project}/tests/test_native_acceleration.py {project}/tests/test_native_differential_fuzz.py && parser-lineage-analyzer --help"
 
 [tool.cibuildwheel.linux]
