@@ -28,16 +28,16 @@ jobs:
           - {os: macos-26,      arch: arm64}
           - {os: windows-2022,  arch: AMD64}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
 
       - name: Set up QEMU (Linux aarch64 only)
         if: matrix.os == 'ubuntu-22.04' && matrix.arch == 'aarch64'
-        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a  # v4
+        uses: docker/setup-qemu-action@06116385d9baf250c9f4dcb4858b16962ea869c3  # v4
         with:
           platforms: arm64
 
       - name: Build abi3 wheels
-        uses: pypa/cibuildwheel@8d2b08b68458a16aeb24b64e68a09ab1c8e82084  # v3.4.1
+        uses: pypa/cibuildwheel@294735312765b09d24a2fbec22660ce817587d55  # v4.1.0
         env:
           CIBW_ARCHS: ${{ matrix.arch }}
 
@@ -50,7 +50,7 @@ jobs:
     name: Build sdist
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: '3.10'
@@ -72,7 +72,7 @@ jobs:
     env:
       PYTHONUTF8: '1'
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: ${{ matrix.python }}
@@ -88,7 +88,7 @@ jobs:
     name: Lint and type-check
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: '3.10'
@@ -106,7 +106,7 @@ jobs:
     name: pip-audit (dependency vulnerabilities)
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: '3.10'
@@ -155,7 +155,7 @@ jobs:
           - {os: windows-2022,  artifact: wheels-windows-2022-AMD64,   python: '3.14', mode: default}
           - {os: windows-2022,  artifact: wheels-windows-2022-AMD64,   python: '3.13', mode: no-ext}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: ${{ matrix.python }}
